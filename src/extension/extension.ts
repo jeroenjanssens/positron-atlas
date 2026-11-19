@@ -3,7 +3,7 @@ import { getPositron, type PositronApi } from './positron';
 import { AtlasPanel, VIEW_TYPE, type AtlasContext, type OpenTarget } from './atlasPanel';
 import { KernelBridge } from './kernelBridge';
 import type { PanelState } from '../shared/protocol';
-import { parseDataExplorerTabLabel } from './tabLabel';
+import { isPlainName, parseDataExplorerTabLabel } from './tabLabel';
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel('Positron Atlas', { log: true });
@@ -129,6 +129,10 @@ async function targetFromDataExplorer(p: PositronApi, ctx: AtlasContext): Promis
   }
   if (!variable) {
     return pickDataFrame(p, ctx);
+  }
+  if (!isPlainName(variable)) {
+    // Display names may be expressions or file names; never evaluate those implicitly.
+    throw new Error(`"${variable}" is not a variable name. Use "Atlas: Open DataFrame…" to enter an expression.`);
   }
   if (sessionId) {
     const s = await p.runtime.getSession(sessionId);

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { bootstrapCode, callCode } from '../src/extension/kernelBridge';
-import { parseDataExplorerTabLabel } from '../src/extension/tabLabel';
+import { isPlainName, parseDataExplorerTabLabel } from '../src/extension/tabLabel';
 
 const root = path.resolve(__dirname, '..');
 const python = path.join(root, 'python', '.venv', 'bin', 'python');
@@ -76,5 +76,16 @@ describe('Data Explorer tab label', () => {
     expect(parseDataExplorerTabLabel('Data: my_frame ')).toBe('my_frame');
     expect(parseDataExplorerTabLabel('Data Explorer')).toBeUndefined();
     expect(parseDataExplorerTabLabel(undefined)).toBeUndefined();
+  });
+});
+
+describe('isPlainName', () => {
+  it('accepts identifiers and attribute chains only', () => {
+    expect(isPlainName('df')).toBe(true);
+    expect(isPlainName('data.train_set')).toBe(true);
+    expect(isPlainName('df[0]')).toBe(false);
+    expect(isPlainName('data.csv ')).toBe(false);
+    expect(isPlainName('__import__("os").system("x")')).toBe(false);
+    expect(isPlainName('1abc')).toBe(false);
   });
 });

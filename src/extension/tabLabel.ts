@@ -9,3 +9,8 @@ export function parseDataExplorerTabLabel(label: string | undefined): string | u
   const m = /^Data:\s+(.+)$/.exec(label.trim());
   return m ? m[1].trim() : undefined;
 }
+
+/** A Python identifier or dotted attribute chain (e.g. `df` or `data.train`). */
+export function isPlainName(s: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(s);
+}

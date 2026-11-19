@@ -66,7 +66,7 @@ _positron_atlas helper  <-JSON-  KernelBridge (evaluateCode)    Svelte UI
 
 ## Performance
 
-See [docs/benchmarks.md](docs/benchmarks.md).
+See `docs/benchmarks.md` in the source repository.
 
 ## Limitations
 

@@ -20,7 +20,7 @@ JSON
 export ATLAS_E2E_PYTHON="$ROOT/.venv-e2e/bin/python"
 export ATLAS_E2E_SCENARIO="${ATLAS_E2E_SCENARIO:-$ROOT/test/e2e/scenario-small.json}"
 export ATLAS_E2E_LOG="$E2E/scenario.log"
-rm -f "$ATLAS_E2E_LOG"
+rm -f "$ATLAS_E2E_LOG" "$ATLAS_E2E_LOG.reloaded"
 exec /Applications/Positron.app/Contents/MacOS/Positron \
   --extensionDevelopmentPath="$ROOT" \
   --extensionDevelopmentPath="$ROOT/test/e2e/helper" \
