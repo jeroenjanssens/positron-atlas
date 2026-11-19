@@ -3,13 +3,30 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["vite/client"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable",
+      "WebWorker"
+    ],
+    "types": [
+      "vite/client"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "embedding-atlas-umap": [
+        "./node_modules/embedding-atlas/dist/umap.d.ts"
+      ]
+    }
   },
-  "include": ["src/webview/**/*.ts", "src/webview/**/*.svelte", "src/shared/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/webview/**/*.ts",
+    "src/webview/**/*.svelte",
+    "src/shared/**/*.ts",
+    "test/**/*.ts"
+  ]
 }

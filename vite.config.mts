@@ -27,7 +27,7 @@ export default defineConfig({
       fileName: () => 'main.js',
       cssFileName: 'main',
     },
-    rollupOptions: { output: { inlineDynamicImports: true } },
+    rollupOptions: { output: { codeSplitting: false } as any },
   },
   test: {
     root: r('.'),

@@ -134,7 +134,7 @@ export interface PanelState {
 export type ToWebview =
   | { type: 'init'; variable: string; sessionId: string; describe: DescribeResult; settings: Settings; state?: PanelState }
   | { type: 'status'; task: string; status: JobStatus }
-  | { type: 'prepared'; result: PrepareResult; anchors: FileRef }
+  | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
   | { type: 'xyChunk'; file: FileRef; total: number }
   | { type: 'projected'; seconds: number; estimateSeconds?: number }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
@@ -147,11 +147,11 @@ export type ToHost =
   | { type: 'ready' }
   | { type: 'prepare'; options: PrepareOptions }
   | { type: 'estimate' }
-  | { type: 'project'; anchorXY: Float32Array; metric: 'euclidean' | 'cosine'; seed: number }
+  | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'row'; i: number }
   | { type: 'cancel' }
-  | { type: 'addCoordinates'; anchorXY: Float32Array | null; useProjection: boolean }
+  | { type: 'addCoordinates'; anchorXY: string | null /* base64 float32 */; useProjection: boolean }
   | { type: 'reload' }
   | { type: 'savePng'; dataUrl: string }
   | { type: 'copyText'; text: string }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HitIndex, bounds } from '../src/webview/render/hitIndex';
 import { encodeCategorical, encodeNumeric, gatherRgba } from '../src/webview/color/encode';
 import { lut, hexToRgb, CATEGORICAL, NULL_COLOR } from '../src/webview/color/colormaps';
-import { adamRate } from '../src/webview/workers/schedule';
+import { sgdRate } from '../src/webview/workers/schedule';
 
 describe('HitIndex', () => {
   it('finds the true nearest point', () => {
@@ -70,12 +70,12 @@ describe('color encoding', () => {
   });
 });
 
-describe('adam schedule', () => {
-  it('matches embedding-atlas learning_rate_at (adam, good init)', () => {
-    // From layout_modern.rs tests: (adam, 0, 500, 0.5, true) == 0.25 and (adam, 62, 500, 0.5, true) == 0.2
-    expect(adamRate(0, 500, 0.5)).toBeCloseTo(0.25, 6);
-    expect(adamRate(62, 500, 0.5)).toBeCloseTo(0.2, 6);
-    expect(adamRate(499, 500, 1)).toBeGreaterThan(0.05);
-    expect(adamRate(10_000, 500, 1)).toBeCloseTo(adamRate(499, 500, 1));
+describe('sgd schedule', () => {
+  it('decays linearly from alpha0 to 0', () => {
+    expect(sgdRate(0, 200, 1)).toBe(1);
+    expect(sgdRate(100, 200, 1)).toBeCloseTo(0.5);
+    expect(sgdRate(200, 200, 1)).toBe(0);
+    expect(sgdRate(500, 200, 1)).toBe(0);
+    expect(sgdRate(50, 200, 2)).toBeCloseTo(1.5);
   });
 });

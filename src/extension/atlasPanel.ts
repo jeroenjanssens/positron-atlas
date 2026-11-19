@@ -168,7 +168,8 @@ export class AtlasPanel {
         if (s.stage === 'done') {
           const res = s.result as PrepareResult;
           const anchors = s.outputs.find((o) => o.kind === 'anchors')!;
-          this.post({ type: 'prepared', result: res, anchors: this.fileRef(anchors) });
+          const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos')!;
+          this.post({ type: 'prepared', result: res, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
         } else if (s.stage === 'error') {
           throw new KernelError(s.error ?? 'Preparing the data failed', s.result?.traceback);
         }
@@ -184,7 +185,7 @@ export class AtlasPanel {
         const job = this.requireJob();
         const token = this.newToken();
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
-        await fs.writeFile(xyPath, Buffer.from(m.anchorXY.buffer, m.anchorXY.byteOffset, m.anchorXY.byteLength));
+        await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
         await this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed }));
         const seen = new Set<string>();
         const s = await this.bridge.waitForJob(
@@ -249,7 +250,7 @@ export class AtlasPanel {
         let xyPath = '';
         if (m.anchorXY && !m.useProjection) {
           xyPath = path.join(this.jobDir.fsPath, `coords_${Date.now()}.f32`);
-          await fs.writeFile(xyPath, Buffer.from(m.anchorXY.buffer, m.anchorXY.byteOffset, m.anchorXY.byteLength));
+          await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
         } else if (!this.projectionCurrent) {
           throw new Error('Place all rows first, then add the coordinates.');
         }

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { createUMAP, type UMAP } from 'embedding-atlas-umap';
-import { adamRate } from './schedule';
+import { sgdRate } from './schedule';
 import type { UmapParams } from '../../shared/protocol';
 
 export type WorkerIn =
@@ -28,12 +28,12 @@ function snapshot(): Float32Array {
   return new Float32Array(umap!.embedding);
 }
 
-async function anneal(runId: number, epochs: number, startedAt: number): Promise<void> {
+async function anneal(runId: number, epochs: number, startedAt: number, peak = alpha0): Promise<void> {
   const token = ++loopToken;
   const begin = umap!.epoch;
   let lastPost = 0;
   while (umap && token === loopToken && umap.epoch - begin < epochs) {
-    umap.setParameters({ learningRate: adamRate(umap.epoch - begin, epochs, alpha0) });
+    umap.setParameters({ learningRate: sgdRate(umap.epoch - begin, epochs, peak) });
     await umap.step(1);
     const now = performance.now();
     if (now - lastPost > 33) {
@@ -69,8 +69,8 @@ ctx.onmessage = async (ev: MessageEvent<WorkerIn>) => {
         repulsionStrength: p.repulsionStrength,
         negativeSampleRate: p.negativeSampleRate,
         learningRate: p.learningRate,
-        optimizer: 'adam',
-        initializeMethod: 'auto',
+        optimizer: 'sgd',
+        initializeMethod: 'spectral',
         gpu: !!msg.gpu,
         progress: (progress: number, stage: string) => post({ type: 'progress', runId: msg.runId, stage, progress }),
       });
@@ -90,8 +90,15 @@ ctx.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       if (learningRate !== undefined) {
         alpha0 = learningRate;
       }
-      umap.setParameters({ minDist, spread, repulsionStrength, negativeSampleRate });
-      await anneal(msg.runId, msg.epochs, performance.now());
+      const live: Record<string, number> = {};
+      for (const [k, v] of Object.entries({ minDist, spread, repulsionStrength, negativeSampleRate })) {
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          live[k] = v;
+        }
+      }
+      umap.setParameters(live);
+      // Re-anneal from a lower peak so a converged layout adapts without scrambling.
+      await anneal(msg.runId, msg.epochs, performance.now(), alpha0 * 0.5);
     } else if (msg.type === 'stop') {
       loopToken++;
       if (umap && msg.runId === currentRun) {
