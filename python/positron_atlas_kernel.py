@@ -390,6 +390,9 @@ def create_job(name: str, job_dir: str) -> str:
         return _json({"ok": False, "error": str(e)})
     job = _Job(name, frame, job_dir)
     _JOBS[job.id] = job
+    # Lets the extension verify that it sees the files the kernel writes.
+    with open(job.path(".probe"), "w") as f:
+        f.write(job.id)
     return _json({"ok": True, "jobId": job.id})
 
 

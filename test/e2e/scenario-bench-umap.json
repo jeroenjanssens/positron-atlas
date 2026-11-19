@@ -1,0 +1,45 @@
+{
+  "variable": "bench",
+  "setup": "import numpy as np, polars as pl\nrng = np.random.default_rng(2)\nn, d = 100_000, 50\nk = rng.integers(0, 10, n)\nX = (rng.normal(0, 5, (10, d))[k] + rng.normal(0, 1, (n, d))).astype('float32')\nbench = pl.DataFrame({f'f{i}': X[:, i] for i in range(d)}).with_columns(pl.Series('label', [f'l{v}' for v in k]))\n",
+  "steps": [
+    {
+      "name": "gpu available",
+      "report": "{ gpu: a.gpuAvailable, umap100k_d50: a.timings.umap }"
+    },
+    {
+      "name": "10k anchors d50",
+      "eval": "a.prepare.maxAnchors = 10000; a.timings = {}; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.timings.umap && a.prepared.nAnchors === 10000",
+      "timeout": 300000,
+      "report": "a.timings.umap"
+    },
+    {
+      "name": "25k anchors d50",
+      "eval": "a.prepare.maxAnchors = 25000; a.timings = {}; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.timings.umap && a.prepared.nAnchors === 25000",
+      "timeout": 300000,
+      "report": "a.timings.umap"
+    },
+    {
+      "name": "50k anchors d50",
+      "eval": "a.prepare.maxAnchors = 50000; a.timings = {}; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.timings.umap && a.prepared.nAnchors === 50000",
+      "timeout": 300000,
+      "report": "a.timings.umap"
+    },
+    {
+      "name": "50k anchors d10 (PCA)",
+      "eval": "a.prepare.pca = true; a.prepare.pcaDims = 10; a.timings = {}; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.timings.umap && a.prepared.dims === 10",
+      "timeout": 300000,
+      "report": "a.timings.umap"
+    },
+    {
+      "name": "50k anchors d10 WebGPU",
+      "eval": "if (!a.gpuAvailable) return; a.useGpu = true; a.timings = {}; a.startUmap()",
+      "until": "!a.gpuAvailable || (a.phase === 'ready' && a.timings.umap)",
+      "timeout": 300000,
+      "report": "{ gpu: a.gpuAvailable, umap: a.timings.umap, error: a.error }"
+    }
+  ]
+}

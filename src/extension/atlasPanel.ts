@@ -107,7 +107,13 @@ export class AtlasPanel {
   }
 
   private fail(e: unknown, fatal = false): void {
-    const message = e instanceof Error ? e.message : String(e);
+    let message = e instanceof Error ? e.message : String(e);
+    if (/Unknown job/.test(message)) {
+      // The kernel restarted and lost its state.
+      message = 'The Python session restarted. Reload to load the data again.';
+      fatal = true;
+      this.jobId = undefined;
+    }
     const detail = e instanceof KernelError ? e.detail : e instanceof Error ? e.stack : undefined;
     this.ctx.log.error(`[${this.state.variable}] ${message}${detail ? `\n${detail}` : ''}`);
     this.post({ type: 'error', message, detail, fatal });
@@ -123,6 +129,17 @@ export class AtlasPanel {
       return;
     }
     const job = await this.bridge.call<{ jobId: string }>('create_job', this.state.variable, this.jobDir.fsPath);
+    const probe = await fs.readFile(path.join(this.jobDir.fsPath, '.probe'), 'utf8').catch(() => '');
+    if (probe !== job.jobId) {
+      this.fail(
+        new Error(
+          'The Python kernel writes files that this window cannot read (is the kernel running on another machine?). ' +
+            'Atlas needs the kernel and the extension host on the same file system.',
+        ),
+        true,
+      );
+      return;
+    }
     this.jobId = job.jobId;
     this.post({
       type: 'init',
