@@ -6,6 +6,8 @@
   import { formatCount, formatSeconds } from './logic';
 
   const atlas = new Atlas();
+  // Exposed for end-to-end tests (test/e2e).
+  (window as any).__atlas = atlas;
   let plot: HTMLDivElement;
   let collapsed = $state(false);
 

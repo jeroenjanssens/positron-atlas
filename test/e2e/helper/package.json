@@ -1,0 +1,10 @@
+{
+  "name": "positron-atlas-e2e-helper",
+  "displayName": "Positron Atlas E2E helper",
+  "version": "0.0.1",
+  "publisher": "test",
+  "engines": { "vscode": "^1.100.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {}
+}

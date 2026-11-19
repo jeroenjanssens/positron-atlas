@@ -13,6 +13,8 @@ export default defineConfig({
       'embedding-atlas-umap': r('./node_modules/embedding-atlas/dist/umap.js'),
     },
   },
+  // Library mode keeps process.env references (e.g. in deck.gl); the webview has no `process`.
+  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   worker: { format: 'es' },
   build: {
     outDir: r('./dist/webview'),

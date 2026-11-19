@@ -11,3 +11,4 @@ __pycache__/
 .DS_Store
 .vscode-test/
 datasets/
+.venv-e2e/
