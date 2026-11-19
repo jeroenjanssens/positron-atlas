@@ -70,8 +70,31 @@ try {
   }
   await sleep(1000);
   await cdp.screenshot(`${out}/atlas.png`);
-  if (cdp.logs.length) console.log(`webview console:\n${cdp.logs.join('\n')}`);
   console.log(`screenshot: ${out}/atlas.png`);
+  // Optional scripted steps: { name, eval, until, timeout, screenshot }
+  const steps = scenario ? JSON.parse(readFileSync(env.ATLAS_E2E_SCENARIO, 'utf8')).steps ?? [] : [];
+  for (const step of steps) {
+    const ts = Date.now();
+    if (step.eval) await cdp.evaluate(`(async () => { const a = window.__atlas; ${step.eval} })()`, ctx);
+    if (step.until) {
+      for (;;) {
+        const v = await cdp.evaluate(`(() => { const a = window.__atlas; return !!(${step.until}); })()`, ctx);
+        if (v) break;
+        const err = await cdp.evaluate('window.__atlas.error && window.__atlas.error.message', ctx);
+        if (err) throw new Error(`step ${step.name}: webview error: ${err}`);
+        if (Date.now() - ts > (step.timeout ?? 60000)) throw new Error(`step ${step.name} timed out`);
+        await sleep(250);
+      }
+    }
+    if (step.report) console.log(`  ${step.name}: ${await cdp.evaluate(`(() => { const a = window.__atlas; return JSON.stringify(${step.report}); })()`, ctx)}`);
+    console.log(`step ok: ${step.name} (${((Date.now() - ts) / 1000).toFixed(1)}s)`);
+    if (step.screenshot) {
+      await sleep(800);
+      await cdp.screenshot(`${out}/${step.screenshot}`);
+      console.log(`screenshot: ${out}/${step.screenshot}`);
+    }
+  }
+  if (cdp.logs.length) console.log(`webview console:\n${cdp.logs.join('\n')}`);
   cdp.close();
   ok = true;
 } catch (e) {

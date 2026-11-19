@@ -87,19 +87,24 @@ export class ScatterRenderer {
   }
 
   /** Fit the view to the given bounds unless the user has panned/zoomed (force overrides). */
-  fit(b: [number, number, number, number], force = false): void {
+  fit(b: [number, number, number, number], force = false, padRight = 0): void {
     if (this.userMoved && !force) {
       return;
     }
     if (force) {
       this.userMoved = false;
     }
-    const w = this.container.clientWidth || 800;
+    const fullW = this.container.clientWidth || 800;
+    const pad = fullW - padRight > 200 ? padRight : 0;
+    const w = fullW - pad;
     const h = this.container.clientHeight || 600;
     const dx = Math.max(b[2] - b[0], 1e-6);
     const dy = Math.max(b[3] - b[1], 1e-6);
-    const zoom = Math.log2(Math.min(w / dx, h / dy) * 0.9);
-    this.viewState = { target: [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2, 0], zoom };
+    const scale = Math.min(w / dx, h / dy) * 0.9;
+    const zoom = Math.log2(scale);
+    // Shift the center left so the data sits in the area not covered by the legend.
+    const cx = (b[0] + b[2]) / 2 + pad / 2 / scale;
+    this.viewState = { target: [cx, (b[1] + b[3]) / 2, 0], zoom };
     this.deck.setProps({ viewState: this.viewState as any });
   }
 

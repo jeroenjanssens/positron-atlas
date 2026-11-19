@@ -465,15 +465,20 @@ export class Atlas {
     }
     this.renderer.setPointSets(sets);
     if (this.autoFit) {
-      this.renderer.fit(bounds(this.anchorXY, nA));
+      this.renderer.fit(bounds(this.anchorXY, nA), false, this.legendWidth());
     }
   }
 
   fitView(): void {
     if (this.anchorXY && this.prepared) {
       this.autoFit = true;
-      this.renderer?.fit(bounds(this.anchorXY, this.prepared.nAnchors), true);
+      this.renderer?.fit(bounds(this.anchorXY, this.prepared.nAnchors), true, this.legendWidth());
     }
+  }
+
+  private legendWidth(): number {
+    const el = document.querySelector('.legend') as HTMLElement | null;
+    return el ? el.offsetWidth + 20 : 0;
   }
 
   // ---- hover -------------------------------------------------------------------------
