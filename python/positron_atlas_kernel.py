@@ -300,6 +300,7 @@ class _Job:
         self.lock = threading.Lock()
         self.cancel_event = threading.Event()
         self.thread: threading.Thread | None = None
+        self.generation = 0
         self.task = "idle"
         self.stage = "idle"
         self.progress = 0.0
@@ -314,7 +315,16 @@ class _Job:
         self.anchor_pos: np.ndarray | None = None  # positions into kept rows
         self.xy: np.ndarray | None = None  # kept x 2 (after projection)
 
+    def _mine(self) -> bool:
+        """True unless called from a superseded (orphaned) task thread."""
+        gen = getattr(threading.current_thread(), "atlas_generation", None)
+        return gen is None or gen == self.generation
+
     def set(self, stage: str | None = None, progress: float | None = None, message: str | None = None) -> None:
+        # Each task thread checks its *own* cancel event: run() replaces self.cancel_event.
+        ev = getattr(threading.current_thread(), "atlas_cancel", self.cancel_event)
+        if ev.is_set() or not self._mine():
+            raise _Cancelled()
         with self.lock:
             if stage is not None:
                 self.stage = stage
@@ -322,8 +332,6 @@ class _Job:
                 self.progress = float(progress)
             if message is not None:
                 self.message = message
-        if self.cancel_event.is_set():
-            raise _Cancelled()
 
     def path(self, fname: str) -> str:
         return os.path.join(self.dir, fname)
@@ -331,8 +339,13 @@ class _Job:
     def run(self, task: str, fn) -> None:
         if self.thread is not None and self.thread.is_alive():
             self.cancel_event.set()
-            self.thread.join()
+            # Don't block the kernel on work that cannot be interrupted (e.g. umap-learn's
+            # fit): after a short wait the old thread is orphaned and its results ignored.
+            self.thread.join(timeout=2.0)
         self.cancel_event = threading.Event()
+        self.generation += 1
+        gen = self.generation
+        ev = self.cancel_event
         with self.lock:
             self.task = task
             self.stage = "starting"
@@ -344,25 +357,29 @@ class _Job:
             self.started = time.time()
 
         def target() -> None:
+            me = threading.current_thread()
+            me.atlas_cancel = ev  # type: ignore[attr-defined]
+            me.atlas_generation = gen  # type: ignore[attr-defined]
             try:
                 res = fn()
-                with self.lock:
-                    self.result = res or {}
-                    self.stage = "done"
-                    self.progress = 1.0
+                outcome = ("done", res or {}, None)
             except _Cancelled:
-                with self.lock:
-                    self.stage = "cancelled"
+                outcome = ("cancelled", {}, None)
             except Exception as e:  # noqa: BLE001
-                with self.lock:
-                    self.stage = "error"
-                    self.error = f"{type(e).__name__}: {e}"
-                    self.result = {"traceback": traceback.format_exc()}
+                outcome = ("error", {"traceback": traceback.format_exc()}, f"{type(e).__name__}: {e}")
+            with self.lock:
+                if gen != self.generation:
+                    return  # superseded by a newer task
+                self.stage, self.result, self.error = outcome
+                if self.stage == "done":
+                    self.progress = 1.0
 
         self.thread = threading.Thread(target=target, name=f"positron-atlas-{self.id}-{task}", daemon=True)
         self.thread.start()
 
     def add_output(self, **kw: Any) -> None:
+        if not self._mine():
+            raise _Cancelled()
         with self.lock:
             self.outputs.append(kw)
 
@@ -600,6 +617,7 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     _write(job, "anchors.f32", anchors)
     _write(job, "anchor_pos.u32", anchor_pos.astype(np.uint32))
 
+    job.set("finishing", 0.99)  # raises if this task was superseded
     job.kept_idx = kept_idx
     job.features = x
     job.anchor_pos = anchor_pos
@@ -805,6 +823,7 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
         _write(job, fname, xy_all[fstart:fstop])
         job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
         n_files += 1
+    job.set("finishing", 1.0)  # raises if this task was superseded
     job.xy = xy_all
     return {"nRows": n, "files": n_files, "seconds": time.time() - t0}
 

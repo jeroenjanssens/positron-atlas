@@ -302,3 +302,43 @@ def test_write_xy_chunks(ns, tmp_path):
     offsets = [o["offset"] for o in job.outputs if o["kind"] == "xy"]
     assert offsets == [0, 2, 4]
     np.testing.assert_array_equal(np.fromfile(tmp_path / "xy_0002.f32", dtype="<f4"), [8, 9])
+
+
+def test_superseded_task_does_not_block_or_clobber(ns, tmp_path):
+    """An uninterruptible task is orphaned after a short wait; its result is ignored."""
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    job = pak._JOBS[jid]
+    release = __import__("threading").Event()
+
+    def stuck():
+        release.wait(10)  # e.g. umap-learn fit: never checks for cancellation
+        job.set("late")  # must raise: superseded
+        return {"from": "stuck"}
+
+    job.run("stuck", stuck)
+    t0 = time.time()
+    job.run("quick", lambda: {"from": "quick"})
+    assert time.time() - t0 < 5
+    st = wait(jid)
+    assert st["stage"] == "done" and st["result"] == {"from": "quick"} and st["task"] == "quick"
+    release.set()
+    time.sleep(0.2)
+    st = J(pak.status(jid))
+    assert st["result"] == {"from": "quick"} and st["stage"] == "done"
+
+
+def test_cancel_sees_own_event(ns, tmp_path):
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    job = pak._JOBS[jid]
+    started = __import__("threading").Event()
+
+    def loop():
+        started.set()
+        while True:
+            job.set("looping")
+            time.sleep(0.01)
+
+    job.run("loop", loop)
+    started.wait(5)
+    pak.cancel(jid)
+    assert wait(jid)["stage"] == "cancelled"
