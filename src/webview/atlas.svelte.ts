@@ -93,6 +93,7 @@ export class Atlas {
   private pendingHover: { x: number; y: number } | null = null;
   private autoFit = true;
   private liveRun = false;
+  private inbox: Promise<void> = Promise.resolve();
   private gpuProbe: Promise<boolean> = probeWebGpu();
 
   attach(container: HTMLElement): void {
@@ -101,7 +102,11 @@ export class Atlas {
     this.renderer.onPointer((p) => this.onPointer(p));
     this.createWorker();
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
-      this.handle(ev.data).catch((e) => this.showError(e instanceof Error ? e.message : String(e)));
+      // Handle messages strictly in order: e.g. 'projected' must wait until the last
+      // 'xyChunk' has been fetched and copied.
+      this.inbox = this.inbox
+        .then(() => this.handle(ev.data))
+        .catch((e) => this.showError(e instanceof Error ? e.message : String(e)));
     });
     void this.gpuProbe.then((ok) => {
       this.gpuAvailable = ok;

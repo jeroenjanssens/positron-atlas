@@ -1,0 +1,20 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "viaDataExplorer": true,
+  "steps": [
+    {
+      "name": "density mode",
+      "eval": "a.setView({ mode: 'density', pointSize: 2 })",
+      "screenshot": "density.png"
+    },
+    {
+      "name": "exact umap-learn",
+      "eval": "a.setView({ mode: 'points', pointSize: 3 }); a.computeMode = 'kernel'; a.timings = {}; a.runExact()",
+      "until": "a.phase === 'ready' && a.timings.umap",
+      "timeout": 300000,
+      "report": "{ timings: a.timings, deps: a.describe.deps, mode: a.computeMode }",
+      "screenshot": "exact.png"
+    }
+  ]
+}

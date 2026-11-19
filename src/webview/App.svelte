@@ -58,7 +58,7 @@
     }
     const t = atlas.timings;
     const times = [
-      t.umap && `UMAP ${formatSeconds(t.umap)}${atlas.useGpu ? ' (GPU)' : ''}`,
+      t.umap && `UMAP ${formatSeconds(t.umap)}${atlas.computeMode === 'kernel' ? ' (umap-learn)' : atlas.useGpu ? ' (GPU)' : ' (CPU)'}`,
       t.update && `update ${formatSeconds(t.update)}`,
       t.project && `placement ${formatSeconds(t.project)}`,
     ].filter(Boolean);

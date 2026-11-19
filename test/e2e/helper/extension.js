@@ -37,7 +37,20 @@ async function activate() {
       await positron.runtime.executeCode('python', sc.setup, false, false, undefined, undefined, undefined, session.metadata.sessionId);
       log('setup done');
     }
-    if (sc.variable) {
+    if (sc.viaDataExplorer) {
+      // Open the variable in Positron's Data Explorer, then use our toolbar command.
+      await positron.runtime.executeCode('python', `%view ${sc.variable}`, false, false, undefined, undefined, undefined, session.metadata.sessionId);
+      let label;
+      for (let i = 0; i < 60; i++) {
+        label = vscode.window.tabGroups.activeTabGroup.activeTab?.label;
+        if (label && label.startsWith('Data:')) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      log(`data explorer tab: ${label}`);
+      await new Promise((r) => setTimeout(r, 1500));
+      await vscode.commands.executeCommand('positronAtlas.openFromDataExplorer');
+      log('opened atlas from data explorer');
+    } else if (sc.variable) {
       await vscode.commands.executeCommand('positronAtlas.openDataFrame', sc.variable);
       log('opened atlas');
     }
