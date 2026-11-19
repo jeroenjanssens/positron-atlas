@@ -1,0 +1,15 @@
+[project]
+name = "positron-atlas-kernel"
+version = "0.1.0"
+description = "Kernel-side helper for the Positron Atlas extension (tests and benchmarks)."
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[dependency-groups]
+dev = ["pytest", "pandas", "polars", "pyarrow", "scikit-learn"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

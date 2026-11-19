@@ -1,0 +1,134 @@
+{
+  "name": "positron-atlas",
+  "displayName": "Positron Atlas",
+  "description": "Interactive UMAP scatter plots of high-dimensional DataFrames in Positron.",
+  "version": "0.1.0",
+  "publisher": "jeroenjanssens",
+  "license": "MIT",
+  "author": {
+    "name": "Jeroen Janssens"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "keywords": [
+    "positron",
+    "umap",
+    "embedding",
+    "dataframe",
+    "pandas",
+    "polars"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onWebviewPanel:positronAtlas.view"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "positronAtlas.openFromDataExplorer",
+        "title": "Open in Atlas (UMAP)",
+        "category": "Atlas",
+        "icon": "$(graph-scatter)",
+        "enablement": "isPositron"
+      },
+      {
+        "command": "positronAtlas.openDataFrame",
+        "title": "Open DataFrame…",
+        "category": "Atlas",
+        "enablement": "isPositron"
+      }
+    ],
+    "menus": {
+      "editor/actions/right": [
+        {
+          "command": "positronAtlas.openFromDataExplorer",
+          "when": "isPositron && activeEditor == 'workbench.editor.positronDataExplorer'"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "positronAtlas.openFromDataExplorer",
+          "when": "isPositron && activeEditor == 'workbench.editor.positronDataExplorer'",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "positronAtlas.openFromDataExplorer",
+          "when": "isPositron && activeEditor == 'workbench.editor.positronDataExplorer'"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Positron Atlas",
+      "properties": {
+        "positronAtlas.maxAnchors": {
+          "type": "number",
+          "default": 100000,
+          "description": "Maximum number of rows that UMAP runs on in the browser. Remaining rows are placed by nearest-anchor projection."
+        },
+        "positronAtlas.anchorBudget": {
+          "type": "number",
+          "default": 10000000,
+          "description": "Maximum number of values (anchors × dimensions) sent to the browser UMAP."
+        },
+        "positronAtlas.defaultSamplePct": {
+          "type": "number",
+          "default": 100,
+          "minimum": 0.1,
+          "maximum": 100,
+          "description": "Default percentage of rows to sample."
+        },
+        "positronAtlas.pcaEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apply PCA before UMAP by default."
+        },
+        "positronAtlas.pcaDims": {
+          "type": "number",
+          "default": 50,
+          "description": "Default number of PCA dimensions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:ext && npm run build:webview",
+    "build:ext": "node scripts/build-ext.mjs",
+    "build:webview": "vite build --config vite.config.ts",
+    "watch:ext": "node scripts/build-ext.mjs --watch",
+    "watch:webview": "vite build --config vite.config.ts --watch",
+    "check": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig ./tsconfig.webview.json",
+    "test": "vitest run",
+    "test:py": "uv run --project python pytest python/tests -q",
+    "package": "npm run build && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@posit-dev/positron": "^0.2.15",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^26.6.6",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "svelte": "^5.58.0",
+    "svelte-check": "^4.7.8",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.4.1",
+    "@deck.gl/layers": "^9.4.1",
+    "@vscode-elements/elements": "^2.5.1",
+    "embedding-atlas": "^0.26.0"
+  }
+}
