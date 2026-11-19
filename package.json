@@ -103,9 +103,9 @@
   "scripts": {
     "build": "npm run build:ext && npm run build:webview",
     "build:ext": "node scripts/build-ext.mjs",
-    "build:webview": "vite build --config vite.config.ts",
+    "build:webview": "vite build --config vite.config.mts",
     "watch:ext": "node scripts/build-ext.mjs --watch",
-    "watch:webview": "vite build --config vite.config.ts --watch",
+    "watch:webview": "vite build --config vite.config.mts --watch",
     "check": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig ./tsconfig.webview.json",
     "test": "vitest run",
     "test:py": "uv run --project python pytest python/tests -q",

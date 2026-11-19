@@ -1,0 +1,335 @@
+import * as vscode from 'vscode';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { KernelBridge, KernelError } from './kernelBridge';
+import type { PositronApi } from './positron';
+import type {
+  ColorMeta,
+  DescribeResult,
+  FileRef,
+  JobStatus,
+  KernelOutput,
+  PanelState,
+  PrepareResult,
+  Settings,
+  ToHost,
+  ToWebview,
+} from '../shared/protocol';
+
+export const VIEW_TYPE = 'positronAtlas.view';
+
+export interface AtlasContext {
+  extension: vscode.ExtensionContext;
+  positron: PositronApi;
+  log: vscode.LogOutputChannel;
+  jobsRoot: vscode.Uri;
+}
+
+export interface OpenTarget {
+  variable: string;
+  sessionId: string;
+  languageId: string;
+}
+
+export function readSettings(): Settings {
+  const c = vscode.workspace.getConfiguration('positronAtlas');
+  return {
+    maxAnchors: c.get('maxAnchors', 100_000),
+    anchorBudget: c.get('anchorBudget', 10_000_000),
+    defaultSamplePct: c.get('defaultSamplePct', 100),
+    pcaEnabled: c.get('pcaEnabled', false),
+    pcaDims: c.get('pcaDims', 50),
+  };
+}
+
+/** One editor tab showing one DataFrame. */
+export class AtlasPanel {
+  private static readonly panels = new Set<AtlasPanel>();
+
+  private readonly bridge: KernelBridge;
+  private readonly jobDir: vscode.Uri;
+  private jobId: string | undefined;
+  private fileVersion = 0;
+  private disposed = false;
+  private busy: vscode.CancellationTokenSource | undefined;
+  private state: PanelState;
+  private projectionCurrent = false;
+
+  static create(ctx: AtlasContext, target: OpenTarget): AtlasPanel {
+    const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Atlas: ${target.variable}`, vscode.ViewColumn.Active, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'), ctx.jobsRoot],
+    });
+    return new AtlasPanel(ctx, panel, { ...target });
+  }
+
+  static revive(ctx: AtlasContext, panel: vscode.WebviewPanel, state: PanelState): AtlasPanel {
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'), ctx.jobsRoot],
+    };
+    return new AtlasPanel(ctx, panel, state);
+  }
+
+  private constructor(
+    private readonly ctx: AtlasContext,
+    private readonly panel: vscode.WebviewPanel,
+    state: PanelState,
+  ) {
+    this.state = state;
+    const modulePath = vscode.Uri.joinPath(ctx.extension.extensionUri, 'python', 'positron_atlas_kernel.py').fsPath;
+    const version = String(ctx.extension.extension.packageJSON.version ?? '0.0.0');
+    this.bridge = new KernelBridge(ctx.positron, state.sessionId, state.languageId, modulePath, version, ctx.log);
+    this.jobDir = vscode.Uri.joinPath(ctx.jobsRoot, crypto.randomUUID());
+    panel.webview.html = this.html();
+    panel.webview.onDidReceiveMessage((m: ToHost) => this.onMessage(m).catch((e) => this.fail(e)));
+    panel.onDidDispose(() => this.dispose());
+    AtlasPanel.panels.add(this);
+  }
+
+  static disposeAll(): void {
+    for (const p of [...AtlasPanel.panels]) {
+      p.panel.dispose();
+    }
+  }
+
+  private post(msg: ToWebview): void {
+    if (!this.disposed) {
+      void this.panel.webview.postMessage(msg);
+    }
+  }
+
+  private fileRef(out: { file: string; dtype: FileRef['dtype']; shape: number[]; offset?: number }): FileRef {
+    const uri = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(this.jobDir, out.file));
+    return { uri: `${uri.toString()}?v=${++this.fileVersion}`, dtype: out.dtype, shape: out.shape, offset: out.offset };
+  }
+
+  private fail(e: unknown, fatal = false): void {
+    const message = e instanceof Error ? e.message : String(e);
+    const detail = e instanceof KernelError ? e.detail : e instanceof Error ? e.stack : undefined;
+    this.ctx.log.error(`[${this.state.variable}] ${message}${detail ? `\n${detail}` : ''}`);
+    this.post({ type: 'error', message, detail, fatal });
+  }
+
+  private async init(): Promise<void> {
+    await fs.mkdir(this.jobDir.fsPath, { recursive: true });
+    let describe: DescribeResult;
+    try {
+      describe = await this.bridge.call<DescribeResult>('describe', this.state.variable);
+    } catch (e) {
+      this.fail(e, true);
+      return;
+    }
+    const job = await this.bridge.call<{ jobId: string }>('create_job', this.state.variable, this.jobDir.fsPath);
+    this.jobId = job.jobId;
+    this.post({
+      type: 'init',
+      variable: this.state.variable,
+      sessionId: this.state.sessionId,
+      describe,
+      settings: readSettings(),
+      state: this.state,
+    });
+  }
+
+  private newToken(): vscode.CancellationToken {
+    this.busy?.cancel();
+    this.busy = new vscode.CancellationTokenSource();
+    return this.busy.token;
+  }
+
+  private requireJob(): string {
+    if (!this.jobId) {
+      throw new Error('The data is not loaded yet.');
+    }
+    return this.jobId;
+  }
+
+  private async onMessage(m: ToHost): Promise<void> {
+    switch (m.type) {
+      case 'ready':
+        await this.init();
+        break;
+      case 'reload':
+        if (this.jobId) {
+          await this.bridge.call('cleanup', this.jobId).catch(() => undefined);
+          this.jobId = undefined;
+        }
+        await this.init();
+        break;
+      case 'prepare': {
+        const job = this.requireJob();
+        const token = this.newToken();
+        this.projectionCurrent = false;
+        await this.bridge.call('prepare', job, JSON.stringify(m.options));
+        const s = await this.bridge.waitForJob(job, (st) => this.post({ type: 'status', task: 'prepare', status: st }), token);
+        if (s.stage === 'done') {
+          const res = s.result as PrepareResult;
+          const anchors = s.outputs.find((o) => o.kind === 'anchors')!;
+          this.post({ type: 'prepared', result: res, anchors: this.fileRef(anchors) });
+        } else if (s.stage === 'error') {
+          throw new KernelError(s.error ?? 'Preparing the data failed', s.result?.traceback);
+        }
+        break;
+      }
+      case 'estimate': {
+        const r = await this.bridge.call<{ flops: number; rows: number }>('estimate_projection', this.requireJob());
+        // Rough sustained numpy throughput incl. top-k selection; refined from benchmarks.
+        this.post({ type: 'estimate', seconds: r.flops / 2e10 + r.rows / 4e5, rows: r.rows });
+        break;
+      }
+      case 'project': {
+        const job = this.requireJob();
+        const token = this.newToken();
+        const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
+        await fs.writeFile(xyPath, Buffer.from(m.anchorXY.buffer, m.anchorXY.byteOffset, m.anchorXY.byteLength));
+        await this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed }));
+        const seen = new Set<string>();
+        const s = await this.bridge.waitForJob(
+          job,
+          (st) => {
+            this.post({ type: 'status', task: 'project', status: st });
+            for (const o of st.outputs) {
+              if (o.kind === 'xy' && !seen.has(o.file)) {
+                seen.add(o.file);
+                this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: st.result?.nRows ?? 0 });
+              }
+            }
+          },
+          token,
+        );
+        await fs.rm(xyPath, { force: true });
+        if (s.stage === 'done') {
+          this.projectionCurrent = true;
+          this.post({ type: 'projected', seconds: s.result?.seconds ?? 0 });
+        } else if (s.stage === 'error') {
+          throw new KernelError(s.error ?? 'Projection failed', s.result?.traceback);
+        }
+        break;
+      }
+      case 'colors': {
+        const r = await this.bridge.call<{ file: string; dtype: 'f32' | 'u16'; meta: ColorMeta; length: number }>(
+          'colors',
+          this.requireJob(),
+          m.column,
+          !!m.forceCategorical,
+        );
+        this.post({
+          type: 'colors',
+          column: m.column,
+          file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+          meta: r.meta,
+          length: r.length,
+        });
+        break;
+      }
+      case 'row': {
+        const r = await this.bridge.call<{ row: number; values: [string, string][] }>('row', this.requireJob(), m.i);
+        this.post({ type: 'row', i: m.i, row: r.row, values: r.values });
+        break;
+      }
+      case 'cancel':
+        this.busy?.cancel();
+        if (this.jobId) {
+          await this.bridge.call('cancel', this.jobId).catch(() => undefined);
+        }
+        break;
+      case 'addCoordinates': {
+        const job = this.requireJob();
+        const pick = await vscode.window.showWarningMessage(
+          `Add columns umap_x and umap_y to ${this.state.variable}? This modifies the DataFrame in your session.`,
+          { modal: true },
+          'Add Columns',
+        );
+        if (pick !== 'Add Columns') {
+          return;
+        }
+        let xyPath = '';
+        if (m.anchorXY && !m.useProjection) {
+          xyPath = path.join(this.jobDir.fsPath, `coords_${Date.now()}.f32`);
+          await fs.writeFile(xyPath, Buffer.from(m.anchorXY.buffer, m.anchorXY.byteOffset, m.anchorXY.byteLength));
+        } else if (!this.projectionCurrent) {
+          throw new Error('Place all rows first, then add the coordinates.');
+        }
+        const r = await this.bridge.call<{ variable: string; columns: string[] }>('add_coordinates', job, xyPath);
+        if (xyPath) {
+          await fs.rm(xyPath, { force: true });
+        }
+        this.post({ type: 'coordsAdded', variable: r.variable, columns: r.columns });
+        void vscode.window.showInformationMessage(`Added ${r.columns.join(', ')} to ${r.variable}.`);
+        break;
+      }
+      case 'savePng': {
+        const uri = await vscode.window.showSaveDialog({
+          filters: { 'PNG image': ['png'] },
+          defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', `${this.state.variable}-umap.png`)),
+        });
+        if (uri) {
+          const b64 = m.dataUrl.replace(/^data:image\/png;base64,/, '');
+          await vscode.workspace.fs.writeFile(uri, Buffer.from(b64, 'base64'));
+        }
+        break;
+      }
+      case 'copyText':
+        await vscode.env.clipboard.writeText(m.text);
+        void vscode.window.showInformationMessage('Copied to clipboard.');
+        break;
+      case 'state':
+        this.state = { ...m.state, variable: this.state.variable, sessionId: this.state.sessionId, languageId: this.state.languageId };
+        break;
+      case 'log':
+        this.ctx.log[m.level](`[webview ${this.state.variable}] ${m.message}`);
+        break;
+    }
+  }
+
+  private html(): string {
+    const webview = this.panel.webview;
+    const dist = vscode.Uri.joinPath(this.ctx.extension.extensionUri, 'dist', 'webview');
+    const script = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'main.js'));
+    const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'main.css'));
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const csp = [
+      `default-src 'none'`,
+      `img-src ${webview.cspSource} data: blob:`,
+      `style-src ${webview.cspSource} 'unsafe-inline'`,
+      `font-src ${webview.cspSource}`,
+      `script-src 'nonce-${nonce}' 'wasm-unsafe-eval'`,
+      `worker-src blob:`,
+      `connect-src ${webview.cspSource} data: blob:`,
+    ].join('; ');
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="${style}">
+<title>Atlas</title>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" nonce="${nonce}" src="${script}"></script>
+</body>
+</html>`;
+  }
+
+  private dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.busy?.cancel();
+    AtlasPanel.panels.delete(this);
+    if (this.jobId) {
+      void this.bridge.call('cleanup', this.jobId).catch(() => undefined);
+    }
+    void fs.rm(this.jobDir.fsPath, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export function isStatus(x: unknown): x is JobStatus {
+  return !!x && typeof x === 'object' && 'stage' in (x as object);
+}

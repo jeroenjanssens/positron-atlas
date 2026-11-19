@@ -899,7 +899,12 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
-    xy = np.fromfile(xy_path, dtype="<f4").reshape(-1, 2)
+    if xy_path:
+        xy = np.fromfile(xy_path, dtype="<f4").reshape(-1, 2)
+    elif job.xy is not None:
+        xy = job.xy
+    else:
+        raise RuntimeError("No projected coordinates available; pass a coordinate file.")
     if len(xy) != len(job.kept_idx):
         raise ValueError("Coordinate count does not match the prepared rows.")
     n = job.frame.n_rows
