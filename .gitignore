@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+*.vsix
+research/
+spikes/**/node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.vscode-test/
+datasets/
