@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 E2E="${E2E_DIR:-/tmp/positron-atlas-e2e}"
 PORT="${CDP_PORT:-9333}"
-rm -rf "$E2E/user" && mkdir -p "$E2E/user/User" "$E2E/ext" "$E2E/ws"
+rm -rf "$E2E/user" "$E2E/logs" && mkdir -p "$E2E/user/User" "$E2E/ext" "$E2E/ws"
 cat > "$E2E/user/User/settings.json" <<JSON
 {
   "python.defaultInterpreterPath": "$ROOT/.venv-e2e/bin/python",
@@ -26,6 +26,7 @@ exec /Applications/Positron.app/Contents/MacOS/Positron \
   --extensionDevelopmentPath="$ROOT/test/e2e/helper" \
   --user-data-dir="$E2E/user" \
   --extensions-dir="$E2E/ext" \
+  --logsPath="$E2E/logs" \
   --remote-debugging-port="$PORT" \
   --disable-workspace-trust \
   --skip-welcome --skip-release-notes \

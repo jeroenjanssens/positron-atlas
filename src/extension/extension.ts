@@ -51,6 +51,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.window.registerWebviewPanelSerializer(VIEW_TYPE, {
       async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: PanelState | undefined) {
+        log.info(`restoring Atlas tab: ${JSON.stringify({ variable: state?.variable, sessionId: state?.sessionId })}`);
         if (!positron || !state?.variable) {
           panel.dispose();
           return;

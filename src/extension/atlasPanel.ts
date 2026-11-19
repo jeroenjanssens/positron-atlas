@@ -121,8 +121,36 @@ export class AtlasPanel {
     this.post({ type: 'error', message, detail, fatal });
   }
 
+  /** Wait (up to a minute) for the session, or any Python session, to be available. */
+  private async ensureSession(): Promise<void> {
+    const rt = this.ctx.positron.runtime;
+    for (let i = 0; i < 120; i++) {
+      const own = await rt.getSession(this.state.sessionId).then((x) => x, () => undefined);
+      if (own) {
+        return;
+      }
+      const sessions = await rt.getActiveSessions();
+      const fg = await rt.getForegroundSession();
+      const py = fg?.runtimeMetadata.languageId === 'python' ? fg : sessions.find((x) => x.runtimeMetadata.languageId === 'python');
+      if (py) {
+        this.ctx.log.info(`[${this.state.variable}] session ${this.state.sessionId} is gone; using ${py.metadata.sessionId}`);
+        this.state = { ...this.state, sessionId: py.metadata.sessionId };
+        this.bridge.retarget(py.metadata.sessionId);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error('No Python session is running. Start one, then click Reload.');
+  }
+
   private async init(): Promise<void> {
     await fs.mkdir(this.jobDir.fsPath, { recursive: true });
+    try {
+      await this.ensureSession();
+    } catch (e) {
+      this.fail(e, true);
+      return;
+    }
     let describe: DescribeResult;
     try {
       describe = await this.bridge.call<DescribeResult>('describe', this.state.variable);

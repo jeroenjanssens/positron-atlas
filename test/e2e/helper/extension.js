@@ -13,6 +13,25 @@ function log(msg) {
 async function activate() {
   const file = process.env.ATLAS_E2E_SCENARIO;
   if (!file) return;
+  const marker = `${process.env.ATLAS_E2E_LOG}.reloaded`;
+  if (fs.existsSync(marker)) {
+    log('after reload');
+    // Recreate the data in the (possibly new) session, as a persistent kernel would have it.
+    try {
+      const sc = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const positron = globalThis.acquirePositronApi?.();
+      let session;
+      for (let i = 0; i < 120 && !session; i++) {
+        session = (await positron.runtime.getActiveSessions()).find((s) => s.runtimeMetadata.languageId === 'python');
+        if (!session) await new Promise((r) => setTimeout(r, 500));
+      }
+      await positron.runtime.executeCode('python', sc.setup, false, false, undefined, undefined, undefined, session.metadata.sessionId);
+      log('setup after reload done');
+    } catch (e) {
+      log(`ERROR after reload: ${e}`);
+    }
+    return;
+  }
   try {
     const sc = JSON.parse(fs.readFileSync(file, 'utf8'));
     sc.interpreter = sc.interpreter || process.env.ATLAS_E2E_PYTHON;
@@ -48,11 +67,20 @@ async function activate() {
       }
       log(`data explorer tab: ${label}`);
       await new Promise((r) => setTimeout(r, 1500));
-      await vscode.commands.executeCommand('positronAtlas.openFromDataExplorer');
-      log('opened atlas from data explorer');
+      if (!sc.noOpen) {
+        await vscode.commands.executeCommand('positronAtlas.openFromDataExplorer');
+        log('opened atlas from data explorer');
+      }
     } else if (sc.variable) {
       await vscode.commands.executeCommand('positronAtlas.openDataFrame', sc.variable);
       log('opened atlas');
+    }
+    if (sc.reloadAfterMs) {
+      await new Promise((r) => setTimeout(r, sc.reloadAfterMs));
+      fs.writeFileSync(marker, '1');
+      log('reloading window');
+      await vscode.commands.executeCommand('workbench.action.reloadWindow');
+      return;
     }
     log('READY');
   } catch (e) {

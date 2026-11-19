@@ -45,7 +45,7 @@ export class KernelBridge {
 
   constructor(
     private readonly positron: PositronApi,
-    readonly sessionId: string,
+    public sessionId: string,
     readonly languageId: string,
     private readonly modulePath: string,
     private readonly version: string,
@@ -58,6 +58,14 @@ export class KernelBridge {
       this.log.debug(`kernel output: ${res.output}`);
     }
     return res.result;
+  }
+
+  /** Point the bridge at another session (e.g. after a restart); the helper must be reloaded. */
+  retarget(sessionId: string): void {
+    if (sessionId !== this.sessionId) {
+      this.sessionId = sessionId;
+      this.loaded = false;
+    }
   }
 
   async ensureLoaded(force = false): Promise<void> {
