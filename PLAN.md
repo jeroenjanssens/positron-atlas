@@ -1,5 +1,15 @@
 # positron-atlas: detailed plan
 
+> **Status (2026-11-19).** Phases 0–7 are implemented and tested. Phase 8 (labels) and Phase 9 (R) are still open.
+>
+> Changes from this plan, decided during implementation:
+> - **WebGPU UMAP is the default.** It is 13–20× faster than CPU WASM in Positron's webviews.
+> - **The npm `embedding-atlas@0.26` UMAP has no Adam optimizer**, so animation uses SGD with a linear learning-rate decay.
+> - **Positron 2026.10 lacks `dataExplorer.getContext()`**, so the Data Explorer button reads the variable name from the tab title.
+> - **Controls are native inputs styled with VS Code theme variables**, not `@vscode-elements`.
+>
+> Measured numbers are in `docs/benchmarks.md`.
+
 A Positron extension that opens a pandas or Polars DataFrame in an editor tab. The tab shows an interactive UMAP scatter plot, UMAP parameter sliders, and a color-by-column dropdown. Cluster labels come later.
 
 ## Requirements
