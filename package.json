@@ -73,7 +73,17 @@
         "positronAtlas.maxAnchors": {
           "type": "number",
           "default": 100000,
-          "description": "Maximum number of rows that UMAP runs on in the browser. Remaining rows are placed by nearest-anchor projection."
+          "description": "Maximum number of rows UMAP runs on in the browser when WebGPU is available. Remaining rows are placed by nearest-anchor projection in the kernel."
+        },
+        "positronAtlas.maxAnchorsCpu": {
+          "type": "number",
+          "default": 25000,
+          "description": "Maximum number of anchor rows when UMAP runs on the CPU (no WebGPU). CPU UMAP takes about 0.7 ms per row for 200 epochs."
+        },
+        "positronAtlas.useWebGpu": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run UMAP on the GPU (WebGPU) when available; falls back to the CPU automatically."
         },
         "positronAtlas.anchorBudget": {
           "type": "number",
@@ -130,7 +140,6 @@
   "dependencies": {
     "@deck.gl/core": "^9.4.1",
     "@deck.gl/layers": "^9.4.1",
-    "@vscode-elements/elements": "^2.5.1",
     "embedding-atlas": "^0.26.0"
   }
 }

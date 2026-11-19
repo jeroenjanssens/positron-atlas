@@ -114,6 +114,8 @@ export interface UmapParams {
 
 export interface Settings {
   maxAnchors: number;
+  maxAnchorsCpu: number;
+  useWebGpu: boolean;
   anchorBudget: number;
   defaultSamplePct: number;
   pcaEnabled: boolean;

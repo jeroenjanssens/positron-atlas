@@ -143,10 +143,12 @@
         <Slider label="Repulsion strength" tag="live" bind:value={atlas.umap.repulsionStrength} min={0.1} max={5} step={0.1} onchange={umapChanged} />
         <Slider label="Negative sample rate" tag="live" bind:value={atlas.umap.negativeSampleRate} min={1} max={20} onchange={umapChanged} />
         <Slider label="Learning rate" tag="live" bind:value={atlas.umap.learningRate} min={0.1} max={4} step={0.1} onchange={umapChanged} />
-        {#if atlas.gpuAvailable}
-          <label class="check"><input type="checkbox" bind:checked={atlas.useGpu} onchange={() => atlas.startUmap()} /> Use WebGPU</label>
-        {/if}
       </details>
+      {#if atlas.gpuAvailable && atlas.computeMode === 'browser'}
+        <label class="check" title="Run UMAP on the GPU. Much faster; falls back to the CPU on errors.">
+          <input type="checkbox" bind:checked={atlas.useGpu} onchange={() => atlas.startUmap()} /> Use GPU (WebGPU)
+        </label>
+      {/if}
       <div class="buttons">
         {#if atlas.computeMode === 'kernel'}
           <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>

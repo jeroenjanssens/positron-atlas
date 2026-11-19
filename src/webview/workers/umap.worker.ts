@@ -19,6 +19,8 @@ let umap: UMAP | null = null;
 let currentRun = 0;
 let loopToken = 0;
 let alpha0 = 1;
+/** The step currently running inside WASM; must settle before destroy(). */
+let inflight: Promise<void> = Promise.resolve();
 
 function post(msg: WorkerOut, transfer: Transferable[] = []): void {
   ctx.postMessage(msg, transfer);
@@ -34,7 +36,11 @@ async function anneal(runId: number, epochs: number, startedAt: number, peak = a
   let lastPost = 0;
   while (umap && token === loopToken && umap.epoch - begin < epochs) {
     umap.setParameters({ learningRate: sgdRate(umap.epoch - begin, epochs, peak) });
-    await umap.step(1);
+    inflight = umap.step(1);
+    await inflight;
+    if (token !== loopToken) {
+      return;
+    }
     const now = performance.now();
     if (now - lastPost > 33) {
       lastPost = now;
@@ -54,6 +60,11 @@ ctx.onmessage = async (ev: MessageEvent<WorkerIn>) => {
     if (msg.type === 'start') {
       loopToken++;
       currentRun = msg.runId;
+      // Never destroy an instance while a (GPU) step is still running inside WASM.
+      await inflight.catch(() => undefined);
+      if (currentRun !== msg.runId) {
+        return;
+      }
       umap?.destroy();
       umap = null;
       const t0 = performance.now();

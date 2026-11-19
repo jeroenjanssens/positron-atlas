@@ -69,9 +69,10 @@ export class Atlas {
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
   useGpu = $state(false);
+  /** Set by probing navigator.gpu.requestAdapter() at startup. */
+  gpuAvailable = $state(false);
   /** 'browser': live WASM UMAP; 'kernel': exact umap-learn in the kernel (if installed). */
   computeMode = $state<'browser' | 'kernel'>('browser');
-  gpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
   // ---- non-reactive data -------------------------------------------------------------
   private renderer: ScatterRenderer | null = null;
@@ -91,18 +92,40 @@ export class Atlas {
   private hoverSeq = 0;
   private pendingHover: { x: number; y: number } | null = null;
   private autoFit = true;
+  private liveRun = false;
+  private gpuProbe: Promise<boolean> = probeWebGpu();
 
   attach(container: HTMLElement): void {
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
     this.renderer.onPointer((p) => this.onPointer(p));
-    this.worker = new UmapWorker();
-    this.worker.onmessage = (ev: MessageEvent<WorkerOut>) => this.onWorker(ev.data);
-    this.worker.onerror = (ev) => this.showError(`UMAP worker failed: ${ev.message}`);
+    this.createWorker();
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
       this.handle(ev.data).catch((e) => this.showError(e instanceof Error ? e.message : String(e)));
     });
-    vscode.post({ type: 'ready' });
+    void this.gpuProbe.then((ok) => {
+      this.gpuAvailable = ok;
+      vscode.post({ type: 'ready' });
+    });
+  }
+
+  private createWorker(): void {
+    this.worker?.terminate();
+    this.worker = new UmapWorker();
+    this.worker.onmessage = (ev: MessageEvent<WorkerOut>) => this.onWorker(ev.data);
+    this.worker.onerror = (ev) => {
+      // An uncaught WASM panic leaves the instance unusable: start a fresh worker.
+      ev.preventDefault();
+      this.createWorker();
+      if (this.useGpu) {
+        this.flash(`GPU UMAP failed (${ev.message}); using the CPU.`);
+        this.useGpu = false;
+        this.startUmap();
+      } else {
+        this.showError(`UMAP worker failed: ${ev.message}`);
+        this.phase = this.prepared ? 'ready' : 'error';
+      }
+    };
   }
 
   destroy(): void {
@@ -193,9 +216,10 @@ export class Atlas {
       pcaDims: saved?.pcaDims ?? settings.pcaDims,
       nanPolicy: saved?.nanPolicy ?? 'drop',
       seed: saved?.seed ?? 42,
-      maxAnchors: settings.maxAnchors,
+      maxAnchors: this.useGpuFor(settings) ? settings.maxAnchors : Math.min(settings.maxAnchors, settings.maxAnchorsCpu),
       anchorBudget: settings.anchorBudget,
     };
+    this.useGpu = this.useGpuFor(settings);
     if (state?.umap) {
       this.umap = { ...DEFAULT_UMAP, ...state.umap };
     }
@@ -216,6 +240,10 @@ export class Atlas {
       return;
     }
     this.runPrepare();
+  }
+
+  private useGpuFor(settings: Settings): boolean {
+    return settings.useWebGpu && this.gpuAvailable;
   }
 
   private onStatus(task: string, s: JobStatus): void {
@@ -261,10 +289,11 @@ export class Atlas {
 
   // ---- UMAP --------------------------------------------------------------------------
   startUmap(): void {
-    if (!this.anchors || !this.prepared || !this.worker) {
+    if (!this.anchors || !this.prepared) {
       return;
     }
     this.runId++;
+    this.liveRun = false;
     this.appliedUmap = $state.snapshot(this.umap) as UmapParams;
     this.phase = 'embedding';
     this.umapProgress = { stage: 'neighbors', progress: 0, epoch: 0, total: this.umap.nEpochs };
@@ -272,6 +301,9 @@ export class Atlas {
     this.estimate = null;
     this.hit = null;
     this.tooltip = null;
+    // A fresh worker per run: the WASM module cannot create a second WebGPU UMAP
+    // instance after destroying one, and terminating also cancels in-flight work.
+    this.createWorker();
     const data = this.anchors.slice();
     const msg: WorkerIn = {
       type: 'start',
@@ -282,7 +314,7 @@ export class Atlas {
       params: this.appliedUmap,
       gpu: this.useGpu,
     };
-    this.worker.postMessage(msg, [data.buffer]);
+    this.worker!.postMessage(msg, [data.buffer]);
   }
 
   /** Called when UMAP controls change; rebuilds or applies live. */
@@ -301,6 +333,7 @@ export class Atlas {
       return;
     }
     this.phase = 'embedding';
+    this.liveRun = true;
     this.projection = this.prepared?.needsProjection ? 'stale' : 'none';
     this.estimate = null;
     this.hit = null;
@@ -335,7 +368,7 @@ export class Atlas {
       case 'done':
         this.anchorXY = m.embedding;
         if (m.seconds) {
-          this.timings = { ...this.timings, umap: m.seconds };
+          this.timings = this.liveRun ? { ...this.timings, update: m.seconds } : { ...this.timings, umap: m.seconds, update: 0 };
         }
         this.phase = 'ready';
         this.umapProgress = null;
@@ -345,6 +378,13 @@ export class Atlas {
         }
         break;
       case 'error':
+        if (this.useGpu) {
+          // WebGPU can fail on some drivers; fall back to the CPU once.
+          this.flash(`WebGPU UMAP failed (${m.message}); using the CPU.`);
+          this.useGpu = false;
+          this.startUmap();
+          return;
+        }
         this.showError(`UMAP failed: ${m.message}`);
         this.phase = 'ready';
         break;
@@ -622,5 +662,16 @@ export class Atlas {
         this.toast = null;
       }
     }, 4000);
+  }
+}
+
+async function probeWebGpu(): Promise<boolean> {
+  try {
+    const gpu = (navigator as any).gpu;
+    if (!gpu) return false;
+    const adapter = await Promise.race([gpu.requestAdapter(), new Promise((r) => setTimeout(() => r(null), 2000))]);
+    return !!adapter;
+  } catch {
+    return false;
   }
 }

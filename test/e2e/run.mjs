@@ -2,7 +2,7 @@
 //   node test/e2e/run.mjs [scenario.json] [--keep]
 // Launches an isolated Positron (test/e2e/launch.sh), lets the helper extension start Python,
 // create a DataFrame and open Atlas, then waits for the layout and takes screenshots.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { connect } from './cdp.mjs';
 
@@ -16,12 +16,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const env = { ...process.env };
 if (scenario) env.ATLAS_E2E_SCENARIO = new URL(scenario, `file://${process.cwd()}/`).pathname;
+// A leftover instance on the same profile hijacks the launch (single-instance lock); kill it.
+spawnSync('pkill', ['-9', '-f', out]);
+await sleep(1000);
 rmSync(log, { force: true });
 const proc = spawn('test/e2e/launch.sh', [], { env, stdio: 'ignore', detached: true });
 const kill = () => {
   try {
-    process.kill(-proc.pid, 'SIGTERM');
+    process.kill(-proc.pid, 'SIGKILL');
   } catch {}
+  spawnSync('pkill', ['-9', '-f', out]);
 };
 
 const t0 = Date.now();

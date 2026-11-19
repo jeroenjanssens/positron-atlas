@@ -36,6 +36,8 @@ export function readSettings(): Settings {
   const c = vscode.workspace.getConfiguration('positronAtlas');
   return {
     maxAnchors: c.get('maxAnchors', 100_000),
+    maxAnchorsCpu: c.get('maxAnchorsCpu', 25_000),
+    useWebGpu: c.get('useWebGpu', true),
     anchorBudget: c.get('anchorBudget', 10_000_000),
     defaultSamplePct: c.get('defaultSamplePct', 100),
     pcaEnabled: c.get('pcaEnabled', false),

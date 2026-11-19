@@ -57,7 +57,11 @@
       parts.push(`UMAP on ${formatCount(p.nAnchors)} anchors${atlas.projection === 'done' ? ', all rows placed' : ''}`);
     }
     const t = atlas.timings;
-    const times = [t.umap && `UMAP ${formatSeconds(t.umap)}`, t.project && `placement ${formatSeconds(t.project)}`].filter(Boolean);
+    const times = [
+      t.umap && `UMAP ${formatSeconds(t.umap)}${atlas.useGpu ? ' (GPU)' : ''}`,
+      t.update && `update ${formatSeconds(t.update)}`,
+      t.project && `placement ${formatSeconds(t.project)}`,
+    ].filter(Boolean);
     if (times.length) parts.push(times.join(', '));
     return parts.join(' · ');
   });

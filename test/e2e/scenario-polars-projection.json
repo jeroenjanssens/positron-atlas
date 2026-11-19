@@ -2,10 +2,41 @@
   "variable": "big",
   "setup": "import numpy as np, polars as pl\nrng = np.random.default_rng(1)\nn, d = 300_000, 50\nk = rng.integers(0, 8, n)\ncenters = rng.normal(0, 5, (8, d))\nX = (centers[k] + rng.normal(0, 1, (n, d))).astype('float32')\nbig = pl.DataFrame({f'f{i}': X[:, i] for i in range(d)}).with_columns(pl.Series('group', [f'g{v}' for v in k]), pl.Series('score', X[:, 0] - X[:, 1]))\ndel X\n",
   "steps": [
-    { "name": "color by numeric", "eval": "a.setColorColumn(a.describe.columns.find(c => c.name === 'score').index)", "until": "a.colorMeta && a.colorMeta.kind === 'numeric'", "screenshot": "numeric.png" },
-    { "name": "live min_dist", "eval": "a.umap.minDist = 0.8; a.umapChanged()", "until": "a.phase === 'ready' && a.projection === 'done'", "timeout": 120000, "screenshot": "mindist.png" },
-    { "name": "hover", "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 300, y: 200, world: [xy[0], xy[1]] })", "until": "a.tooltip", "report": "{ row: a.tooltip.row, first: a.tooltip.values[0] }", "screenshot": "hover.png" },
-    { "name": "rebuild n_neighbors", "eval": "a.umap.nNeighbors = 30; a.umapChanged()", "until": "a.phase === 'ready' && a.projection === 'done'", "timeout": 180000 },
-    { "name": "sample 10% + PCA", "eval": "a.prepare.samplePct = 10; a.prepare.pca = true; a.prepare.pcaDims = 20; a.runPrepare()", "until": "a.phase === 'ready' && a.prepared && a.prepared.nSampled === 30000 && a.prepared.dims === 20", "timeout": 120000, "report": "a.prepared", "screenshot": "sampled.png" }
+    {
+      "name": "color by numeric",
+      "eval": "a.setColorColumn(a.describe.columns.find(c => c.name === 'score').index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'numeric'",
+      "screenshot": "numeric.png"
+    },
+    {
+      "name": "live min_dist",
+      "eval": "a.umap.minDist = 0.8; a.umapChanged()",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "screenshot": "mindist.png",
+      "report": "{ timings: a.timings, gpu: a.useGpu }"
+    },
+    {
+      "name": "hover",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 300, y: 200, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip",
+      "report": "{ row: a.tooltip.row, first: a.tooltip.values[0] }",
+      "screenshot": "hover.png"
+    },
+    {
+      "name": "rebuild n_neighbors",
+      "eval": "a.umap.nNeighbors = 30; a.umapChanged()",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 180000,
+      "report": "{ timings: a.timings, gpu: a.useGpu, toast: a.toast }"
+    },
+    {
+      "name": "sample 10% + PCA",
+      "eval": "a.prepare.samplePct = 10; a.prepare.pca = true; a.prepare.pcaDims = 20; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.prepared && a.prepared.nSampled === 30000 && a.prepared.dims === 20",
+      "timeout": 120000,
+      "report": "a.prepared",
+      "screenshot": "sampled.png"
+    }
   ]
 }
