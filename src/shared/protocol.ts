@@ -136,7 +136,7 @@ export type ToWebview =
   | { type: 'status'; task: string; status: JobStatus }
   | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
   | { type: 'xyChunk'; file: FileRef; total: number }
-  | { type: 'projected'; seconds: number; estimateSeconds?: number }
+  | { type: 'projected'; seconds: number; exact?: boolean }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'row'; i: number; row: number; values: [string, string][] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
@@ -148,6 +148,7 @@ export type ToHost =
   | { type: 'prepare'; options: PrepareOptions }
   | { type: 'estimate' }
   | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
+  | { type: 'exact'; params: UmapParams }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'row'; i: number }
   | { type: 'cancel' }

@@ -105,6 +105,18 @@
   <details open>
     <summary>UMAP</summary>
     <div class="section">
+      {#if atlas.describe?.deps?.umap}
+        <label class="select">
+          <span>Compute</span>
+          <select bind:value={atlas.computeMode}>
+            <option value="browser">Browser (live)</option>
+            <option value="kernel">Kernel (umap-learn)</option>
+          </select>
+        </label>
+        {#if atlas.computeMode === 'kernel'}
+          <div class="hint muted">Runs umap-learn on all {formatCount(atlas.nKept)} prepared rows in the kernel. No animation; parameters apply when you click Run.</div>
+        {/if}
+      {/if}
       <Slider label="Neighbors" tag="rebuild" bind:value={atlas.umap.nNeighbors} min={2} max={200} onchange={umapChanged}
         hint="n_neighbors: larger values preserve more global structure. Rebuilds the neighbor graph." />
       <Slider label="Min distance" tag="live" bind:value={atlas.umap.minDist} min={0} max={1} step={0.01} onchange={umapChanged}
@@ -136,7 +148,10 @@
         {/if}
       </details>
       <div class="buttons">
-        {#if atlas.phase === 'embedding'}
+        {#if atlas.computeMode === 'kernel'}
+          <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>
+          {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
+        {:else if atlas.phase === 'embedding'}
           <button onclick={() => atlas.stopUmap()}>Stop</button>
         {:else}
           <button disabled={!atlas.prepared} onclick={() => atlas.startUmap()}>Restart</button>

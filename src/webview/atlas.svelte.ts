@@ -69,6 +69,8 @@ export class Atlas {
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
   useGpu = $state(false);
+  /** 'browser': live WASM UMAP; 'kernel': exact umap-learn in the kernel (if installed). */
+  computeMode = $state<'browser' | 'kernel'>('browser');
   gpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
   // ---- non-reactive data -------------------------------------------------------------
@@ -147,11 +149,7 @@ export class Atlas {
         await this.onXYChunk(msg.file);
         break;
       case 'projected':
-        this.projection = 'done';
-        this.projectProgress = 1;
-        this.timings = { ...this.timings, project: msg.seconds };
-        this.hit = null;
-        this.render();
+        this.onProjected(msg.seconds, !!msg.exact);
         break;
       case 'colors':
         await this.onColors(msg.column, msg.file, msg.meta);
@@ -165,8 +163,9 @@ export class Atlas {
         this.error = { message: msg.message, detail: msg.detail, fatal: msg.fatal };
         if (msg.fatal) {
           this.phase = 'error';
-        } else if (this.phase === 'preparing') {
+        } else if (this.phase === 'preparing' || (this.phase === 'embedding' && this.computeMode === 'kernel')) {
           this.phase = this.prepared ? 'ready' : 'error';
+          this.umapProgress = null;
         }
         if (this.projection === 'running') {
           this.projection = 'stale';
@@ -288,7 +287,7 @@ export class Atlas {
 
   /** Called when UMAP controls change; rebuilds or applies live. */
   umapChanged(): void {
-    if (!this.appliedUmap || !this.anchors) {
+    if (this.computeMode === 'kernel' || !this.appliedUmap || !this.anchors) {
       return;
     }
     const next = $state.snapshot(this.umap) as UmapParams;
@@ -361,6 +360,47 @@ export class Atlas {
     this.projectProgress = 0;
     this.placedRows = 0;
     vscode.post({ type: 'project', anchorXY: float32ToBase64(this.anchorXY), metric: this.umap.metric, seed: this.umap.seed });
+  }
+
+  /** Exact UMAP of all prepared rows with umap-learn in the kernel. */
+  runExact(): void {
+    if (!this.prepared) {
+      return;
+    }
+    this.stopWorker();
+    this.allXY = new Float32Array(this.prepared.nKept * 2);
+    this.placedRows = 0;
+    this.projection = 'running';
+    this.projectProgress = 0;
+    this.phase = 'embedding';
+    this.umapProgress = { stage: 'umap-learn (kernel)', progress: 0, epoch: 0, total: 0 };
+    this.hit = null;
+    this.tooltip = null;
+    vscode.post({ type: 'exact', params: $state.snapshot(this.umap) as UmapParams });
+  }
+
+  private onProjected(seconds: number, exact: boolean): void {
+    this.projectProgress = 1;
+    this.hit = null;
+    if (exact && this.prepared && this.allXY && this.anchorPos) {
+      // Keep the anchor view consistent with the kernel layout.
+      const a = new Float32Array(this.prepared.nAnchors * 2);
+      for (let i = 0; i < this.anchorPos.length; i++) {
+        a[2 * i] = this.allXY[2 * this.anchorPos[i]];
+        a[2 * i + 1] = this.allXY[2 * this.anchorPos[i] + 1];
+      }
+      this.anchorXY = a;
+      this.placedRows = this.prepared.nKept;
+      this.phase = 'ready';
+      this.umapProgress = null;
+      this.autoFit = true;
+      this.timings = { ...this.timings, umap: seconds, project: 0 };
+      this.projection = this.prepared.needsProjection ? 'done' : 'none';
+    } else {
+      this.timings = { ...this.timings, project: seconds };
+      this.projection = 'done';
+    }
+    this.render();
   }
 
   cancelKernel(): void {

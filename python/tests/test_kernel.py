@@ -279,3 +279,26 @@ def test_list_frames(ns):
 def test_unknown_job():
     r = J(pak.status("nope"))
     assert not r["ok"] and "Unknown job" in r["error"]
+
+
+def test_exact_umap_missing_dependency_or_runs(ns, tmp_path):
+    import importlib.util
+
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    pak.exact_umap(jid, json.dumps({"nNeighbors": 10, "nEpochs": 20, "seed": 0}))
+    st = wait(jid, timeout=300)
+    if importlib.util.find_spec("umap") is None:
+        assert st["stage"] == "error" and "umap-learn is not installed" in st["error"]
+    else:
+        assert st["stage"] == "done", st
+        assert pak._JOBS[jid].xy.shape == (3000, 2)
+
+
+def test_write_xy_chunks(ns, tmp_path):
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    job = pak._JOBS[jid]
+    xy = np.arange(10, dtype=np.float32).reshape(5, 2)
+    assert pak._write_xy_chunks(job, xy, chunk_rows=2) == 3
+    offsets = [o["offset"] for o in job.outputs if o["kind"] == "xy"]
+    assert offsets == [0, 2, 4]
+    np.testing.assert_array_equal(np.fromfile(tmp_path / "xy_0002.f32", dtype="<f4"), [8, 9])

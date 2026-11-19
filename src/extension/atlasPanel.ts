@@ -177,37 +177,24 @@ export class AtlasPanel {
       }
       case 'estimate': {
         const r = await this.bridge.call<{ flops: number; rows: number }>('estimate_projection', this.requireJob());
-        // Rough sustained numpy throughput incl. top-k selection; refined from benchmarks.
-        this.post({ type: 'estimate', seconds: r.flops / 2e10 + r.rows / 4e5, rows: r.rows });
+        // Fitted to python/bench.py on an M4 Pro (numpy only): per-row top-k cost dominates.
+        this.post({ type: 'estimate', seconds: 1.2e-5 * r.rows + 2.2e-11 * r.flops, rows: r.rows });
         break;
       }
       case 'project': {
         const job = this.requireJob();
-        const token = this.newToken();
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
         await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
-        await this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed }));
-        const seen = new Set<string>();
-        const s = await this.bridge.waitForJob(
-          job,
-          (st) => {
-            this.post({ type: 'status', task: 'project', status: st });
-            for (const o of st.outputs) {
-              if (o.kind === 'xy' && !seen.has(o.file)) {
-                seen.add(o.file);
-                this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: st.result?.nRows ?? 0 });
-              }
-            }
-          },
-          token,
-        );
-        await fs.rm(xyPath, { force: true });
-        if (s.stage === 'done') {
-          this.projectionCurrent = true;
-          this.post({ type: 'projected', seconds: s.result?.seconds ?? 0 });
-        } else if (s.stage === 'error') {
-          throw new KernelError(s.error ?? 'Projection failed', s.result?.traceback);
+        try {
+          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed })), false);
+        } finally {
+          await fs.rm(xyPath, { force: true });
         }
+        break;
+      }
+      case 'exact': {
+        const job = this.requireJob();
+        await this.runXYTask('exact', () => this.bridge.call('exact_umap', job, JSON.stringify(m.params)), true);
         break;
       }
       case 'colors': {
@@ -283,6 +270,34 @@ export class AtlasPanel {
       case 'log':
         this.ctx.log[m.level](`[webview ${this.state.variable}] ${m.message}`);
         break;
+    }
+  }
+
+  /** Run a kernel task that writes xy chunk files, streaming them to the webview. */
+  private async runXYTask(task: string, start: () => Promise<unknown>, exact: boolean): Promise<void> {
+    const job = this.requireJob();
+    const token = this.newToken();
+    this.projectionCurrent = false;
+    await start();
+    const seen = new Set<string>();
+    const s = await this.bridge.waitForJob(
+      job,
+      (st) => {
+        this.post({ type: 'status', task, status: st });
+        for (const o of st.outputs) {
+          if (o.kind === 'xy' && !seen.has(o.file)) {
+            seen.add(o.file);
+            this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: st.result?.nRows ?? 0 });
+          }
+        }
+      },
+      token,
+    );
+    if (s.stage === 'done') {
+      this.projectionCurrent = true;
+      this.post({ type: 'projected', seconds: s.result?.seconds ?? 0, exact });
+    } else if (s.stage === 'error') {
+      throw new KernelError(s.error ?? `${task} failed`, s.result?.traceback);
     }
   }
 

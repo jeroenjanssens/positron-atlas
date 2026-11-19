@@ -1,0 +1,9 @@
+**
+!dist/extension.js
+!dist/webview/**
+!python/positron_atlas_kernel.py
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!media/icon.png

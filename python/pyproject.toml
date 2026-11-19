@@ -6,7 +6,14 @@ requires-python = ">=3.10"
 dependencies = ["numpy"]
 
 [dependency-groups]
-dev = ["pytest", "pandas", "polars", "pyarrow", "scikit-learn"]
+dev = [
+    "pytest",
+    "pandas",
+    "polars",
+    "pyarrow",
+    "scikit-learn",
+    "umap-learn>=0.6.0",
+]
 
 [tool.uv]
 package = false

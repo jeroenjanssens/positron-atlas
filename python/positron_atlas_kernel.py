@@ -815,6 +815,53 @@ def project(job_id: str, anchor_xy_path: str, opts_json: str = "{}") -> str:
     return _json({"ok": True, "jobId": job.id})
 
 
+def _write_xy_chunks(job: _Job, xy: np.ndarray, chunk_rows: int = 1_000_000) -> int:
+    n_files = 0
+    for start in range(0, len(xy), chunk_rows):
+        stop = min(len(xy), start + chunk_rows)
+        fname = f"xy_{n_files:04d}.f32"
+        _write(job, fname, xy[start:stop])
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[stop - start, 2], offset=start)
+        n_files += 1
+    return n_files
+
+
+def _exact_impl(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
+    """Full UMAP on all prepared rows with umap-learn (optional dependency)."""
+    if job.features is None:
+        raise RuntimeError("Run prepare first.")
+    try:
+        import umap  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("umap-learn is not installed in this Python environment.") from e
+    job.set("umap-learn", 0.05, f"Running umap-learn on {len(job.features):,} rows (no progress available)")
+    t0 = time.time()
+    reducer = umap.UMAP(
+        n_neighbors=int(params.get("nNeighbors", 15)),
+        min_dist=float(params.get("minDist", 0.1)),
+        spread=float(params.get("spread", 1.0)),
+        metric=str(params.get("metric", "euclidean")),
+        n_epochs=int(params.get("nEpochs", 200)),
+        repulsion_strength=float(params.get("repulsionStrength", 1.0)),
+        negative_sample_rate=int(params.get("negativeSampleRate", 5)),
+        learning_rate=float(params.get("learningRate", 1.0)),
+        random_state=int(params["seed"]) if params.get("seed") is not None else None,
+    )
+    xy = np.ascontiguousarray(reducer.fit_transform(np.asarray(job.features)), dtype=np.float32)
+    job.set("writing", 0.95, "Writing coordinates")
+    job.xy = xy
+    files = _write_xy_chunks(job, xy)
+    return {"nRows": int(len(xy)), "files": files, "seconds": time.time() - t0}
+
+
+@_guard
+def exact_umap(job_id: str, params_json: str = "{}") -> str:
+    job = _get(job_id)
+    params = json.loads(params_json)
+    job.run("exact", lambda: _exact_impl(job, params))
+    return _json({"ok": True, "jobId": job.id})
+
+
 @_guard
 def estimate_projection(job_id: str) -> str:
     """Rough cost estimate (flops) for projecting; the extension turns it into seconds."""

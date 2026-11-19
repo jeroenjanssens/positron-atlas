@@ -52,6 +52,7 @@ input:focus, select:focus, button:focus-visible { outline: 1px solid var(--accen
 .tag.live { color: var(--vscode-charts-green, #89d185); border-color: currentColor; }
 .tag.rebuild { color: var(--vscode-charts-yellow, #cca700); border-color: currentColor; }
 .hint { font-size: 0.85em; color: var(--vscode-editorWarning-foreground, #cca700); }
+.hint.muted { color: var(--muted); }
 
 button { background: var(--btn-bg); color: var(--btn-fg); border: none; padding: 4px 10px; border-radius: 2px; cursor: pointer; font: inherit; text-align: center; }
 button:hover:not(:disabled) { background: var(--btn-hover); }
