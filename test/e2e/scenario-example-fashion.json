@@ -6,6 +6,14 @@
       "name": "default",
       "report": "{ prepared: a.prepared, timings: a.timings, meta: a.colorMeta && a.colorMeta.categories }",
       "screenshot": "fashion.png"
+    },
+    {
+      "name": "images",
+      "eval": "a.setView({ images: true }); const xy = a['anchorXY']; const hover = a['onPointer'].bind(a); hover({ x: 380, y: 160, world: [xy[0], xy[1]] }); a['onPointer'] = (p) => { if (!a.tooltip || !a.tooltip.image) hover(p); };",
+      "until": "a.tooltip && a.tooltip.image",
+      "timeout": 30000,
+      "report": "{ shape: a.imageShape, pixels: a.tooltip.image.length, max: Math.max(...a.tooltip.image), table: a.tooltip.values.map(v => v[0]), canvas: !!document.querySelector('.tooltip canvas.pixel-image') }",
+      "screenshot": "fashion-image.png"
     }
   ]
 }

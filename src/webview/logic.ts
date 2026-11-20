@@ -105,3 +105,86 @@ export function toHex(color: string): string {
   if (m) return '#' + [m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('');
   return '#1e1e1e';
 }
+
+export interface ImageColumns {
+  /** Column indices in pixel order. */
+  indices: number[];
+  prefix: string;
+  first: string;
+  last: string;
+}
+
+/**
+ * Find the pixel columns of image data: the largest group of numeric columns whose
+ * names are a common prefix plus a number (e.g. px0 … px783), sorted by that number.
+ */
+export function detectImageColumns(columns: { index: number; name: string; kind: string }[], minCount = 16): ImageColumns | null {
+  const groups = new Map<string, { n: number; index: number; name: string }[]>();
+  for (const c of columns) {
+    if (c.kind !== 'numeric') continue;
+    const m = /^(.*?)(\d+)$/.exec(c.name);
+    if (!m) continue;
+    const list = groups.get(m[1]) ?? [];
+    list.push({ n: Number(m[2]), index: c.index, name: c.name });
+    groups.set(m[1], list);
+  }
+  let best: [string, { n: number; index: number; name: string }[]] | null = null;
+  for (const entry of groups) {
+    if (!best || entry[1].length > best[1].length) best = entry;
+  }
+  if (!best || best[1].length < minCount) return null;
+  const sorted = [...best[1]].sort((a, b) => a.n - b.n);
+  return { indices: sorted.map((c) => c.index), prefix: best[0], first: sorted[0].name, last: sorted[sorted.length - 1].name };
+}
+
+/** Default image width for n pixels: the square root when n is a perfect square. */
+export function guessImageWidth(n: number): number {
+  const s = Math.round(Math.sqrt(n));
+  return s * s === n ? s : Math.max(1, Math.round(Math.sqrt(n)));
+}
+
+/**
+ * Grayscale pixels → RGBA. Values in [0, 1] map to black–white, values up to 255 are
+ * treated as 8-bit intensities, anything else is scaled by its own range. Missing → transparent.
+ */
+export function imageToRgba(values: (number | null)[], width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
+  const n = width * height;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < Math.min(n, values.length); i++) {
+    const v = values[i];
+    if (v === null || !Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (!Number.isFinite(lo)) {
+    lo = 0;
+    hi = 1;
+  }
+  const low = lo >= 0 ? 0 : lo;
+  const high = hi <= 1 && lo >= 0 ? 1 : hi <= 255 && lo >= 0 ? 255 : hi;
+  const span = high > low ? high - low : 1;
+  const out = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    const v = values[i];
+    if (v === null || v === undefined || !Number.isFinite(v)) continue;
+    const g = Math.round(((v - low) / span) * 255);
+    out[4 * i] = g;
+    out[4 * i + 1] = g;
+    out[4 * i + 2] = g;
+    out[4 * i + 3] = 255;
+  }
+  return out;
+}
+
+/**
+ * Position (along one axis) for a tooltip of size `size` near a cursor at `at` inside
+ * a container of size `container`: after the cursor, before it if that overflows, and
+ * clamped to the container.
+ */
+export function placeTooltip(at: number, size: number, container: number, gap = 14): number {
+  if (at + gap + size <= container) return at + gap;
+  const before = at - gap - size;
+  if (before >= 0) return before;
+  return Math.max(0, Math.min(container - size, at + gap));
+}

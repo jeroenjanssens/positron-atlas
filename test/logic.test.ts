@@ -60,3 +60,53 @@ describe('toHex', () => {
     expect(toHex('nonsense')).toBe('#1e1e1e');
   });
 });
+
+import { detectImageColumns, guessImageWidth, imageToRgba } from '../src/webview/logic';
+
+describe('image helpers', () => {
+  const cols = [
+    ...Array.from({ length: 784 }, (_, i) => ({ index: i + 1, name: `px${i}`, kind: 'numeric' })),
+    { index: 0, name: 'id', kind: 'numeric' },
+    { index: 785, name: 'label', kind: 'categorical' },
+    { index: 786, name: 'ink', kind: 'numeric' },
+    { index: 787, name: 'f1', kind: 'numeric' },
+  ];
+
+  it('detects pixel columns in numeric order', () => {
+    const shuffled = [...cols].reverse();
+    const d = detectImageColumns(shuffled)!;
+    expect(d.indices.length).toBe(784);
+    expect(d.indices[0]).toBe(1);
+    expect(d.indices[783]).toBe(784);
+    expect(d.prefix).toBe('px');
+    expect([d.first, d.last]).toEqual(['px0', 'px783']);
+    expect(detectImageColumns([{ index: 0, name: 'a1', kind: 'numeric' }])).toBeNull();
+  });
+
+  it('guesses the width', () => {
+    expect(guessImageWidth(784)).toBe(28);
+    expect(guessImageWidth(64)).toBe(8);
+    expect(guessImageWidth(100 * 50)).toBe(71);
+  });
+
+  it('converts pixels to RGBA', () => {
+    const px = imageToRgba([0, 255, 127.5, null], 2, 2);
+    expect(Array.from(px.slice(0, 4))).toEqual([0, 0, 0, 255]);
+    expect(Array.from(px.slice(4, 8))).toEqual([255, 255, 255, 255]);
+    expect(px[8]).toBe(128);
+    expect(px[15]).toBe(0); // missing → transparent
+    expect(Array.from(imageToRgba([0, 1], 2, 1).slice(4, 7))).toEqual([255, 255, 255]); // [0, 1] range
+    expect(Array.from(imageToRgba([-1, 1], 2, 1).slice(0, 3))).toEqual([0, 0, 0]); // own range
+  });
+});
+
+import { placeTooltip } from '../src/webview/logic';
+
+describe('placeTooltip', () => {
+  it('stays inside the container', () => {
+    expect(placeTooltip(100, 50, 400)).toBe(114); // after the cursor
+    expect(placeTooltip(380, 50, 400)).toBe(316); // flipped before the cursor
+    expect(placeTooltip(20, 300, 320)).toBe(20); // too big on both sides: clamped
+    expect(placeTooltip(200, 500, 320)).toBe(0);
+  });
+});

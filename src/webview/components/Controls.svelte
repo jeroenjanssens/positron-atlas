@@ -224,6 +224,22 @@
           <button class="link" disabled={!atlas.view.background} title="Follow the color theme" onclick={() => atlas.setView({ background: '' })}>Theme</button>
         </span>
       </label>
+      <label class="check" title={atlas.imageColumns ? `Pixel columns ${atlas.imageColumns.first} … ${atlas.imageColumns.last}` : 'No pixel columns found (numeric columns named like px0, px1, …)'}>
+        <input type="checkbox" checked={atlas.view.images} disabled={!atlas.imageColumns}
+          onchange={(e) => atlas.setView({ images: (e.target as HTMLInputElement).checked })} />
+        Points are images
+      </label>
+      {#if atlas.view.images && atlas.imageColumns && atlas.imageShape}
+        <label class="select">
+          <span>Image width</span>
+          <span class="inline">
+            <input class="num" type="number" min="1" max={atlas.imageColumns.indices.length} value={atlas.imageShape[0]}
+              onchange={(e) => atlas.setView({ imageWidth: Math.max(1, Number((e.target as HTMLInputElement).value) || 0) })} />
+            <span class="muted-text">× {atlas.imageShape[1]}</span>
+          </span>
+        </label>
+        <div class="hint muted">{atlas.imageColumns.indices.length.toLocaleString()} pixel columns ({atlas.imageColumns.first} … {atlas.imageColumns.last}). Hover a point to see its image.</div>
+      {/if}
       <button onclick={() => atlas.fitView()}>Fit to view</button>
     </div>
   </details>

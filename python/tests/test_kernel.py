@@ -360,3 +360,19 @@ def test_category_order(ns, tmp_path, kind):
     assert J(pak.colors(jid, 2))["meta"]["categories"] == ["b", "c", "a"]  # by frequency
     k = J(pak.colors(jid, 3))["meta"]["categories"]  # small ints -> numeric order
     assert k in (["1", "2", "3"], ["1.0", "2.0", "3.0"])
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars"])
+def test_row_with_image(ns, tmp_path, kind):
+    pixels = np.arange(2 * 16, dtype=np.uint8).reshape(2, 16)
+    cols = {f"px{i}": pixels[:, i] for i in range(16)}
+    cols["label"] = ["a", "b"]
+    ns["df"] = pd.DataFrame(cols) if kind == "pandas" else pl.DataFrame(cols)
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": list(range(16)), "standardize": False}))
+    wait(jid)
+    r = J(pak.row(jid, 1, list(range(16))))
+    assert r["image"] == [float(v) for v in pixels[1]]
+    assert [k for k, _ in r["values"]] == ["label"]  # pixel columns are not repeated in the table
+    plain = J(pak.row(jid, 1))
+    assert "image" not in plain and len(plain["values"]) == 17

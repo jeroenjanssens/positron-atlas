@@ -3,12 +3,23 @@
   import { Atlas } from './atlas.svelte';
   import Controls from './components/Controls.svelte';
   import Legend from './components/Legend.svelte';
-  import { formatCount, formatSeconds } from './logic';
+  import PixelImage from './components/PixelImage.svelte';
+  import { formatCount, formatSeconds, placeTooltip } from './logic';
 
   const atlas = new Atlas();
   // Exposed for end-to-end tests (test/e2e).
   (window as any).__atlas = atlas;
   let plot: HTMLDivElement;
+  let mainW = $state(0);
+  let mainH = $state(0);
+  let ttW = $state(0);
+  let ttH = $state(0);
+  // Keep the tooltip inside the plot: flip to the other side of the cursor near the edges.
+  const ttPos = $derived.by(() => {
+    const t = atlas.tooltip;
+    if (!t) return { left: 0, top: 0 };
+    return { left: placeTooltip(t.x, ttW, mainW), top: placeTooltip(t.y, ttH, mainH - 24) };
+  });
   let collapsed = $state(false);
 
   onMount(() => {
@@ -71,13 +82,16 @@
   <aside>
     {#if !collapsed}<Controls {atlas} />{/if}
   </aside>
-  <main>
+  <main bind:clientWidth={mainW} bind:clientHeight={mainH}>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
     <div class="plot" bind:this={plot} style:background={atlas.view.background || null}></div>
     <Legend {atlas} />
     {#if atlas.tooltip}
-      <div class="tooltip" style="left:{atlas.tooltip.x + 14}px; top:{atlas.tooltip.y + 14}px">
+      <div class="tooltip" bind:clientWidth={ttW} bind:clientHeight={ttH} style="left:{ttPos.left}px; top:{ttPos.top}px">
         <div class="tt-title">Row {formatCount(atlas.tooltip.row)}</div>
+        {#if atlas.tooltip.image && atlas.imageShape}
+          <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} />
+        {/if}
         <table>
           <tbody>
             {#each atlas.tooltip.values.slice(0, 16) as [k, v]}

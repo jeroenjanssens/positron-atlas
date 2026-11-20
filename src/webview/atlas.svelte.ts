@@ -17,7 +17,7 @@ import { ScatterRenderer, type PointSet } from './render/renderer';
 import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
 import { DEFAULT_POINT_COLOR } from './color/colormaps';
-import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex } from './logic';
+import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
 export { DEFAULT_UMAP };
@@ -29,6 +29,10 @@ export interface ViewOptions {
   colormap: string;
   /** Plot background as a hex color; '' follows the theme's editor background. */
   background: string;
+  /** Show each row as an image in the hover tooltip. */
+  images: boolean;
+  /** Image width in pixels; 0 = automatic (square). */
+  imageWidth: number;
 }
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
@@ -55,7 +59,7 @@ export class Atlas {
   });
   applied = $state.raw<PrepareOptions | null>(null);
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
-  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '' });
+  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0 });
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
@@ -67,7 +71,7 @@ export class Atlas {
   projectProgress = $state(0);
   estimate = $state.raw<{ seconds: number; rows: number } | null>(null);
   error = $state.raw<{ message: string; detail?: string; fatal?: boolean } | null>(null);
-  tooltip = $state.raw<{ x: number; y: number; row: number; values: [string, string][] } | null>(null);
+  tooltip = $state.raw<{ x: number; y: number; row: number; values: [string, string][]; image?: (number | null)[] } | null>(null);
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
   useGpu = $state(false);
@@ -152,6 +156,20 @@ export class Atlas {
     return !this.applied || JSON.stringify(this.applied) !== JSON.stringify($state.snapshot(this.prepare));
   }
 
+  /** Pixel columns detected in the DataFrame (largest prefix+number group), if any. */
+  get imageColumns(): ImageColumns | null {
+    return this.describe ? detectImageColumns(this.describe.columns) : null;
+  }
+
+  /** Effective image size [width, height] for the detected pixel columns. */
+  get imageShape(): [number, number] | null {
+    const cols = this.imageColumns;
+    if (!cols) return null;
+    const n = cols.indices.length;
+    const w = this.view.imageWidth > 0 ? Math.min(this.view.imageWidth, n) : guessImageWidth(n);
+    return [w, Math.ceil(n / w)];
+  }
+
   get numericColumns() {
     return (this.describe?.columns ?? []).filter((c) => c.kind === 'numeric' || c.kind === 'bool');
   }
@@ -186,7 +204,7 @@ export class Atlas {
         break;
       case 'row':
         if (this.pendingHover) {
-          this.tooltip = { ...this.pendingHover, row: msg.row, values: msg.values };
+          this.tooltip = { ...this.pendingHover, row: msg.row, values: msg.values, image: msg.image };
         }
         break;
       case 'error':
@@ -522,6 +540,9 @@ export class Atlas {
   // ---- rendering ---------------------------------------------------------------------
   setView(v: Partial<ViewOptions>): void {
     const cmapChanged = v.colormap !== undefined && v.colormap !== this.view.colormap;
+    if (v.images !== undefined && v.images !== this.view.images) {
+      this.tooltip = null;
+    }
     this.view = { ...this.view, ...v };
     this.renderer?.setStyle(this.view);
     if (cmapChanged) {
@@ -600,7 +621,8 @@ export class Atlas {
     this.hoverTimer = setTimeout(() => {
       if (seq === this.hoverSeq) {
         this.pendingHover = { x: p.x, y: p.y };
-        vscode.post({ type: 'row', i: kept });
+        const image = this.view.images ? this.imageColumns?.indices : undefined;
+        vscode.post({ type: 'row', i: kept, imageColumns: image });
       }
     }, 120);
   }

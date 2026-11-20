@@ -130,7 +130,7 @@ export interface PanelState {
   prepare?: PrepareOptions;
   umap?: UmapParams;
   colorColumn?: number | null;
-  view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string };
+  view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number };
 }
 
 export type ToWebview =
@@ -140,7 +140,7 @@ export type ToWebview =
   | { type: 'xyChunk'; file: FileRef; total: number }
   | { type: 'projected'; seconds: number; exact?: boolean }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
-  | { type: 'row'; i: number; row: number; values: [string, string][] }
+  | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
   | { type: 'coordsAdded'; variable: string; columns: string[] }
   | { type: 'estimate'; seconds: number; rows: number };
@@ -152,7 +152,7 @@ export type ToHost =
   | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
   | { type: 'exact'; params: UmapParams }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
-  | { type: 'row'; i: number }
+  | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'cancel' }
   | { type: 'addCoordinates'; anchorXY: string | null /* base64 float32 */; useProjection: boolean }
   | { type: 'reload' }

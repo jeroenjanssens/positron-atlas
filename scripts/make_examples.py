@@ -130,6 +130,7 @@ pixels.shape, labels.shape'''
 MNIST_THINGS = """\
 - **Color by `label`.** This is the default, because it is the first low-cardinality categorical column. With the recommended settings below, the ten digits form separate islands. Look for the 4/7/9 and 3/5/8 neighborhoods.
 - **Color by `ink`.** Within each digit, the layout often orders thin to bold strokes.
+- **Turn on *Points are images*** in the **Display** section, then hover a point to see the digit itself. Atlas finds the 784 pixel columns (`px0` … `px783`) and shows them as a 28 × 28 image.
 - **Hover** a point to see its row, including its label and split.
 - **Drag *Min distance*** to 0 for tight clusters, or to 0.8 for a smoother map. The change applies live.
 - **Set *Neighbors*** to 50 or more for more global structure. This rebuilds the graph."""
@@ -148,6 +149,7 @@ For a much sharper map, in the **Data** section:
 UMAP then runs on all 70,000 rows: about 4 s with WebGPU (the default when available). Without a GPU, also lower **Sample rows** to about 30 %."""
 
 FASHION_THINGS = """\
+- **Turn on *Points are images*** in the **Display** section and hover the points to see the clothing items. Try the boundary between shirts and T-shirts.
 - **Color by `label`.** Footwear (sandal, sneaker, ankle boot) and bags separate cleanly. Tops (T-shirt/top, pullover, coat, shirt) overlap much more than digits do in MNIST.
 - **Compare *Metric*** euclidean with cosine, which is less sensitive to overall brightness.
 - **Color by `ink`.** It explains much of the variation inside the tops cluster.

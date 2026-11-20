@@ -992,12 +992,23 @@ def colors(job_id: str, col: int, force_categorical: bool = False) -> str:
 
 
 @_guard
-def row(job_id: str, i: int) -> str:
+def row(job_id: str, i: int, image_cols: list[int] | None = None) -> str:
+    """One row for the hover tooltip; optionally also the raw values of the image columns."""
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
     orig = int(job.kept_idx[int(i)])
-    return _json({"ok": True, "row": orig, "values": job.frame.row(orig)[:200]})
+    out: dict[str, Any] = {"ok": True, "row": orig}
+    if image_cols:
+        cols = [int(c) for c in image_cols]
+        skip = set(cols)
+        values = job.frame.row(orig)
+        out["values"] = [v for j, v in enumerate(values) if j not in skip][:200]
+        out["image"] = [round(float(v), 4) for v in job.frame.block(cols, np.array([orig]))[0]]
+        out["imageColumns"] = len(cols)
+    else:
+        out["values"] = job.frame.row(orig)[:200]
+    return _json(out)
 
 
 @_guard

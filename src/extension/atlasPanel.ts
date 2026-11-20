@@ -276,8 +276,13 @@ export class AtlasPanel {
         break;
       }
       case 'row': {
-        const r = await this.bridge.call<{ row: number; values: [string, string][] }>('row', this.requireJob(), m.i);
-        this.post({ type: 'row', i: m.i, row: r.row, values: r.values });
+        const r = await this.bridge.call<{ row: number; values: [string, string][]; image?: (number | null)[] }>(
+          'row',
+          this.requireJob(),
+          m.i,
+          m.imageColumns ?? null,
+        );
+        this.post({ type: 'row', i: m.i, row: r.row, values: r.values, image: r.image });
         break;
       }
       case 'cancel':
