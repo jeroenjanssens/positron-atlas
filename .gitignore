@@ -14,3 +14,8 @@ datasets/
 .venv-e2e/
 snowflake.log
 *.log
+
+# Quarto render output
+examples/ggumap.html
+examples/ggumap_cache/
+examples/ggumap_files/
