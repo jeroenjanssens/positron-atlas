@@ -44,13 +44,24 @@ Positron does not yet let extensions add items to the Variables pane itself, so 
 
 The `examples/` folder in the source repository has notebooks with real data: MNIST and Fashion-MNIST (70,000 × 784 each) and Covertype (581,012 rows), all as polars DataFrames. Each one downloads its dataset once and needs only numpy and polars.
 
+### Anchors
+
+UMAP runs in the browser on the *anchors*, a random subset of the (sampled) rows. Every other row is placed in the kernel at the weighted average position of its 10 nearest anchors (measured in the original feature space). By default the number of anchors is the smallest of:
+
+- 100,000 with WebGPU, or 25,000 on the CPU (settings `positronAtlas.maxAnchors` and `positronAtlas.maxAnchorsCpu`),
+- 10 million values ÷ the number of dimensions (`positronAtlas.anchorBudget`; with 785 columns that is about 12,700, so apply PCA for wide data),
+- the number of rows.
+
+The **Anchors** slider in the Data section changes it per tab, within the last two limits. When every row is an anchor, no placement is needed.
+
 ### Controls
 
 | Section | Control | Effect |
 |---|---|---|
-| Data | Features, sample %, standardize, PCA, missing values, seed | Click **Apply** to re-prepare in the kernel |
+| Data | Features, sample %, standardize, PCA, anchors, missing values, seed | Click **Apply** to re-prepare in the kernel |
 | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
 | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
+| UMAP | Pause, +1 / +10 epochs, resume, done; restart paused | Step through the optimization epoch by epoch |
 | Color | Color by, treat as categories, colormap, range | Recolors |
 | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors), fit to view | Rendering only |
 | Actions | Place all rows, add coordinates, export PNG, copy as Python | |

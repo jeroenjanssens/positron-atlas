@@ -31,16 +31,6 @@ export function lowerBound(sorted: ArrayLike<number>, value: number): number {
   return lo;
 }
 
-/** Sample % slider uses a log scale from 0.1 % to 100 %: position 0..1000. */
-export function sliderToPct(pos: number): number {
-  const v = Math.pow(10, -1 + (3 * pos) / 1000);
-  return v >= 10 ? Math.round(v) : v >= 1 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
-}
-
-export function pctToSlider(pct: number): number {
-  return Math.round(((Math.log10(Math.min(100, Math.max(0.1, pct))) + 1) / 3) * 1000);
-}
-
 export function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }

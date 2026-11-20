@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRebuild, liveChanges, lowerBound, pctToSlider, pythonSnippet, sliderToPct, formatSeconds, toHex } from '../src/webview/logic';
+import { isRebuild, liveChanges, lowerBound, pythonSnippet, formatSeconds, toHex } from '../src/webview/logic';
 import { DEFAULT_UMAP } from '../src/webview/defaults';
 
 describe('umap param classification', () => {
@@ -19,19 +19,6 @@ describe('helpers', () => {
     expect(lowerBound(a, 3)).toBe(1);
     expect(lowerBound(a, 4)).toBe(3);
     expect(lowerBound(a, 8)).toBe(4);
-  });
-
-  it('log slider round-trips the ends and is monotonic', () => {
-    expect(sliderToPct(0)).toBe(0.1);
-    expect(sliderToPct(1000)).toBe(100);
-    expect(sliderToPct(pctToSlider(10))).toBe(10);
-    expect(sliderToPct(pctToSlider(1))).toBe(1);
-    let prev = 0;
-    for (let i = 0; i <= 1000; i += 10) {
-      const v = sliderToPct(i);
-      expect(v).toBeGreaterThanOrEqual(prev);
-      prev = v;
-    }
   });
 
   it('formats seconds', () => {

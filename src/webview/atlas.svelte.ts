@@ -77,6 +77,8 @@ export class Atlas {
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
   useGpu = $state(false);
+  /** The browser UMAP is paused mid-schedule (step through epochs). */
+  paused = $state(false);
   /** Set by probing navigator.gpu.requestAdapter() at startup. */
   gpuAvailable = $state(false);
   /** 'browser': live WASM UMAP; 'kernel': exact umap-learn in the kernel (if installed). */
@@ -243,7 +245,7 @@ export class Atlas {
       pcaDims: saved?.pcaDims ?? settings.pcaDims,
       nanPolicy: saved?.nanPolicy ?? 'drop',
       seed: saved?.seed ?? 42,
-      maxAnchors: this.useGpuFor(settings) ? settings.maxAnchors : Math.min(settings.maxAnchors, settings.maxAnchorsCpu),
+      maxAnchors: saved?.maxAnchors ?? (this.useGpuFor(settings) ? settings.maxAnchors : Math.min(settings.maxAnchors, settings.maxAnchorsCpu)),
       anchorBudget: settings.anchorBudget,
     };
     this.useGpu = this.useGpuFor(settings);
@@ -315,12 +317,13 @@ export class Atlas {
   }
 
   // ---- UMAP --------------------------------------------------------------------------
-  startUmap(): void {
+  startUmap(paused = false): void {
     if (!this.anchors || !this.prepared) {
       return;
     }
     this.runId++;
     this.liveRun = false;
+    this.paused = false;
     this.appliedUmap = $state.snapshot(this.umap) as UmapParams;
     this.phase = 'embedding';
     this.umapProgress = { stage: 'neighbors', progress: 0, epoch: 0, total: this.umap.nEpochs };
@@ -340,6 +343,7 @@ export class Atlas {
       d: this.prepared.dims,
       params: this.appliedUmap,
       gpu: this.useGpu,
+      paused,
     };
     this.worker!.postMessage(msg, [data.buffer]);
   }
@@ -361,6 +365,7 @@ export class Atlas {
     }
     this.phase = 'embedding';
     this.liveRun = true;
+    this.paused = false;
     this.projection = this.prepared?.needsProjection ? 'stale' : 'none';
     this.estimate = null;
     this.hit = null;
@@ -370,8 +375,24 @@ export class Atlas {
     this.worker.postMessage({ type: 'live', runId: this.runId, params: live, epochs } satisfies WorkerIn);
   }
 
+  /** End the schedule now and keep the current layout. */
   stopUmap(): void {
     this.worker?.postMessage({ type: 'stop', runId: this.runId } satisfies WorkerIn);
+  }
+
+  pauseUmap(): void {
+    this.worker?.postMessage({ type: 'pause', runId: this.runId } satisfies WorkerIn);
+  }
+
+  resumeUmap(): void {
+    this.paused = false;
+    this.worker?.postMessage({ type: 'resume', runId: this.runId } satisfies WorkerIn);
+  }
+
+  /** Run `epochs` more epochs of the paused schedule. */
+  stepUmap(epochs: number): void {
+    if (!this.paused) return;
+    this.worker?.postMessage({ type: 'step', runId: this.runId, epochs } satisfies WorkerIn);
   }
 
   private stopWorker(): void {
@@ -389,11 +410,20 @@ export class Atlas {
         break;
       case 'frame':
         this.anchorXY = m.embedding;
+        this.paused = false;
         this.umapProgress = { stage: 'optimizing', progress: 1, epoch: m.epoch, total: m.total };
+        this.render();
+        break;
+      case 'paused':
+        this.anchorXY = m.embedding;
+        this.paused = true;
+        this.hit = null;
+        this.umapProgress = { stage: 'paused', progress: 1, epoch: m.epoch, total: m.total };
         this.render();
         break;
       case 'done':
         this.anchorXY = m.embedding;
+        this.paused = false;
         if (m.seconds) {
           this.timings = this.liveRun ? { ...this.timings, update: m.seconds } : { ...this.timings, umap: m.seconds, update: 0 };
         }
@@ -594,7 +624,7 @@ export class Atlas {
   // ---- hover -------------------------------------------------------------------------
   private onPointer(p: { x: number; y: number; world: [number, number] } | null): void {
     clearTimeout(this.hoverTimer);
-    if (!p || this.phase !== 'ready' || !this.anchorXY || !this.prepared || !this.anchorPos) {
+    if (!p || (this.phase !== 'ready' && !this.paused) || !this.anchorXY || !this.prepared || !this.anchorPos) {
       this.tooltip = null;
       this.pendingHover = null;
       return;

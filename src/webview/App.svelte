@@ -43,6 +43,7 @@
     }
     if (atlas.phase === 'embedding' && atlas.umapProgress) {
       const u = atlas.umapProgress;
+      if (u.stage === 'paused') return `Paused at epoch ${u.epoch}/${u.total}`;
       return u.stage === 'optimizing' ? `Optimizing layout: epoch ${u.epoch}/${u.total}` : `Building neighbor graph (${u.stage}) ${Math.round(u.progress * 100)}%`;
     }
     if (atlas.projection === 'running') return atlas.kernelStatus?.message || `Placing rows… ${Math.round(atlas.projectProgress * 100)}%`;
@@ -52,7 +53,7 @@
     if (atlas.phase === 'preparing') return atlas.kernelStatus?.progress ?? 0;
     if (atlas.phase === 'embedding' && atlas.umapProgress) {
       const u = atlas.umapProgress;
-      return u.stage === 'optimizing' ? u.epoch / Math.max(1, u.total) : u.progress;
+      return u.stage === 'optimizing' || u.stage === 'paused' ? u.epoch / Math.max(1, u.total) : u.progress;
     }
     if (atlas.projection === 'running') return atlas.projectProgress;
     return null;

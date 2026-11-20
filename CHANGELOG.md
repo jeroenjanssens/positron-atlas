@@ -10,5 +10,8 @@
 - Color by any column (continuous colormaps or categories), legend, hover tooltips with row values.
 - "Points are images": hover tooltips show rows of pixel columns (e.g. `px0` … `px783`) as images; the width is detected automatically (square) or can be set, and the colors can be inverted.
 - Tooltips stay inside the plot (they flip to the other side of the cursor near the edges).
+- Step through the optimization: pause, +1 / +10 epochs, resume, done, and "Restart paused" to start from the initial layout.
+- Anchors slider (the number of rows UMAP runs on in the browser), with a time estimate.
+- The sample slider is linear (0.1–100 %).
 - Background color picker for the plot (defaults to the theme's editor background; used for PNG export).
 - Points and additive density modes, PNG export, write coordinates back to the DataFrame, copy equivalent umap-learn code.

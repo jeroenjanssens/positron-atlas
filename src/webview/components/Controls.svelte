@@ -2,7 +2,7 @@
   import type { Atlas } from '../atlas.svelte';
   import Slider from './Slider.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
-  import { formatCount, formatSeconds, pctToSlider, sliderToPct } from '../logic';
+  import { formatCount, formatSeconds } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -14,6 +14,13 @@
   const sampledRows = $derived(Math.max(1, Math.round((nRows * atlas.prepare.samplePct) / 100)));
   const effectiveDims = $derived(atlas.prepare.pca ? Math.min(atlas.prepare.pcaDims, atlas.prepare.features.length) : atlas.prepare.features.length);
   const anchorBudgetRows = $derived(Math.floor((atlas.settings?.anchorBudget ?? 1e7) / Math.max(1, effectiveDims)));
+  // Anchors: the rows UMAP runs on in the browser; the rest are placed by nearest anchors.
+  const anchorMax = $derived(Math.max(1, Math.min(anchorBudgetRows, sampledRows)));
+  const anchorMin = $derived(Math.min(1000, anchorMax));
+  const anchorStep = $derived(anchorMax > 50_000 ? 1000 : anchorMax > 5_000 ? 100 : 10);
+  const anchorValue = $derived(Math.max(anchorMin, Math.min(atlas.prepare.maxAnchors, anchorMax)));
+  // From docs/benchmarks.md: ~0.73 ms per anchor on the CPU, ~0.04 ms on the GPU (200 epochs).
+  const anchorSeconds = $derived((anchorValue * (atlas.useGpu ? 0.045e-3 : 0.73e-3) * atlas.umap.nEpochs) / 200);
   const wideHint = $derived(!atlas.prepare.pca && atlas.prepare.features.length > 50 && anchorBudgetRows < 20_000 && sampledRows > anchorBudgetRows);
   const busy = $derived(atlas.phase === 'preparing' || atlas.phase === 'loading');
 
@@ -72,8 +79,8 @@
           <span><input class="num" type="number" min="0.1" max="100" step="0.1" value={atlas.prepare.samplePct}
               onchange={(e) => (atlas.prepare.samplePct = Math.min(100, Math.max(0.1, Number((e.target as HTMLInputElement).value))))} /> %</span>
         </span>
-        <input type="range" min="0" max="1000" value={pctToSlider(atlas.prepare.samplePct)}
-          oninput={(e) => (atlas.prepare.samplePct = sliderToPct(Number((e.target as HTMLInputElement).value)))} aria-label="Sample percentage" />
+        <input type="range" min="0.1" max="100" step="0.1" value={atlas.prepare.samplePct}
+          oninput={(e) => (atlas.prepare.samplePct = Number((e.target as HTMLInputElement).value))} aria-label="Sample percentage" />
         <span class="fmt">{atlas.prepare.samplePct}% → {formatCount(sampledRows)} rows</span>
       </label>
 
@@ -85,6 +92,23 @@
       {#if wideHint}
         <div class="hint">Wide data: only about {formatCount(anchorBudgetRows)} rows fit in the browser UMAP at {effectiveDims} dimensions. Enabling PCA allows more rows and faster placement.</div>
       {/if}
+      <label class="slider" title="Anchors are the rows UMAP runs on in the browser. The other rows are placed in the kernel next to their nearest anchors. More anchors: more accurate, but slower.">
+        <span class="row">
+          <span class="name">Anchors</span>
+          <input class="num wide" type="number" min={anchorMin} max={anchorMax} step={anchorStep} value={anchorValue}
+            onchange={(e) => (atlas.prepare.maxAnchors = Math.max(1, Math.round(Number((e.target as HTMLInputElement).value) || anchorMin)))} />
+        </span>
+        <input type="range" min={anchorMin} max={anchorMax} step={anchorStep} value={anchorValue}
+          oninput={(e) => (atlas.prepare.maxAnchors = Number((e.target as HTMLInputElement).value))} aria-label="Number of anchors" />
+        <span class="fmt">
+          {#if anchorValue >= sampledRows}
+            UMAP on all {formatCount(sampledRows)} rows
+          {:else}
+            UMAP on {formatCount(anchorValue)} rows, {formatCount(sampledRows - anchorValue)} placed by nearest anchors
+          {/if}
+          · ≈ {formatSeconds(anchorSeconds)} ({atlas.useGpu ? 'GPU' : 'CPU'})
+        </span>
+      </label>
       <label class="select">
         <span>Missing values</span>
         <select bind:value={atlas.prepare.nanPolicy}>
@@ -153,12 +177,26 @@
         {#if atlas.computeMode === 'kernel'}
           <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>
           {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
+        {:else if atlas.paused}
+          <button class="primary" title="Continue to the end of the schedule" onclick={() => atlas.resumeUmap()}>▶ Resume</button>
+          <button title="Run one epoch" onclick={() => atlas.stepUmap(1)}>+1</button>
+          <button title="Run ten epochs" onclick={() => atlas.stepUmap(10)}>+10</button>
+          <button title="Stop here and keep this layout" onclick={() => atlas.stopUmap()}>■ Done</button>
+
         {:else if atlas.phase === 'embedding'}
-          <button onclick={() => atlas.stopUmap()}>Stop</button>
+          <button title="Pause to step through the epochs" disabled={atlas.umapProgress?.stage !== 'optimizing'} onclick={() => atlas.pauseUmap()}>❚❚ Pause</button>
+          <button title="Stop here and keep this layout" onclick={() => atlas.stopUmap()}>■ Stop</button>
         {:else}
           <button disabled={!atlas.prepared} onclick={() => atlas.startUmap()}>Restart</button>
+          <button disabled={!atlas.prepared} title="Start from the initial layout (epoch 0) and step through the epochs" onclick={() => atlas.startUmap(true)}>Restart paused</button>
         {/if}
       </div>
+      {#if atlas.paused && atlas.computeMode === 'browser'}
+        <div class="hint muted">
+          Paused at epoch {atlas.umapProgress?.epoch ?? 0} of {atlas.umapProgress?.total ?? 0}.
+          {#if (atlas.umapProgress?.epoch ?? 0) === 0}This is the initial layout. UMAP's schedule moves no points in epoch 0, so the first +1 changes nothing visible.{/if}
+        </div>
+      {/if}
     </div>
   </details>
 

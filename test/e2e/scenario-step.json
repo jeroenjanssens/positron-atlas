@@ -1,0 +1,71 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "steps": [
+    {
+      "name": "restart paused",
+      "eval": "a.startUmap(true)",
+      "until": "a.paused && a.umapProgress && a.umapProgress.epoch === 0",
+      "timeout": 60000,
+      "report": "{ status: a.umapProgress, x0: a['anchorXY'][0] }",
+      "screenshot": "step-0.png"
+    },
+    {
+      "name": "step +1",
+      "eval": "window.__x = a['anchorXY'][0]; a.stepUmap(1)",
+      "until": "a.paused && a.umapProgress.epoch === 1",
+      "report": "{ epoch: a.umapProgress.epoch, moved: a['anchorXY'][0] !== window.__x }"
+    },
+    {
+      "name": "step +10",
+      "eval": "window.__x = a['anchorXY'][0]; a.stepUmap(10); document.querySelector('.controls .buttons').scrollIntoView()",
+      "until": "a.paused && a.umapProgress.epoch === 11",
+      "report": "{ epoch: a.umapProgress.epoch, moved: a['anchorXY'][0] !== window.__x, buttons: [...document.querySelectorAll('.controls .buttons button')].map(b => b.textContent.trim()) }",
+      "screenshot": "step-11.png"
+    },
+    {
+      "name": "hover while paused",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 100, y: 100, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip",
+      "report": "{ row: a.tooltip.row }"
+    },
+    {
+      "name": "resume",
+      "eval": "a.resumeUmap()",
+      "until": "a.phase === 'ready' && !a.paused",
+      "timeout": 60000,
+      "report": "{ phase: a.phase, timings: a.timings }",
+      "screenshot": "step-done.png"
+    },
+    {
+      "name": "pause while running",
+      "eval": "a.umap.nEpochs = 400; a.startUmap()",
+      "until": "a.umapProgress && a.umapProgress.stage === 'optimizing' && a.umapProgress.epoch > 5",
+      "timeout": 60000
+    },
+    {
+      "name": "pause",
+      "eval": "a.pauseUmap()",
+      "until": "a.paused",
+      "report": "{ status: a.umapProgress }"
+    },
+    {
+      "name": "done from paused",
+      "eval": "a.stopUmap()",
+      "until": "a.phase === 'ready' && !a.paused",
+      "report": "{ phase: a.phase }"
+    },
+    {
+      "name": "anchors 5000",
+      "eval": "a.prepare.maxAnchors = 5000; a.timings = {}; a.runPrepare()",
+      "until": "a.phase === 'ready' && a.prepared && a.prepared.nAnchors === 5000 && a.projection === 'done'",
+      "timeout": 120000,
+      "report": "{ anchors: a.prepared.nAnchors, kept: a.prepared.nKept, projection: a.projection, label: [...document.querySelectorAll('.controls .slider .fmt')].map(e => e.textContent.trim()).find(t => t.includes('UMAP on')) }",
+      "screenshot": "anchors.png"
+    },
+    {
+      "name": "linear sample slider",
+      "report": "(() => { const r = document.querySelector('input[aria-label=\"Sample percentage\"]'); return { min: r.min, max: r.max, step: r.step, value: r.value }; })()"
+    }
+  ]
+}
