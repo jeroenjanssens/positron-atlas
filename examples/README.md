@@ -1,16 +1,16 @@
 # Example notebooks
 
-Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** plus **pandas** or **polars**.
+Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars**.
 
 | Notebook | Data | Rows × features | DataFrame |
 |---|---|---|---|
-| [01-mnist.ipynb](01-mnist.ipynb) | Handwritten digits ([MNIST](https://yann.lecun.com/exdb/mnist/)) | 70,000 × 784 | pandas |
+| [01-mnist.ipynb](01-mnist.ipynb) | Handwritten digits ([MNIST](https://yann.lecun.com/exdb/mnist/)) | 70,000 × 784 | polars |
 | [02-fashion-mnist.ipynb](02-fashion-mnist.ipynb) | Clothing images ([Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist)) | 70,000 × 784 | polars |
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 
 ## Setup
 
-This folder is a [uv](https://docs.astral.sh/uv/) project with everything the notebooks need (numpy, pandas, polars, pyarrow, ipykernel):
+This folder is a [uv](https://docs.astral.sh/uv/) project with everything the notebooks need (numpy, polars, ipykernel):
 
 ```sh
 cd examples

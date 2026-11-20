@@ -3,7 +3,7 @@
     uv run --project python python scripts/make_examples.py
 
 Each notebook downloads a real dataset once (cached in ~/.cache/positron-atlas/datasets)
-and needs only numpy plus pandas or polars.
+and needs only numpy and polars.
 """
 
 import json
@@ -80,18 +80,8 @@ def notebook(cells: list[dict]) -> dict:
     }
 
 
-def mnist_like(*, title, intro, var, lib, base_url, label_names, things, tips):
-    if lib == "pandas":
-        build = f'''\
-import pandas as pd
-
-{var} = pd.DataFrame(pixels, columns=[f"px{{i}}" for i in range(pixels.shape[1])])
-{var}["label"] = pd.Categorical([LABELS[v] for v in labels], categories=LABELS)
-{var}["split"] = np.where(np.arange(len(labels)) < n_train, "train", "test")
-{var}["ink"] = pixels.mean(axis=1)  # average pixel intensity: a numeric column to color by
-{var}.shape'''
-    else:
-        build = f'''\
+def mnist_like(*, title, intro, var, base_url, label_names, things, tips):
+    build = f'''\
 import polars as pl
 
 {var} = pl.from_numpy(pixels, schema=[f"px{{i}}" for i in range(pixels.shape[1])]).with_columns(
@@ -128,7 +118,7 @@ pixels = np.concatenate([train_x, test_x])  # (70000, 784) uint8
 labels = np.concatenate([train_y, test_y])
 pixels.shape, labels.shape'''
             ),
-            md(f"Build a {lib} DataFrame with one column per pixel (784 numeric columns) and a few columns to color by."),
+            md(f"Build a polars DataFrame with one column per pixel (784 numeric columns) and a few columns to color by."),
             code(build),
             md(HOW_TO_OPEN.format(var=var)),
             md(tips),
@@ -229,17 +219,17 @@ covtype.shape'''
 README = """\
 # Example notebooks
 
-Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** plus **pandas** or **polars**.
+Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars**.
 
 | Notebook | Data | Rows × features | DataFrame |
 |---|---|---|---|
-| [01-mnist.ipynb](01-mnist.ipynb) | Handwritten digits ([MNIST](https://yann.lecun.com/exdb/mnist/)) | 70,000 × 784 | pandas |
+| [01-mnist.ipynb](01-mnist.ipynb) | Handwritten digits ([MNIST](https://yann.lecun.com/exdb/mnist/)) | 70,000 × 784 | polars |
 | [02-fashion-mnist.ipynb](02-fashion-mnist.ipynb) | Clothing images ([Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist)) | 70,000 × 784 | polars |
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 
 ## Setup
 
-This folder is a [uv](https://docs.astral.sh/uv/) project with everything the notebooks need (numpy, pandas, polars, pyarrow, ipykernel):
+This folder is a [uv](https://docs.astral.sh/uv/) project with everything the notebooks need (numpy, polars, ipykernel):
 
 ```sh
 cd examples
@@ -264,7 +254,6 @@ def main() -> None:
             title="MNIST handwritten digits (70,000 × 784)",
             intro="Each row is a 28 × 28 grayscale image of a handwritten digit, flattened to 784 pixel columns (0–255). UMAP should separate the ten digits without ever seeing the labels.",
             var="mnist",
-            lib="pandas",
             base_url="https://ossci-datasets.s3.amazonaws.com/mnist/",
             label_names=[str(i) for i in range(10)],
             things=MNIST_THINGS,
@@ -274,7 +263,6 @@ def main() -> None:
             title="Fashion-MNIST (70,000 × 784)",
             intro="Zalando's drop-in replacement for MNIST: 28 × 28 grayscale photos of clothing in ten classes. It is harder than digits, so expect some overlapping classes.",
             var="fashion",
-            lib="polars",
             base_url="https://raw.githubusercontent.com/zalandoresearch/fashion-mnist/master/data/fashion/",
             label_names=["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"],
             things=FASHION_THINGS,
