@@ -216,6 +216,14 @@
           <option value="density">Density (additive)</option>
         </select>
       </label>
+      <label class="select">
+        <span>Background</span>
+        <span class="inline">
+          <input type="color" class="color" value={atlas.plotBackground()} aria-label="Plot background color"
+            oninput={(e) => atlas.setView({ background: (e.target as HTMLInputElement).value })} />
+          <button class="link" disabled={!atlas.view.background} title="Follow the color theme" onclick={() => atlas.setView({ background: '' })}>Theme</button>
+        </span>
+      </label>
       <button onclick={() => atlas.fitView()}>Fit to view</button>
     </div>
   </details>

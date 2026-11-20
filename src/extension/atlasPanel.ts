@@ -122,18 +122,16 @@ export class AtlasPanel {
   }
 
   /** Wait (up to a minute) for the session, or any Python session, to be available. */
-  private async ensureSession(forceOther = false): Promise<void> {
+  private async ensureSession(): Promise<void> {
     const rt = this.ctx.positron.runtime;
     for (let i = 0; i < 120; i++) {
-      const own = forceOther ? undefined : await rt.getSession(this.state.sessionId).then((x) => x, () => undefined);
+      const own = await rt.getSession(this.state.sessionId).then((x) => x, () => undefined);
       if (own) {
         return;
       }
       const sessions = await rt.getActiveSessions();
       const fg = await rt.getForegroundSession();
-      const candidates = [fg, ...sessions].filter(
-        (x): x is NonNullable<typeof x> => !!x && x.runtimeMetadata.languageId === 'python' && (!forceOther || x.metadata.sessionId !== this.state.sessionId),
-      );
+      const candidates = [fg, ...sessions].filter((x): x is NonNullable<typeof x> => !!x && x.runtimeMetadata.languageId === 'python');
       const py = candidates[0];
       if (py) {
         this.ctx.log.info(`[${this.state.variable}] session ${this.state.sessionId} is gone; using ${py.metadata.sessionId}`);
@@ -154,21 +152,25 @@ export class AtlasPanel {
       this.fail(e, true);
       return;
     }
-    let describe: DescribeResult;
-    try {
-      describe = await this.bridge.call<DescribeResult>('describe', this.state.variable);
-    } catch (e) {
-      if (!/session has exited|No session available/i.test(String(e))) {
-        this.fail(e, true);
-        return;
-      }
-      // The session we were given is gone (e.g. replaced right after startup): retarget once.
+    let describe: DescribeResult | undefined;
+    for (let attempt = 0; !describe; attempt++) {
       try {
-        await this.ensureSession(true);
         describe = await this.bridge.call<DescribeResult>('describe', this.state.variable);
-      } catch (e2) {
-        this.fail(e2, true);
-        return;
+      } catch (e) {
+        // Right after startup a session can exit and restart (possibly under the same id):
+        // wait, find the live Python session, and retry.
+        if (attempt >= 10 || !/session has exited|No session available/i.test(String(e))) {
+          this.fail(e, true);
+          return;
+        }
+        this.ctx.log.info(`[${this.state.variable}] ${String(e)}; retrying`);
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          await this.ensureSession();
+        } catch (e2) {
+          this.fail(e2, true);
+          return;
+        }
       }
     }
     const job = await this.bridge.call<{ jobId: string }>('create_job', this.state.variable, this.jobDir.fsPath);

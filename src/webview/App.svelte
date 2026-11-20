@@ -73,7 +73,7 @@
   </aside>
   <main>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
-    <div class="plot" bind:this={plot}></div>
+    <div class="plot" bind:this={plot} style:background={atlas.view.background || null}></div>
     <Legend {atlas} />
     {#if atlas.tooltip}
       <div class="tooltip" style="left:{atlas.tooltip.x + 14}px; top:{atlas.tooltip.y + 14}px">

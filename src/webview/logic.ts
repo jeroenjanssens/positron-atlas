@@ -94,3 +94,14 @@ export function pythonSnippet(variable: string, features: string[], prep: Prepar
   );
   return lines.join('\n') + '\n';
 }
+
+/** Normalize a CSS color (#rgb, #rrggbb, #rrggbbaa, rgb()/rgba()) to #rrggbb for <input type="color">. */
+export function toHex(color: string): string {
+  const c = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(c)) return ('#' + c.slice(1).split('').map((x) => x + x).join('')).toLowerCase();
+  if (/^#[0-9a-f]{8}$/i.test(c)) return c.slice(0, 7).toLowerCase();
+  const m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c);
+  if (m) return '#' + [m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('');
+  return '#1e1e1e';
+}

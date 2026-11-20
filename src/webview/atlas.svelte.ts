@@ -17,7 +17,7 @@ import { ScatterRenderer, type PointSet } from './render/renderer';
 import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
 import { DEFAULT_POINT_COLOR } from './color/colormaps';
-import { pythonSnippet, isRebuild, liveChanges, lowerBound } from './logic';
+import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
 export { DEFAULT_UMAP };
@@ -27,6 +27,8 @@ export interface ViewOptions {
   opacity: number;
   mode: 'points' | 'density';
   colormap: string;
+  /** Plot background as a hex color; '' follows the theme's editor background. */
+  background: string;
 }
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
@@ -53,7 +55,7 @@ export class Atlas {
   });
   applied = $state.raw<PrepareOptions | null>(null);
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
-  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis' });
+  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '' });
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
@@ -621,8 +623,12 @@ export class Atlas {
     if (!this.renderer) {
       return;
     }
-    const bg = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e';
-    vscode.post({ type: 'savePng', dataUrl: this.renderer.toDataURL(bg) });
+    vscode.post({ type: 'savePng', dataUrl: this.renderer.toDataURL(this.plotBackground()) });
+  }
+
+  /** The effective plot background (the custom color, or the theme's editor background). */
+  plotBackground(): string {
+    return this.view.background || themeBackground();
   }
 
   copyPython(): void {
@@ -679,4 +685,10 @@ async function probeWebGpu(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** The theme's editor background as a #rrggbb hex string (for <input type="color">). */
+export function themeBackground(): string {
+  const raw = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e';
+  return toHex(raw);
 }

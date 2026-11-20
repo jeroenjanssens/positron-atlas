@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRebuild, liveChanges, lowerBound, pctToSlider, pythonSnippet, sliderToPct, formatSeconds } from '../src/webview/logic';
+import { isRebuild, liveChanges, lowerBound, pctToSlider, pythonSnippet, sliderToPct, formatSeconds, toHex } from '../src/webview/logic';
 import { DEFAULT_UMAP } from '../src/webview/defaults';
 
 describe('umap param classification', () => {
@@ -47,5 +47,16 @@ describe('helpers', () => {
     expect(s).toContain('PCA(n_components=20');
     expect(s).toContain('metric="euclidean"');
     expect(s).toContain('n_neighbors=15');
+  });
+});
+
+describe('toHex', () => {
+  it('normalizes theme colors for the color picker', () => {
+    expect(toHex('#1E1E1E')).toBe('#1e1e1e');
+    expect(toHex('#fff')).toBe('#ffffff');
+    expect(toHex('#11223344')).toBe('#112233');
+    expect(toHex('rgb(30, 30, 30)')).toBe('#1e1e1e');
+    expect(toHex('rgba(255,0,16,0.5)')).toBe('#ff0010');
+    expect(toHex('nonsense')).toBe('#1e1e1e');
   });
 });

@@ -93,3 +93,4 @@ footer { height: 24px; flex: none; display: flex; align-items: center; gap: 12px
 footer .summary { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
 footer .progress { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
 footer .progress .bar { height: 100%; background: var(--vscode-progressBar-background, #0e70c0); transition: width 0.15s; }
+input[type='color'].color { width: 44px; height: 24px; padding: 1px 2px; cursor: pointer; }

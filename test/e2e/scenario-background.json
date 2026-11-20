@@ -1,0 +1,19 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "steps": [
+    {
+      "name": "white background",
+      "eval": "a.setView({ background: '#ffffff' })",
+      "until": "getComputedStyle(document.querySelector('.plot')).backgroundColor === 'rgb(255, 255, 255)'",
+      "report": "{ bg: a.view.background, picker: document.querySelector('input[type=color]').value, png: a.renderer.toDataURL(a.plotBackground()).length }",
+      "screenshot": "bg-white.png"
+    },
+    {
+      "name": "reset to theme",
+      "eval": "a.setView({ background: '' })",
+      "until": "getComputedStyle(document.querySelector('.plot')).backgroundColor === 'rgba(0, 0, 0, 0)'",
+      "report": "{ bg: a.view.background, picker: document.querySelector('input[type=color]').value }"
+    }
+  ]
+}

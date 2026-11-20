@@ -12,7 +12,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
 - **Color by any column.** Numeric and datetime columns get continuous colormaps (viridis, cividis, magma, …). Text, categorical, boolean and low-cardinality integer columns get categorical colors, with a legend.
 - **Hover tooltips** with the row's values, fetched from the kernel on demand.
-- **Points or additive density mode**, pan and zoom, PNG export.
+- **Points or additive density mode**, a background color picker, pan and zoom, PNG export.
 - **Write coordinates back** to the DataFrame (`umap_x`, `umap_y`) and **copy equivalent umap-learn code**.
 - **Optional exact mode**: if `umap-learn` is installed in the kernel, run full UMAP there instead.
 
@@ -47,7 +47,7 @@ Positron does not yet let extensions add items to the Variables pane itself, so 
 | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
 | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
 | Color | Color by, treat as categories, colormap, range | Recolors |
-| Display | Point size, opacity, points/density, fit to view | Rendering only |
+| Display | Point size, opacity, points/density, background color (or follow the theme), fit to view | Rendering only |
 | Actions | Place all rows, add coordinates, export PNG, copy as Python | |
 
 ## How it works
