@@ -8,6 +8,14 @@
   "author": {
     "name": "Jeroen Janssens"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jeroenjanssens/positron-atlas"
+  },
+  "homepage": "https://github.com/jeroenjanssens/positron-atlas#readme",
+  "bugs": {
+    "url": "https://github.com/jeroenjanssens/positron-atlas/issues"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
