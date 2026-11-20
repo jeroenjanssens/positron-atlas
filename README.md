@@ -6,7 +6,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 
 ## Features
 
-- **Live UMAP in the browser.** UMAP runs in a web worker using the Rust/WASM port from [apple/embedding-atlas](https://github.com/apple/embedding-atlas). You watch the layout converge.
+- **Live UMAP in the browser.** UMAP runs in a web worker using the Rust/WASM port from [apple/embedding-atlas](https://github.com/apple/embedding-atlas), on the GPU (WebGPU) when available. You watch the layout converge.
 - **Live parameters.** `min_dist`, `spread`, repulsion strength, negative sample rate and learning rate change the running layout. `n_neighbors`, metric, epochs and seed rebuild the neighbor graph.
 - **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, with numpy only and streamed in chunks.
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
@@ -20,6 +20,17 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 
 - Positron 2026.10 or newer.
 - A Python session with **numpy** and the DataFrame library you use (pandas or polars). Nothing else is required.
+
+## Installation
+
+Build the package (or use a prebuilt `positron-atlas-<version>.vsix`) and install it into Positron:
+
+```sh
+npm install && npm run package
+/Applications/Positron.app/Contents/Resources/app/bin/code --install-extension positron-atlas-0.1.0.vsix
+```
+
+You can also run **Extensions: Install from VSIX…** from Positron's Command Palette. Then reload the window.
 
 ## Usage
 
@@ -58,7 +69,9 @@ _positron_atlas helper  <-JSON-  KernelBridge (evaluateCode)    Svelte UI
 
 | Setting | Default | |
 |---|---|---|
-| `positronAtlas.maxAnchors` | 100000 | Maximum number of rows UMAP runs on in the browser |
+| `positronAtlas.maxAnchors` | 100000 | Maximum number of rows UMAP runs on in the browser (with WebGPU) |
+| `positronAtlas.maxAnchorsCpu` | 25000 | The same limit when UMAP runs on the CPU (no WebGPU) |
+| `positronAtlas.useWebGpu` | true | Run UMAP on the GPU when available; falls back to the CPU |
 | `positronAtlas.anchorBudget` | 10000000 | Maximum values (anchors × dimensions) sent to the browser |
 | `positronAtlas.defaultSamplePct` | 100 | Default sample percentage |
 | `positronAtlas.pcaEnabled` | false | Apply PCA by default |
