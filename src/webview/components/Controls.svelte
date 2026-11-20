@@ -238,6 +238,11 @@
             <span class="muted-text">× {atlas.imageShape[1]}</span>
           </span>
         </label>
+        <label class="check">
+          <input type="checkbox" checked={atlas.view.imageInvert}
+            onchange={(e) => atlas.setView({ imageInvert: (e.target as HTMLInputElement).checked })} />
+          Invert colors
+        </label>
         <div class="hint muted">{atlas.imageColumns.indices.length.toLocaleString()} pixel columns ({atlas.imageColumns.first} … {atlas.imageColumns.last}). Hover a point to see its image.</div>
       {/if}
       <button onclick={() => atlas.fitView()}>Fit to view</button>

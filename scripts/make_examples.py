@@ -130,7 +130,7 @@ pixels.shape, labels.shape'''
 MNIST_THINGS = """\
 - **Color by `label`.** This is the default, because it is the first low-cardinality categorical column. With the recommended settings below, the ten digits form separate islands. Look for the 4/7/9 and 3/5/8 neighborhoods.
 - **Color by `ink`.** Within each digit, the layout often orders thin to bold strokes.
-- **Turn on *Points are images*** in the **Display** section, then hover a point to see the digit itself. Atlas finds the 784 pixel columns (`px0` … `px783`) and shows them as a 28 × 28 image.
+- **Turn on *Points are images*** in the **Display** section, then hover a point to see the digit itself. Atlas finds the 784 pixel columns (`px0` … `px783`) and shows them as a 28 × 28 image. Tick **Invert colors** for black digits on white.
 - **Hover** a point to see its row, including its label and split.
 - **Drag *Min distance*** to 0 for tight clusters, or to 0.8 for a smoother map. The change applies live.
 - **Set *Neighbors*** to 50 or more for more global structure. This rebuilds the graph."""

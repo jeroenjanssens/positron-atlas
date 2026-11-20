@@ -33,6 +33,8 @@ export interface ViewOptions {
   images: boolean;
   /** Image width in pixels; 0 = automatic (square). */
   imageWidth: number;
+  /** Swap dark and light in the image thumbnails. */
+  imageInvert: boolean;
 }
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
@@ -59,7 +61,7 @@ export class Atlas {
   });
   applied = $state.raw<PrepareOptions | null>(null);
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
-  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0 });
+  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false });
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);

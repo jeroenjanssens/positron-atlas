@@ -146,8 +146,9 @@ export function guessImageWidth(n: number): number {
 /**
  * Grayscale pixels → RGBA. Values in [0, 1] map to black–white, values up to 255 are
  * treated as 8-bit intensities, anything else is scaled by its own range. Missing → transparent.
+ * With `invert`, dark and light are swapped (e.g. black digits on white).
  */
-export function imageToRgba(values: (number | null)[], width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
+export function imageToRgba(values: (number | null)[], width: number, height: number, invert = false): Uint8ClampedArray<ArrayBuffer> {
   const n = width * height;
   let lo = Infinity;
   let hi = -Infinity;
@@ -168,7 +169,8 @@ export function imageToRgba(values: (number | null)[], width: number, height: nu
   for (let i = 0; i < n; i++) {
     const v = values[i];
     if (v === null || v === undefined || !Number.isFinite(v)) continue;
-    const g = Math.round(((v - low) / span) * 255);
+    const level = Math.round(((v - low) / span) * 255);
+    const g = invert ? 255 - level : level;
     out[4 * i] = g;
     out[4 * i + 1] = g;
     out[4 * i + 2] = g;

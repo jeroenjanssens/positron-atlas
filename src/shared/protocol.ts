@@ -130,7 +130,7 @@ export interface PanelState {
   prepare?: PrepareOptions;
   umap?: UmapParams;
   colorColumn?: number | null;
-  view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number };
+  view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number; imageInvert?: boolean };
 }
 
 export type ToWebview =

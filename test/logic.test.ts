@@ -110,3 +110,13 @@ describe('placeTooltip', () => {
     expect(placeTooltip(200, 500, 320)).toBe(0);
   });
 });
+
+describe('imageToRgba invert', () => {
+  it('swaps dark and light but keeps missing transparent', () => {
+    const px = imageToRgba([0, 255, 51, null], 2, 2, true);
+    expect(Array.from(px.slice(0, 4))).toEqual([255, 255, 255, 255]);
+    expect(Array.from(px.slice(4, 8))).toEqual([0, 0, 0, 255]);
+    expect(px[8]).toBe(204);
+    expect(px[15]).toBe(0);
+  });
+});

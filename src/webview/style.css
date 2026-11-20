@@ -95,4 +95,5 @@ footer .progress { position: absolute; left: 0; right: 0; top: -1px; height: 2px
 footer .progress .bar { height: 100%; background: var(--vscode-progressBar-background, #0e70c0); transition: width 0.15s; }
 input[type='color'].color { width: 44px; height: 24px; padding: 1px 2px; cursor: pointer; }
 .tooltip .pixel-image { display: block; image-rendering: pixelated; margin: 2px 0 6px; border: 1px solid var(--border); background: #000; }
+.tooltip .pixel-image.inverted { background: #fff; }
 .muted-text { color: var(--muted); }

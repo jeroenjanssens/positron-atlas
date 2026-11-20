@@ -52,7 +52,7 @@ The `examples/` folder in the source repository has notebooks with real data: MN
 | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
 | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
 | Color | Color by, treat as categories, colormap, range | Recolors |
-| Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width), fit to view | Rendering only |
+| Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors), fit to view | Rendering only |
 | Actions | Place all rows, add coordinates, export PNG, copy as Python | |
 
 ## How it works

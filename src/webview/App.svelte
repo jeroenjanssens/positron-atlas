@@ -90,7 +90,7 @@
       <div class="tooltip" bind:clientWidth={ttW} bind:clientHeight={ttH} style="left:{ttPos.left}px; top:{ttPos.top}px">
         <div class="tt-title">Row {formatCount(atlas.tooltip.row)}</div>
         {#if atlas.tooltip.image && atlas.imageShape}
-          <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} />
+          <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={atlas.view.imageInvert} />
         {/if}
         <table>
           <tbody>
