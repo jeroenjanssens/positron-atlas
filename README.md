@@ -34,7 +34,7 @@ You can also run **Extensions: Install from VSIX…** from Positron's Command Pa
 
 ## Usage
 
-- **From the Data Explorer.** Open a DataFrame from the Variables pane, then click the **Open in Atlas (UMAP)** button (scatter icon) in the editor toolbar.
+- **From the Data Explorer.** Open a DataFrame from the Variables pane, then click **Open in Atlas**, the first button in the Data Explorer's toolbar (top left).
 - **From the Command Palette.** Run **Atlas: Open DataFrame…** and pick a DataFrame from the foreground Python session, or enter an expression.
 
 Positron does not yet let extensions add items to the Variables pane itself, so the Data Explorer button is the closest entry point.
