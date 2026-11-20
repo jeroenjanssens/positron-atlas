@@ -165,6 +165,25 @@ class _Frame:
         arr = sub.to_numpy()
         return np.ascontiguousarray(arr, dtype=np.float32)
 
+    def declared_categories(self, j: int) -> list[str] | None:
+        """Categories in declared order for pandas Categorical / polars Enum columns."""
+        try:
+            if self.kind == "pandas":
+                import pandas as pd
+
+                dt = self.obj.iloc[:, j].dtype
+                if isinstance(dt, pd.CategoricalDtype):
+                    return [str(c) for c in dt.categories]
+                return None
+            import polars as pl
+
+            dt = self.obj.dtypes[j]
+            if isinstance(dt, pl.Enum):
+                return [str(c) for c in dt.categories.to_list()]
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
     def row(self, i: int) -> list[tuple[str, str]]:
         names = self.column_names()
         if self.kind == "pandas":
@@ -923,7 +942,7 @@ def _color_values(frame: _Frame, col: int, rows: np.ndarray, force_categorical: 
     keys = np.array([str(v) for v in obj], dtype=object)
     keys[nulls] = ""
     uniq, inverse, counts = np.unique(keys[~nulls], return_inverse=True, return_counts=True)
-    order = np.argsort(-counts, kind="stable")
+    order = _category_order(frame, col, kind, uniq, counts)
     top = order[:_MAX_CATEGORIES]
     remap = np.full(len(uniq), len(top), dtype=np.uint16)  # "Other"
     remap[top] = np.arange(len(top), dtype=np.uint16)
@@ -940,6 +959,25 @@ def _color_values(frame: _Frame, col: int, rows: np.ndarray, force_categorical: 
         "nUnique": int(len(uniq)),
     }
     return "u16", codes, meta
+
+
+def _category_order(frame: _Frame, col: int, kind: str, uniq: np.ndarray, counts: np.ndarray) -> np.ndarray:
+    """Legend order: declared order (pandas Categorical, polars Enum), numeric order for
+    numbers and booleans, otherwise most frequent first. Only for few categories."""
+    by_freq = np.argsort(-counts, kind="stable")
+    if len(uniq) > _MAX_CATEGORIES:
+        return by_freq
+    declared = frame.declared_categories(col)
+    if declared:
+        pos = {c: i for i, c in enumerate(declared)}
+        return np.array(sorted(range(len(uniq)), key=lambda i: (pos.get(str(uniq[i]), len(pos)), -counts[i])), dtype=np.int64)
+    if kind in ("numeric", "bool"):
+        try:
+            vals = [float(u) if u not in ("True", "False") else float(u == "True") for u in uniq]
+            return np.argsort(np.array(vals), kind="stable")
+        except ValueError:
+            pass
+    return by_freq
 
 
 @_guard

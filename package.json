@@ -121,7 +121,8 @@
     "test:py": "uv run --project python pytest python/tests -q",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
-    "test:e2e": "node test/e2e/run.mjs test/e2e/scenario-small.json && node test/e2e/run.mjs test/e2e/scenario-explorer.json && node test/e2e/run.mjs test/e2e/scenario-polars-projection.json && node test/e2e/run.mjs test/e2e/scenario-background.json && node test/e2e/restore.mjs"
+    "test:e2e": "node test/e2e/run.mjs test/e2e/scenario-small.json && node test/e2e/run.mjs test/e2e/scenario-explorer.json && node test/e2e/run.mjs test/e2e/scenario-polars-projection.json && node test/e2e/run.mjs test/e2e/scenario-background.json && node test/e2e/restore.mjs",
+    "test:e2e:examples": "node test/e2e/run.mjs test/e2e/scenario-example-mnist.json && node test/e2e/run.mjs test/e2e/scenario-example-fashion.json && node test/e2e/run.mjs test/e2e/scenario-example-covtype.json"
   },
   "devDependencies": {
     "@posit-dev/positron": "^0.2.15",

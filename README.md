@@ -39,6 +39,10 @@ You can also run **Extensions: Install from VSIX…** from Positron's Command Pa
 
 Positron does not yet let extensions add items to the Variables pane itself, so the Data Explorer button is the closest entry point.
 
+### Example notebooks
+
+The [`examples/`](examples/) folder has notebooks with real data: MNIST (70,000 × 784, pandas), Fashion-MNIST (70,000 × 784, polars) and Covertype (581,012 rows, polars). Each one downloads its dataset once and needs only numpy plus pandas or polars.
+
 ### Controls
 
 | Section | Control | Effect |

@@ -45,13 +45,28 @@ async function activate() {
     }
     if (!runtime) throw new Error('python runtime not found');
     log(`runtime ${runtime.runtimeId} ${runtime.runtimePath}`);
-    await positron.runtime.selectLanguageRuntime(runtime.runtimeId);
+    // A fresh Positron sometimes shuts the first console session down right after it
+    // starts. Wait until a session has stayed alive for a few seconds.
     let session;
-    for (let i = 0; i < 120 && !session; i++) {
-      session = (await positron.runtime.getActiveSessions()).find((s) => s.runtimeMetadata.runtimeId === runtime.runtimeId);
-      if (!session) await new Promise((r) => setTimeout(r, 500));
+    for (let attempt = 0; attempt < 5 && !session; attempt++) {
+      let candidate;
+      if (attempt === 0) {
+        await positron.runtime.selectLanguageRuntime(runtime.runtimeId);
+        for (let i = 0; i < 120 && !candidate; i++) {
+          candidate = (await positron.runtime.getActiveSessions()).find((s) => s.runtimeMetadata.runtimeId === runtime.runtimeId);
+          if (!candidate) await new Promise((r) => setTimeout(r, 500));
+        }
+      } else {
+        // The previous session exited: start a brand-new one.
+        candidate = await positron.runtime.startLanguageRuntime(runtime.runtimeId, `Python (e2e ${attempt})`);
+      }
+      await new Promise((r) => setTimeout(r, 6000));
+      const alive = candidate && (await positron.runtime.getActiveSessions()).some((s) => s.metadata.sessionId === candidate.metadata.sessionId);
+      const state = alive && candidate.getRuntimeState ? await candidate.getRuntimeState() : undefined;
+      log(`session ${candidate && candidate.metadata.sessionId} alive=${alive} state=${state}`);
+      if (alive && state !== 'exited') session = candidate;
     }
-    log(`session ${session && session.metadata.sessionId}`);
+    if (!session) throw new Error('no stable Python session');
     if (sc.setup) {
       await positron.runtime.executeCode('python', sc.setup, false, false, undefined, undefined, undefined, session.metadata.sessionId);
       log('setup done');

@@ -1,0 +1,17 @@
+{
+  "variable": "covtype",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\n\ndef download(url: str, name: str) -> Path:\n    \"\"\"Download a file once and cache it.\"\"\"\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        print(f\"Downloading {url} ...\")\n        tmp = path.with_suffix(path.suffix + \".part\")\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\n\ndef read_idx(path: Path) -> np.ndarray:\n    \"\"\"Read an IDX file (the MNIST format): images as (n, 784) uint8, labels as (n,).\"\"\"\n    with gzip.open(path, \"rb\") as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], \"big\") for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nimport polars as pl\n\nURL = \"https://archive.ics.uci.edu/ml/machine-learning-databases/covtype/covtype.data.gz\"\npath = download(URL, \"covtype.data.gz\")\n\nQUANTITATIVE = [\n    \"elevation\", \"aspect\", \"slope\",\n    \"horizontal_distance_to_hydrology\", \"vertical_distance_to_hydrology\",\n    \"horizontal_distance_to_roadways\",\n    \"hillshade_9am\", \"hillshade_noon\", \"hillshade_3pm\",\n    \"horizontal_distance_to_fire_points\",\n]\nWILDERNESS = [\"Rawah\", \"Neota\", \"Comanche Peak\", \"Cache la Poudre\"]\nCOVER = [\"Spruce/Fir\", \"Lodgepole Pine\", \"Ponderosa Pine\", \"Cottonwood/Willow\", \"Aspen\", \"Douglas-fir\", \"Krummholz\"]\n\nraw = np.loadtxt(path, delimiter=\",\", dtype=np.int32)  # (581012, 55), takes a few seconds\nraw.shape\n\ncovtype = pl.DataFrame({name: raw[:, i].astype(np.float32) for i, name in enumerate(QUANTITATIVE)}).with_columns(\n    pl.Series(\"cover_type\", [COVER[i - 1] for i in raw[:, 54]], dtype=pl.Enum(COVER)),\n    pl.Series(\"wilderness\", [WILDERNESS[i] for i in raw[:, 10:14].argmax(axis=1)], dtype=pl.Enum(WILDERNESS)),\n    pl.Series(\"soil_type\", [f\"soil {i + 1}\" for i in raw[:, 14:54].argmax(axis=1)]),\n)\ncovtype.shape",
+  "steps": [
+    {
+      "name": "default",
+      "report": "{ prepared: a.prepared, timings: a.timings, meta: a.colorMeta && a.colorMeta.categories }",
+      "screenshot": "covtype.png"
+    },
+    {
+      "name": "color by elevation",
+      "eval": "a.setColorColumn(a.describe.columns.find(c => c.name === 'elevation').index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'numeric'",
+      "screenshot": "covtype-elevation.png"
+    }
+  ]
+}

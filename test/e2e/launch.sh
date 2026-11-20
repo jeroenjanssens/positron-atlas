@@ -9,6 +9,7 @@ cat > "$E2E/user/User/settings.json" <<JSON
 {
   "python.defaultInterpreterPath": "$ROOT/.venv-e2e/bin/python",
   "workbench.startupEditor": "none",
+  "interpreters.startupBehavior": "manual",
   "security.workspace.trust.enabled": false,
   "telemetry.telemetryLevel": "off",
   "positron.assistant.enable": false,

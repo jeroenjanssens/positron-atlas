@@ -342,3 +342,21 @@ def test_cancel_sees_own_event(ns, tmp_path):
     started.wait(5)
     pak.cancel(jid)
     assert wait(jid)["stage"] == "cancelled"
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars"])
+def test_category_order(ns, tmp_path, kind):
+    labels = ["b"] * 50 + ["c"] * 30 + ["a"] * 20
+    order = ["c", "a", "b"]
+    x = np.arange(100.0)
+    if kind == "pandas":
+        ns["df"] = pd.DataFrame({"x": x, "cat": pd.Categorical(labels, categories=order), "s": labels, "k": np.array([3, 1, 2] * 33 + [3])})
+    else:
+        ns["df"] = pl.DataFrame({"x": x, "cat": pl.Series(labels, dtype=pl.Enum(order)), "s": labels, "k": np.array([3, 1, 2] * 33 + [3])})
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": [0]}))
+    wait(jid)
+    assert J(pak.colors(jid, 1))["meta"]["categories"] == order  # declared order
+    assert J(pak.colors(jid, 2))["meta"]["categories"] == ["b", "c", "a"]  # by frequency
+    k = J(pak.colors(jid, 3))["meta"]["categories"]  # small ints -> numeric order
+    assert k in (["1", "2", "3"], ["1.0", "2.0", "3.0"])
