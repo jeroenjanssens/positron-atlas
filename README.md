@@ -94,6 +94,18 @@ See `docs/benchmarks.md` in the source repository.
 
 ## Development
 
+With [just](https://just.systems):
+
+```sh
+just examples            # build, sync examples/.venv, start Positron with the extension on examples/
+just examples-isolated   # the same in a fresh, throwaway Positron profile
+just test                # type checks, vitest, pytest
+just e2e                 # end-to-end tests in an isolated Positron
+just package             # build the .vsix
+```
+
+Or with npm directly:
+
 ```sh
 npm install
 uv sync --project python          # Python test environment
