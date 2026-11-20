@@ -4,10 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 E2E="${E2E_DIR:-/tmp/positron-atlas-e2e}"
 PORT="${CDP_PORT:-9333}"
+PY="${ATLAS_E2E_PYTHON:-$ROOT/.venv-e2e/bin/python}"
 rm -rf "$E2E/user" "$E2E/logs" && mkdir -p "$E2E/user/User" "$E2E/ext" "$E2E/ws"
 cat > "$E2E/user/User/settings.json" <<JSON
 {
-  "python.defaultInterpreterPath": "$ROOT/.venv-e2e/bin/python",
+  "python.defaultInterpreterPath": "$PY",
   "workbench.startupEditor": "none",
   "interpreters.startupBehavior": "manual",
   "security.workspace.trust.enabled": false,
@@ -18,7 +19,7 @@ cat > "$E2E/user/User/settings.json" <<JSON
   "window.restoreWindows": "none"
 }
 JSON
-export ATLAS_E2E_PYTHON="$ROOT/.venv-e2e/bin/python"
+export ATLAS_E2E_PYTHON="$PY"
 export ATLAS_E2E_SCENARIO="${ATLAS_E2E_SCENARIO:-$ROOT/test/e2e/scenario-small.json}"
 export ATLAS_E2E_LOG="$E2E/scenario.log"
 rm -f "$ATLAS_E2E_LOG" "$ATLAS_E2E_LOG.reloaded"

@@ -1,0 +1,19 @@
+[project]
+name = "positron-atlas-examples"
+version = "0.1.0"
+description = "Example notebooks for the Positron Atlas extension."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "polars",
+    "pyarrow",
+    "ipykernel",
+]
+
+[dependency-groups]
+# Optional: enables Atlas's "Kernel (umap-learn)" compute mode.
+exact = ["umap-learn"]
+
+[tool.uv]
+package = false
