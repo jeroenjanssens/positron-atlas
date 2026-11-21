@@ -62,3 +62,7 @@ harness scenario="small" theme="dark" port="0": build
     echo "Opening $url (Ctrl-C to stop)"
     open "$url" 2>/dev/null || xdg-open "$url" 2>/dev/null || true
     wait $server
+
+# Open the architecture overview (docs/architecture.html) in the browser
+architecture:
+    open "{{ root }}/docs/architecture.html" 2>/dev/null || xdg-open "{{ root }}/docs/architecture.html"

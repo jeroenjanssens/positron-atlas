@@ -163,6 +163,8 @@ npm run build && npm run test:e2e
 
 Screenshots land in `/tmp/positron-atlas-e2e/`.
 
+The architecture (processes, data flow, dependencies, possible optimizations) is described in [`docs/architecture.html`](docs/architecture.html); open it with `just architecture`.
+
 Without Positron, the **browser harness** runs the built webview in Chromium against the real kernel helper (a small Python server stands in for Positron). It is quicker and also produces screenshots:
 
 ```sh
