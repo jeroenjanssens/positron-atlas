@@ -118,7 +118,7 @@ export class KernelBridge {
         return s;
       }
       await new Promise((r) => setTimeout(r, delay));
-      delay = Math.min(500, delay * 1.5);
+      delay = Math.min(150, delay * 1.5);
     }
   }
 }

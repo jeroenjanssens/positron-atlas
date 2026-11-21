@@ -14,3 +14,4 @@ crate-type = ["cdylib"]
 atlas-core = { path = "../atlas-core" }
 pyo3 = { version = "0.30", features = ["abi3-py310", "extension-module"] }
 numpy = "0.30"
+rayon = "1"

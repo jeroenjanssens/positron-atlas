@@ -129,6 +129,8 @@ export interface Settings {
   nativeCore: boolean;
   /** Maximum rows to collect from a lazy frame (polars LazyFrame, DuckDB relation, etc.). */
   maxLazyRows: number;
+  /** Memory budget (MB) for the nearest-anchor neighbour cache (P1). */
+  neighborCacheMB: number;
 }
 
 /** How selected rows differ from all prepared rows (kernel compare_selection). */

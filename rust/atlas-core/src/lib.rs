@@ -15,4 +15,4 @@ pub mod rng;
 
 pub use columns::{column_moments, scale_columns};
 pub use index::{AnchorIndex, IndexOptions};
-pub use place::{neighbors, place_point, place_rows, Cancelled};
+pub use place::{neighbors, place_from_neighbors, place_point, place_rows, Cancelled};

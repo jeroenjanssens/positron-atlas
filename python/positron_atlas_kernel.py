@@ -28,6 +28,9 @@ _JOBS: dict[str, "_Job"] = {}
 _CHUNK_VALUES = 1 << 23  # ~32 MB of float32 per chunk
 _MAX_CATEGORIES = 20
 
+# Geometric placement chunk sizes: first chunks are smaller so points appear sooner.
+_PLACE_CHUNKS = [100_000, 200_000, 400_000, 1_000_000]
+
 
 # --------------------------------------------------------------------------------------
 # Native core (Rust), loaded by path; numpy is the fallback
@@ -634,7 +637,22 @@ class _Job:
         self.kept_idx: np.ndarray | None = None  # original row positions of kept rows
         self.features: np.ndarray | None = None  # kept x dims (float32)
         self.anchor_pos: np.ndarray | None = None  # positions into kept rows
+        self.anchors: np.ndarray | None = None  # feature vectors of anchors (float32)
         self.xy: np.ndarray | None = None  # kept x 2 (after projection)
+        # Neighbour cache (P1): reused on re-placement with same key
+        self.nbr_idx: np.ndarray | None = None  # u32 (n_non_anchors, k)
+        self.nbr_sqd: np.ndarray | None = None  # f32 (n_non_anchors, k)
+        self.nbr_non_anchor_pos: np.ndarray | None = None  # positions of non-anchor rows
+        self.nbr_key: tuple | None = None  # (metric, k) — fixed index seed 0 always
+        # P2: prepare_gen increments each time prepare succeeds, so project can detect staleness
+        self.prepare_gen: int = 0
+        # P2: separate background thread for the neighbours search.
+        # Cancelled ONLY by the next prepare, cleanup, or explicit cancel — not by project/exact.
+        self.nbr_cancel_event: threading.Event = threading.Event()  # starts set (nothing running)
+        self.nbr_thread: threading.Thread | None = None
+        # Set when the neighbours stage is complete (or skipped), so project can wait.
+        self.nbr_done: threading.Event = threading.Event()
+        self.nbr_done.set()  # starts set (no pending neighbours)
 
     def _mine(self) -> bool:
         """True unless called from a superseded (orphaned) task thread."""
@@ -773,6 +791,7 @@ def status(job_id: str) -> str:
 def cancel(job_id: str) -> str:
     job = _get(job_id)
     job.cancel_event.set()
+    job.nbr_cancel_event.set()  # explicit cancel also stops the neighbours background thread
     return _json({"ok": True})
 
 
@@ -781,8 +800,13 @@ def cleanup(job_id: str) -> str:
     job = _JOBS.pop(job_id, None)
     if job is not None:
         job.cancel_event.set()
+        job.nbr_cancel_event.set()  # stop any background neighbours thread
         job.features = None
         job.kept_idx = None
+        job.anchors = None
+        job.nbr_idx = None
+        job.nbr_sqd = None
+        job.nbr_non_anchor_pos = None
     return _json({"ok": True})
 
 
@@ -847,6 +871,20 @@ def _write(job: _Job, fname: str, arr: np.ndarray) -> str:
 
 
 def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
+    # Cancel any background neighbours thread from the previous prepare and clear the cache.
+    # This event stays set until we start a new nbr_thread below.
+    job.nbr_cancel_event.set()
+    # Wait briefly for a running thread to notice the cancel; it will set nbr_done when done.
+    if job.nbr_thread is not None and job.nbr_thread.is_alive():
+        job.nbr_thread.join(timeout=0.5)
+    # Fresh cancel event and cache state for this prepare.
+    job.nbr_cancel_event = threading.Event()
+    job.nbr_idx = None
+    job.nbr_sqd = None
+    job.nbr_non_anchor_pos = None
+    job.nbr_key = None
+    job.nbr_done.clear()  # will be set after neighbours stage (or when skipped)
+
     frame = job.frame
     n = frame.n_rows
     cols: list[int] = [int(c) for c in opts.get("features", [])]
@@ -861,6 +899,7 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     max_anchors = int(opts.get("maxAnchors", 100_000))
     budget = int(opts.get("anchorBudget", 10_000_000))
     sample_pct = float(opts.get("samplePct", 100.0))
+    nbr_cache_mb = int(opts.get("neighborCacheMB", 1024))
 
     job.set("sampling", 0.0, "Sampling rows")
     sample_idx = sample_rows(n, sample_pct, seed)
@@ -973,9 +1012,42 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     job.kept_idx = kept_idx
     job.features = x
     job.anchor_pos = anchor_pos
+    job.anchors = anchors  # P6: reuse in project, no need to re-read x[anchor_pos]
     job.xy = None
+    needs_projection = bool(n_live < k_rows)
     job.add_output(kind="anchors", file="anchors.f32", dtype="f32", shape=[n_live, dims])
     job.add_output(kind="anchorPos", file="anchor_pos.u32", dtype="u32", shape=[n_live])
+
+    # P2 + P1: start the neighbours search in its own background thread so prepare finishes
+    # 'done' immediately and the host/browser can proceed with UMAP while the Python side
+    # pre-computes the nearest-anchor indices for every non-anchor row.
+    # The thread is cancelled ONLY by the next prepare, cleanup, or explicit cancel —
+    # NOT by project/exact/colors tasks.
+    # Note: prepare has no metric (UMAP metric is chosen by the user later), so we always
+    # start with euclidean. If the first project call uses cosine, it will be a cache miss
+    # and project falls back to full placement; that result is not cached back (future work).
+    if needs_projection:
+        k_nbr = int(opts.get("k", 10))
+        metric_nbr = "euclidean"  # always euclidean from prepare; cosine is a cache miss
+        n_non_anchors = k_rows - n_live
+        cache_bytes = n_non_anchors * k_nbr * 8  # u32 (4) + f32 (4) per slot
+        if cache_bytes <= nbr_cache_mb * 1024 * 1024:
+            # Snapshot the objects the thread needs; nbr_cancel belongs to this prepare.
+            nbr_cancel = job.nbr_cancel_event
+            use_native = bool(opts.get("native", True))
+
+            def _nbr_target(j=job, xa=x, ap=anchor_pos, an=anchors, k=k_nbr, m=metric_nbr, c=nbr_cancel, n=use_native):
+                _prepare_neighbours(j, xa, ap, an, k, m, c, n)
+
+            t = threading.Thread(target=_nbr_target, name=f"positron-atlas-{job.id}-neighbours", daemon=True)
+            job.nbr_thread = t
+            t.start()
+        else:
+            job.nbr_done.set()  # skip neighbours stage; set done so project doesn't wait
+    else:
+        job.nbr_done.set()  # no projection needed; set done immediately
+
+    job.prepare_gen += 1
     return {
         "nRows": n,
         "nSampled": int(m),
@@ -984,10 +1056,85 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
         "dims": dims,
         "inputDims": d,
         "nAnchors": n_live,
-        "needsProjection": bool(n_live < k_rows),
+        "needsProjection": needs_projection,
         "explainedVariance": evr,
         "featuresBytes": int(x.nbytes),
     }
+
+
+def _prepare_neighbours(job: _Job, x: np.ndarray, anchor_pos: np.ndarray, anchors: np.ndarray, k: int, metric: str, nbr_cancel: threading.Event, use_native: bool) -> None:
+    """Compute and cache nearest-anchor neighbours for all non-anchor rows (P1 + P2).
+
+    Runs in its own background thread started at the end of prepare. ``nbr_cancel`` is a
+    threading.Event that belongs to this prepare generation; it is set when the next prepare
+    starts, cleanup is called, or the user explicitly cancels. It is NOT set by project/exact.
+
+    Metric: prepare always computes euclidean (the UMAP metric is chosen later by the user).
+    If project subsequently asks for cosine and there is no cosine cache, it falls back to full
+    placement without storing the result (future improvement).
+    """
+    n = len(x)
+    is_anchor = np.zeros(n, dtype=bool)
+    is_anchor[anchor_pos] = True
+    non_anchor_pos = np.flatnonzero(~is_anchor)
+    if len(non_anchor_pos) == 0:
+        job.nbr_done.set()
+        return
+
+    core = _native_core() if use_native else None
+    cosine = metric == "cosine"
+
+    try:
+        if nbr_cancel.is_set():
+            return  # cancelled before we even started
+
+        if core is not None:
+            anc = np.ascontiguousarray(anchors, dtype=np.float32)
+            # Use cores-1 threads so the browser's UMAP thread pool is not starved.
+            n_cpus = getattr(core, "n_cpus", lambda: 1)()
+            num_threads = max(1, n_cpus - 1)
+            index = core.Index(anc, seed=0, cosine=cosine)
+            q = np.ascontiguousarray(x[non_anchor_pos], dtype=np.float32)
+            if cosine:
+                norms = np.linalg.norm(q, axis=1, keepdims=True)
+                q = q / np.maximum(norms, 1e-12)
+            # Pass nbr_cancel.is_set as the cancel callback; checked between 65k-row blocks.
+            nbr_idx, nbr_sqd = index.neighbors_u32(q, k, num_threads, nbr_cancel.is_set)
+        else:
+            # numpy path: process in blocks so we can honour the cancel event.
+            anc = np.ascontiguousarray(anchors, dtype=np.float32)
+            if cosine:
+                anc = anc / np.maximum(np.linalg.norm(anc, axis=1, keepdims=True), 1e-12)
+            index = AnchorIndex(anc, seed=0)
+            q = np.ascontiguousarray(x[non_anchor_pos], dtype=np.float32)
+            if cosine:
+                q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-12)
+            BLOCK = 65_536
+            idx_parts: list[np.ndarray] = []
+            sqd_parts: list[np.ndarray] = []
+            for s in range(0, len(q), BLOCK):
+                if nbr_cancel.is_set():
+                    return  # cancelled between blocks
+                e = min(len(q), s + BLOCK)
+                ii, dd = index.query(q[s:e], k)
+                idx_parts.append(ii)
+                sqd_parts.append(dd)
+            nbr_idx_i64 = np.concatenate(idx_parts, axis=0)
+            nbr_sqd_arr = np.concatenate(sqd_parts, axis=0)
+            # Convert to u32 (sentinel: int64 -1 → u32::MAX)
+            nbr_idx = np.where(nbr_idx_i64 >= 0, nbr_idx_i64.astype(np.uint32), np.iinfo(np.uint32).max)
+            nbr_sqd = nbr_sqd_arr.astype(np.float32)
+
+        # Store cache only if this prepare generation was not superseded.
+        if not nbr_cancel.is_set():
+            job.nbr_idx = nbr_idx
+            job.nbr_sqd = nbr_sqd
+            job.nbr_non_anchor_pos = non_anchor_pos
+            job.nbr_key = (metric, k)
+    except Exception:  # noqa: BLE001 — includes "cancelled" from Rust
+        pass  # cancelled or error; nbr_done is set in finally
+    finally:
+        job.nbr_done.set()
 
 
 @_guard
@@ -1122,17 +1269,41 @@ def _topk(d: np.ndarray, idx: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarra
 
 
 def place_from_neighbors(nbr_idx: np.ndarray, nbr_sqd: np.ndarray, anchor_xy: np.ndarray) -> np.ndarray:
-    """UMAP-style membership weights exp(-(d - rho)/sigma) → weighted mean of anchor positions."""
+    """UMAP-style membership weights exp(-(d - rho)/sigma) → weighted mean of anchor positions.
+
+    Accepts int64 indices (sentinel -1) or uint32 indices (sentinel 0xFFFFFFFF).
+    """
     d = np.sqrt(np.maximum(nbr_sqd, 0.0)).astype(np.float32)
-    valid = nbr_idx >= 0
+    if nbr_idx.dtype == np.uint32:
+        valid = nbr_idx != np.iinfo(np.uint32).max
+        idx_for_gather = np.where(valid, nbr_idx.astype(np.int64), 0)
+    else:
+        valid = nbr_idx >= 0
+        idx_for_gather = np.where(valid, nbr_idx, 0)
     d = np.where(valid, d, np.inf)
     rho = d[:, :1]
     gap = np.where(valid, d - rho, 0.0)
     sigma = np.maximum(gap.sum(axis=1, keepdims=True) / np.maximum(valid.sum(axis=1, keepdims=True), 1), 1e-6)
     w = np.where(valid, np.exp(-gap / sigma), 0.0).astype(np.float32)
     w_sum = np.maximum(w.sum(axis=1, keepdims=True), 1e-12)
-    xy = anchor_xy[np.where(valid, nbr_idx, 0)]  # n x k x 2
+    xy = anchor_xy[idx_for_gather]  # n x k x 2
     return (xy * w[:, :, None]).sum(axis=1) / w_sum
+
+
+def _chunk_sizes(n: int) -> list[int]:
+    """Geometric chunk sizes for placement: 1e5, 2e5, 4e5, then 1e6 rows (P5)."""
+    sizes = []
+    remaining = n
+    for chunk in _PLACE_CHUNKS:
+        if remaining <= 0:
+            break
+        sizes.append(min(chunk, remaining))
+        remaining -= chunk
+    while remaining > 0:
+        c = min(1_000_000, remaining)
+        sizes.append(c)
+        remaining -= c
+    return sizes
 
 
 def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dict[str, Any]:
@@ -1141,26 +1312,49 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     x = job.features
     n = len(x)
     k = int(opts.get("k", 10))
-    cosine = opts.get("metric", "euclidean") == "cosine"
-    chunk_rows = int(opts.get("chunkRows", 1_000_000))
-    anchors = np.ascontiguousarray(x[job.anchor_pos], dtype=np.float32)
+    metric = str(opts.get("metric", "euclidean"))
+    cosine = metric == "cosine"
+    seed = int(opts.get("seed", 0))
+    # P6: reuse anchors from prepare; fall back to recomputing if not stored.
+    anchors = job.anchors if job.anchors is not None else np.ascontiguousarray(x[job.anchor_pos], dtype=np.float32)
     core = _native_core() if opts.get("native", True) else None
+
+    # P2: wait for the background neighbours thread if it is still running.
+    # We wait in 1-second ticks so that the project task's own cancel event is honoured
+    # (job.set raises _Cancelled when the task is cancelled or superseded).
+    # The neighbours thread is cancelled only by the next prepare/cleanup/explicit-cancel,
+    # not by this project call — so waiting here is safe.
+    cache_key = (metric, k)
+    waited_for_nbr = False
+    if not job.nbr_done.is_set():
+        waited_for_nbr = True
+        job.set("neighbours", 0.0, "Waiting for neighbour cache…")
+        while not job.nbr_done.wait(timeout=1.0):
+            # Raises _Cancelled if this project task was cancelled or a newer task started.
+            job.set("neighbours", 0.5, "Waiting for neighbour cache…")
+
+    # P1: check if neighbours are cached with a matching key.
+    if (job.nbr_idx is not None and job.nbr_sqd is not None and job.nbr_key == cache_key and job.nbr_non_anchor_pos is not None):
+        return _project_from_cache(job, anchor_xy, k, cosine, core, waited_for_nbr)
+
     if core is not None:
-        return _project_native(job, core, anchors, anchor_xy, k, cosine, int(opts.get("seed", 0)), chunk_rows)
-    if cosine:
+        return _project_native(job, core, anchors, anchor_xy, k, cosine, seed)
+    if cosine:  # numpy path
         anchors = anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12)
     job.set("indexing", 0.0, f"Indexing {len(anchors):,} anchors")
-    index = AnchorIndex(anchors, seed=int(opts.get("seed", 0)))
+    index = AnchorIndex(anchors, seed=seed)
     is_anchor = np.zeros(n, dtype=bool)
     is_anchor[job.anchor_pos] = True
     anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
     xy_all = np.empty((n, 2), dtype=np.float32)
     xy_all[job.anchor_pos] = anchor_xy
-    q_step = max(1, min(chunk_rows, (1 << 22) // max(x.shape[1], 1) * 4))
+    q_step = max(1, (1 << 22) // max(x.shape[1], 1) * 4)
+    offset = 0
     n_files = 0
     t0 = time.time()
-    for fstart in range(0, n, chunk_rows):
-        fstop = min(n, fstart + chunk_rows)
+    for chunk_size in _chunk_sizes(n):
+        fstart = offset
+        fstop = offset + chunk_size
         for s in range(fstart, fstop, q_step):
             e = min(fstop, s + q_step)
             sel = np.flatnonzero(~is_anchor[s:e]) + s
@@ -1178,12 +1372,53 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
         _write(job, fname, xy_all[fstart:fstop])
         job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
         n_files += 1
+        offset += chunk_size
     job.set("finishing", 1.0)  # raises if this task was superseded
     job.xy = xy_all
-    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "numpy"}
+    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "numpy", "cached": False}
 
 
-def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.ndarray, k: int, cosine: bool, seed: int, chunk_rows: int) -> dict[str, Any]:
+def _project_from_cache(job: _Job, anchor_xy: np.ndarray, k: int, cosine: bool, core: Any, waited: bool = False) -> dict[str, Any]:
+    """Fast re-placement using cached nearest-anchor indices (P1)."""
+    x = job.features
+    n = len(x)
+    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
+    xy_all = np.empty((n, 2), dtype=np.float32)
+    xy_all[job.anchor_pos] = anchor_xy
+    t0 = time.time()
+    nbr_idx = job.nbr_idx  # u32 (n_non_anchors, k)
+    nbr_sqd = job.nbr_sqd  # f32 (n_non_anchors, k)
+    non_anchor_pos = job.nbr_non_anchor_pos
+
+    job.set("projecting", 0.0, f"Placing {len(non_anchor_pos):,} rows from cache")
+    if core is not None:
+        # Use the Rust place_from_neighbors for parallel weighted-mean computation.
+        ni = np.ascontiguousarray(nbr_idx, dtype=np.uint32)
+        ns = np.ascontiguousarray(nbr_sqd, dtype=np.float32)
+        placed = core.place_from_neighbors(ni, ns, anchor_xy)
+        xy_all[non_anchor_pos] = placed
+    else:
+        placed = place_from_neighbors(nbr_idx, nbr_sqd, anchor_xy)
+        xy_all[non_anchor_pos] = placed
+    job.set("projecting", 0.9, f"Writing {n:,} rows")
+
+    n_files = 0
+    offset = 0
+    for chunk_size in _chunk_sizes(n):
+        fstart = offset
+        fstop = offset + chunk_size
+        fname = f"xy_{n_files:04d}.f32"
+        _write(job, fname, xy_all[fstart:fstop])
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
+        n_files += 1
+        offset += chunk_size
+
+    job.set("finishing", 1.0)
+    job.xy = xy_all
+    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "rust" if core else "numpy", "cached": True, "waitedForNeighbours": waited}
+
+
+def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.ndarray, k: int, cosine: bool, seed: int) -> dict[str, Any]:
     """Place rows with the Rust core: the same algorithm, multithreaded, with the GIL released."""
     x = job.features
     n = len(x)
@@ -1198,8 +1433,10 @@ def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.nda
     is_anchor[job.anchor_pos] = True
     t0 = time.time()
     n_files = 0
-    for fstart in range(0, n, chunk_rows):
-        fstop = min(n, fstart + chunk_rows)
+    offset = 0
+    for chunk_size in _chunk_sizes(n):
+        fstart = offset
+        fstop = offset + chunk_size
         rows = (np.flatnonzero(~is_anchor[fstart:fstop]) + fstart).astype(np.int64)
 
         def progress(done: int, fstart: int = fstart, fstop: int = fstop, total: int = len(rows)) -> None:
@@ -1217,9 +1454,10 @@ def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.nda
         _write(job, fname, xy_all[fstart:fstop])
         job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
         n_files += 1
+        offset += chunk_size
     job.set("finishing", 1.0)
     job.xy = xy_all
-    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "rust"}
+    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "rust", "cached": False}
 
 
 @_guard
@@ -1318,16 +1556,33 @@ def exact_umap(job_id: str, params_json: str = "{}") -> str:
 
 @_guard
 def estimate_projection(job_id: str, native: bool = True) -> str:
-    """Rough cost estimate (flops) for projecting; the extension turns it into seconds."""
+    """Rough cost estimate (flops) for projecting; the extension turns it into seconds.
+
+    When neighbours are cached (from the prepare stage), cost is just the weighted-mean
+    computation: approximately 4·k flops per row instead of the full index search.
+    New formula when cached: flops = (n − a) × 4 × k (k=10 by default).
+    """
     job = _get(job_id)
     if job.features is None or job.anchor_pos is None:
         raise RuntimeError("Run prepare first.")
     n, d = job.features.shape
     a = len(job.anchor_pos)
+    backend = "rust" if native and _native_core() is not None else "numpy"
+    # Check if neighbours are cached with any key (the key is validated in project).
+    if job.nbr_idx is not None and job.nbr_key is not None:
+        k = job.nbr_key[1]  # cached k
+        # Cost: just the weighted mean, ~4k ops per non-anchor row
+        flops = float((n - a) * 4 * k)
+        return _json({"ok": True, "flops": flops, "rows": int(n - a), "backend": backend, "cached": True})
+    # If the neighbours background thread is still running, estimate as if it will finish
+    # (it will be ready by the time the user clicks "Place all rows").
+    if not job.nbr_done.is_set():
+        k = 10  # default k (the thread uses opts.k from prepare, typically 10)
+        flops = float((n - a) * 4 * k)
+        return _json({"ok": True, "flops": flops, "rows": int(n - a), "backend": backend, "cached": True})
     cells = 1 if a <= 4096 else min(1024, max(16, round(math.sqrt(a))))
     per_query = (cells + 4 * a / cells) * d if a > 4096 else a * d
-    backend = "rust" if native and _native_core() is not None else "numpy"
-    return _json({"ok": True, "flops": float(2 * (n - a) * per_query), "rows": int(n - a), "backend": backend})
+    return _json({"ok": True, "flops": float(2 * (n - a) * per_query), "rows": int(n - a), "backend": backend, "cached": False})
 
 
 # --------------------------------------------------------------------------------------

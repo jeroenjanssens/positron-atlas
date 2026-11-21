@@ -132,6 +132,11 @@
           "type": "number",
           "default": 10000000,
           "description": "Maximum number of rows collected from a lazy frame (polars LazyFrame, DuckDB relation, etc.) when opening it in Atlas."
+        },
+        "positronAtlas.neighborCacheMB": {
+          "type": "number",
+          "default": 1024,
+          "description": "Memory budget (MB) for the nearest-anchor neighbour cache. When a placement result fits within this budget (n_rows × k × 8 bytes), Atlas pre-computes neighbours during prepare and reuses them on subsequent placements with the same metric and k, skipping the index build and search entirely. Set to 0 to disable."
         }
       }
     }
@@ -153,7 +158,7 @@
     "vscode:prepublish": "npm run build",
     "test:e2e": "node test/e2e/run.mjs test/e2e/scenario-small.json && node test/e2e/run.mjs test/e2e/scenario-explorer.json && node test/e2e/run.mjs test/e2e/scenario-polars-projection.json && node test/e2e/run.mjs test/e2e/scenario-background.json && node test/e2e/run.mjs test/e2e/scenario-step.json && node test/e2e/restore.mjs",
     "test:e2e:examples": "node test/e2e/run.mjs test/e2e/scenario-example-mnist.json && node test/e2e/run.mjs test/e2e/scenario-example-fashion.json && node test/e2e/run.mjs test/e2e/scenario-example-covtype.json",
-    "test:harness": "node test/harness/shot.mjs test/harness/scenario-small.json && node test/harness/shot.mjs test/harness/scenario-ui.json && node test/harness/shot.mjs test/harness/scenario-tags.json && node test/harness/shot.mjs test/harness/scenario-tags-polars.json && node test/harness/shot.mjs test/harness/scenario-tags-polars-expr.json && node test/harness/shot.mjs test/harness/scenario-small-numpy.json && node test/harness/shot.mjs test/harness/scenario-exact.json && node test/harness/shot.mjs test/harness/scenario-exact-polars.json && node test/harness/shot.mjs test/harness/scenario-fonts.json && node test/harness/shot.mjs test/harness/scenario-pyarrow.json",
+    "test:harness": "node test/harness/shot.mjs test/harness/scenario-small.json && node test/harness/shot.mjs test/harness/scenario-ui.json && node test/harness/shot.mjs test/harness/scenario-tags.json && node test/harness/shot.mjs test/harness/scenario-tags-polars.json && node test/harness/shot.mjs test/harness/scenario-tags-polars-expr.json && node test/harness/shot.mjs test/harness/scenario-small-numpy.json && node test/harness/shot.mjs test/harness/scenario-exact.json && node test/harness/shot.mjs test/harness/scenario-exact-polars.json && node test/harness/shot.mjs test/harness/scenario-fonts.json && node test/harness/shot.mjs test/harness/scenario-pyarrow.json && node test/harness/shot.mjs test/harness/scenario-replace.json",
     "test:harness:mnist": "node test/harness/shot.mjs test/harness/scenario-labels.json && node test/harness/shot.mjs test/harness/scenario-palette.json && node test/harness/shot.mjs test/harness/scenario-selection.json && node test/harness/shot.mjs test/harness/scenario-clusters.json",
     "harness": "node test/harness/shot.mjs"
   },

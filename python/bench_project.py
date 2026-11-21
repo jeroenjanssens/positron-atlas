@@ -110,6 +110,29 @@ def run(n: int, d: int, n_anchors: int, backend: str, sample: int = 20_000) -> d
     b.place(x, rows, anchor_xy, out, chunk)
     t_place = time.perf_counter() - t0
 
+    # --- cached re-placement: pre-compute neighbours (as the background thread does),
+    #     then place from cached indices (place_from_neighbors only, no index search). ---
+    q_all = np.ascontiguousarray(x[rows], dtype=np.float32)
+    core = pak._native_core()
+
+    t0 = time.perf_counter()
+    if backend == "rust" and core is not None:
+        nbr_idx, nbr_sqd = b.index.neighbors_u32(q_all, K)  # returns u32 indices
+    else:
+        nbr_idx_i64, nbr_sqd = b.index.query(q_all, K)
+        sentinel = np.iinfo(np.uint32).max
+        nbr_idx = np.where(nbr_idx_i64 >= 0, nbr_idx_i64.astype(np.uint32), sentinel)
+        nbr_sqd = nbr_sqd.astype(np.float32)
+    t_nbr = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    if backend == "rust" and core is not None:
+        placed_cached = core.place_from_neighbors(nbr_idx, nbr_sqd, anchor_xy)
+    else:
+        placed_cached = pak.place_from_neighbors(nbr_idx, nbr_sqd, anchor_xy)
+    t_replace = time.perf_counter() - t0
+    # ----------------------------------------------------------------------------------
+
     # Accuracy on a sample of the placed rows, against exact neighbors.
     qs = rows[np.sort(np.random.default_rng(2).choice(len(rows), size=min(sample, len(rows)), replace=False))]
     q = np.ascontiguousarray(x[qs])
@@ -127,6 +150,9 @@ def run(n: int, d: int, n_anchors: int, backend: str, sample: int = 20_000) -> d
         "build_s": round(t_build, 3),
         "place_s": round(t_place, 3),
         "us_per_row": round(t_place / max(len(rows), 1) * 1e6, 2),
+        "neighbours_s": round(t_nbr, 3),
+        "replace_s": round(t_replace, 3),
+        "replace_us_per_row": round(t_replace / max(len(rows), 1) * 1e6, 2),
         "recall@10": round(recall, 4),
         "place_err": round(err, 5),
     }

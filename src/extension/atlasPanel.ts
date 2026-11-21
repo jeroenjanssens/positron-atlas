@@ -47,6 +47,7 @@ export function readSettings(): Settings {
     pcaDims: c.get('pcaDims', 50),
     nativeCore: c.get('nativeCore', true),
     maxLazyRows: c.get('maxLazyRows', 10_000_000),
+    neighborCacheMB: c.get('neighborCacheMB', 1024),
   };
 }
 
@@ -249,13 +250,23 @@ export class AtlasPanel {
         const job = this.requireJob();
         const token = this.newToken();
         this.projectionCurrent = false;
-        await this.bridge.call('prepare', job, JSON.stringify({ ...m.options, native: readSettings().nativeCore }));
-        const s = await this.bridge.waitForJob(job, (st) => this.post({ type: 'status', task: 'prepare', status: st }), token);
+        const settings = readSettings();
+        await this.bridge.call('prepare', job, JSON.stringify({
+          ...m.options,
+          native: settings.nativeCore,
+          neighborCacheMB: settings.neighborCacheMB,
+        }));
+        const s = await this.bridge.waitForJob(
+          job,
+          (st) => {
+            this.post({ type: 'status', task: 'prepare', status: st });
+          },
+          token,
+        );
         if (s.stage === 'done') {
-          const res = s.result as PrepareResult;
           const anchors = s.outputs.find((o) => o.kind === 'anchors')!;
           const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos')!;
-          this.post({ type: 'prepared', result: res, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
+          this.post({ type: 'prepared', result: s.result as PrepareResult, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
         } else if (s.stage === 'error') {
           throw new KernelError(s.error ?? 'Preparing the data failed', s.result?.traceback);
         }
@@ -272,8 +283,8 @@ export class AtlasPanel {
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
         await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
         try {
-          const native = readSettings().nativeCore;
-          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native })), false);
+          const settings = readSettings();
+          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore })), false);
         } finally {
           await fs.rm(xyPath, { force: true });
         }

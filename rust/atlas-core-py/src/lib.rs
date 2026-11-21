@@ -4,11 +4,12 @@
 //! heavy work runs with the GIL released, so the user's console stays responsive; Python is only
 //! called between blocks of rows, for cancellation and progress.
 
-use atlas_core::{column_moments, neighbors, place_rows, scale_columns, AnchorIndex, IndexOptions};
+use atlas_core::{column_moments, neighbors, place_from_neighbors as pfn, place_rows, scale_columns, AnchorIndex, IndexOptions};
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::thread::available_parallelism;
 
 /// An index over the anchors (feature vectors of the rows UMAP ran on).
 #[pyclass(frozen, module = "_positron_atlas_core")]
@@ -78,6 +79,73 @@ impl Index {
         Ok((idx, sqd))
     }
 
+    /// neighbors_u32(q: float32[m, d], k=10, num_threads=0, cancel=None, block_rows=65536)
+    ///   -> (uint32[m, k], float32[m, k]):
+    /// nearest anchors and squared distances, ascending; u32::MAX and inf for unused slots.
+    /// `num_threads=0` uses all available threads; set to cores-1 when UMAP runs concurrently.
+    /// `cancel` is an optional Python callable () -> bool; checked between blocks of `block_rows`
+    /// rows; raises ValueError("cancelled") when True.
+    #[pyo3(signature = (q, k = 10, num_threads = 0, cancel = None, block_rows = 65_536))]
+    fn neighbors_u32<'py>(
+        &self,
+        py: Python<'py>,
+        q: PyReadonlyArray2<'py, f32>,
+        k: usize,
+        num_threads: usize,
+        cancel: Option<Py<PyAny>>,
+        block_rows: usize,
+    ) -> PyResult<(Bound<'py, PyArray2<u32>>, Bound<'py, PyArray2<f32>>)> {
+        if q.shape()[1] != self.inner.dims() {
+            return Err(PyValueError::new_err(format!("q has {} columns, the index {}", q.shape()[1], self.inner.dims())));
+        }
+        let m = q.shape()[0];
+        let dims = self.inner.dims();
+        let data = contiguous("q", &q)?;
+        let block = block_rows.max(1);
+
+        // Build the thread pool once so it is reused across blocks.
+        let pool: Option<rayon::ThreadPool> = if num_threads > 0 {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(num_threads)
+                    .build()
+                    .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?,
+            )
+        } else {
+            None
+        };
+
+        let mut all_idx: Vec<u32> = Vec::with_capacity(m * k);
+        let mut all_sqd: Vec<f32> = Vec::with_capacity(m * k);
+
+        for start in (0..m).step_by(block) {
+            let end = m.min(start + block);
+            let chunk = &data[start * dims..end * dims];
+
+            // Release the GIL while Rust searches neighbours; reacquire between blocks.
+            let (idx_chunk, sqd_chunk) = py.detach(|| {
+                if let Some(ref p) = pool {
+                    p.install(|| neighbors(&self.inner, chunk, k))
+                } else {
+                    neighbors(&self.inner, chunk, k)
+                }
+            });
+            all_idx.extend_from_slice(&idx_chunk);
+            all_sqd.extend_from_slice(&sqd_chunk);
+
+            // Check cancel between blocks (GIL held here).
+            if let Some(ref c) = cancel {
+                if c.call0(py)?.is_truthy(py)? {
+                    return Err(PyValueError::new_err("cancelled"));
+                }
+            }
+        }
+
+        let idx = numpy::PyArray1::from_vec(py, all_idx).reshape([m, k])?;
+        let sqd = numpy::PyArray1::from_vec(py, all_sqd).reshape([m, k])?;
+        Ok((idx, sqd))
+    }
+
     /// place(x: float32[m, d], rows: int64[r], anchor_xy: float32[n, 2], out: float32[m, 2], k=10,
     ///       cancel=None, progress=None, block_rows=262144) -> bool
     ///
@@ -143,6 +211,54 @@ impl Index {
     }
 }
 
+/// place_from_neighbors(nbr_idx: uint32[n, k], nbr_sqd: float32[n, k],
+///                      anchor_xy: float32[a, 2], num_threads=0) -> float32[n, 2]:
+/// Place rows from pre-computed neighbor indices and squared distances. Parallel (rayon).
+/// `u32::MAX` indices and `inf` distances are ignored (zero weight). `num_threads=0` uses all
+/// available threads; pass cores-1 when the browser UMAP runs concurrently on the CPU.
+#[pyfunction(name = "place_from_neighbors")]
+#[pyo3(signature = (nbr_idx, nbr_sqd, anchor_xy, num_threads = 0))]
+fn place_from_neighbors_py<'py>(
+    py: Python<'py>,
+    nbr_idx: PyReadonlyArray2<'py, u32>,
+    nbr_sqd: PyReadonlyArray2<'py, f32>,
+    anchor_xy: PyReadonlyArray2<'py, f32>,
+    num_threads: usize,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let [n, k] = [nbr_idx.shape()[0], nbr_idx.shape()[1]];
+    if nbr_sqd.shape() != [n, k] {
+        return Err(PyValueError::new_err("nbr_idx and nbr_sqd must have the same shape"));
+    }
+    if anchor_xy.shape()[1] != 2 {
+        return Err(PyValueError::new_err("anchor_xy must have shape (n_anchors, 2)"));
+    }
+    if !nbr_idx.is_c_contiguous() {
+        return Err(PyValueError::new_err("nbr_idx must be a C-contiguous uint32 array"));
+    }
+    if !nbr_sqd.is_c_contiguous() {
+        return Err(PyValueError::new_err("nbr_sqd must be a C-contiguous float32 array"));
+    }
+    let ii = nbr_idx.as_slice().map_err(|_| PyValueError::new_err("nbr_idx not contiguous"))?;
+    let dd = nbr_sqd.as_slice().map_err(|_| PyValueError::new_err("nbr_sqd not contiguous"))?;
+    let axy = contiguous("anchor_xy", &anchor_xy)?;
+    let out = if num_threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?
+            .install(|| pfn(ii, dd, k, axy))
+    } else {
+        py.detach(|| pfn(ii, dd, k, axy))
+    };
+    numpy::PyArray1::from_vec(py, out).reshape([n, 2]).map_err(Into::into)
+}
+
+/// n_cpus() -> int: number of logical CPU cores.
+#[pyfunction(name = "n_cpus")]
+fn n_cpus_py() -> usize {
+    available_parallelism().map(|n| n.get()).unwrap_or(1)
+}
+
 /// column_moments(x: float32[n, d]) -> (float64[d], float64[d]): per-column sums and sums of
 /// squares, in float64 (for exact means and standard deviations).
 #[pyfunction(name = "column_moments")]
@@ -180,6 +296,8 @@ fn scale_columns_py(py: Python<'_>, mut x: PyReadwriteArray2<'_, f32>, sub: PyRe
 fn _positron_atlas_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<Index>()?;
+    m.add_function(wrap_pyfunction!(place_from_neighbors_py, m)?)?;
+    m.add_function(wrap_pyfunction!(n_cpus_py, m)?)?;
     m.add_function(wrap_pyfunction!(column_moments_py, m)?)?;
     m.add_function(wrap_pyfunction!(scale_columns_py, m)?)?;
     Ok(())

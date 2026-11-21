@@ -43,6 +43,32 @@ pub fn place_point(idx: &[u32], sqd: &[f32], count: usize, anchor_xy: &[f32]) ->
     [x / w_sum, y / w_sum]
 }
 
+/// Place all rows from pre-computed neighbor indices and squared distances (parallel).
+///
+/// `nbr_idx` and `nbr_sqd` are row-major with `k` values per row; unused slots have
+/// index `u32::MAX` and distance `+inf`, which get zero weight naturally. Returns positions
+/// (n × 2 flat).
+pub fn place_from_neighbors(nbr_idx: &[u32], nbr_sqd: &[f32], k: usize, anchor_xy: &[f32]) -> Vec<f32> {
+    let n = if k == 0 { 0 } else { nbr_idx.len() / k };
+    let mut out = vec![0f32; n * 2];
+    if n == 0 {
+        return out;
+    }
+    out.par_chunks_mut(TASK_ROWS * 2)
+        .zip(nbr_idx.par_chunks(TASK_ROWS * k))
+        .zip(nbr_sqd.par_chunks(TASK_ROWS * k))
+        .for_each(|((out, ii), dd)| {
+            for (r, o) in out.chunks_exact_mut(2).enumerate() {
+                // Count valid slots (u32::MAX marks unused; INFINITY distance → zero weight).
+                let count = k.min(ii[r * k..(r + 1) * k].iter().position(|&v| v == u32::MAX).unwrap_or(k));
+                let p = place_point(&ii[r * k..(r + 1) * k], &dd[r * k..(r + 1) * k], count, anchor_xy);
+                o[0] = p[0];
+                o[1] = p[1];
+            }
+        });
+    out
+}
+
 /// Nearest anchors of the rows of `queries` (row-major): indices and squared distances,
 /// `k` per row (unused slots: index u32::MAX, distance +inf).
 pub fn neighbors(index: &AnchorIndex, queries: &[f32], k: usize) -> (Vec<u32>, Vec<f32>) {
@@ -171,5 +197,36 @@ mod tests {
         let (ii, dd) = neighbors(&index, &[0.9, 0.0], 3);
         assert_eq!(ii, vec![1, 0, u32::MAX]);
         assert!(dd[2].is_infinite());
+    }
+
+    #[test]
+    fn place_from_neighbors_matches_place_rows() {
+        let anchors: Vec<f32> = (0..20).flat_map(|i| [i as f32, 0.0]).collect();
+        let anchor_xy: Vec<f32> = (0..20).flat_map(|i| [i as f32, 0.0]).collect();
+        let index = AnchorIndex::new(&anchors, 2, &IndexOptions::default());
+        let queries: Vec<f32> = vec![3.5, 0.0, 10.1, 0.0, 15.9, 0.0];
+        // Get neighbors via neighbors()
+        let (ii, dd) = neighbors(&index, &queries, 4);
+        // Place via place_from_neighbors
+        let out1 = place_from_neighbors(&ii, &dd, 4, &anchor_xy);
+        // Place via place_rows (the reference)
+        let out2 = place_rows(&index, &queries, &[0, 1, 2], &anchor_xy, 4,
+            &AtomicBool::new(false), &AtomicUsize::new(0)).unwrap();
+        for i in 0..3 {
+            assert!((out1[2 * i] - out2[2 * i]).abs() < 1e-4, "row {i}: {out1:?} vs {out2:?}");
+        }
+    }
+
+    #[test]
+    fn place_from_neighbors_handles_max_sentinel() {
+        // Only 2 anchors, requesting k=5: slots 2..4 get u32::MAX / inf
+        let anchors = vec![0.0f32, 0.0, 1.0, 0.0];
+        let anchor_xy = vec![0.0f32, 0.0, 1.0, 0.0];
+        let index = AnchorIndex::new(&anchors, 2, &IndexOptions::default());
+        let (ii, dd) = neighbors(&index, &[0.5f32, 0.0], 5);
+        assert_eq!(ii[2..5], [u32::MAX, u32::MAX, u32::MAX]);
+        let out = place_from_neighbors(&ii, &dd, 5, &anchor_xy);
+        // Result should be near 0.5 (midpoint between the two anchors)
+        assert!((out[0] - 0.5).abs() < 0.01, "out={out:?}");
     }
 }

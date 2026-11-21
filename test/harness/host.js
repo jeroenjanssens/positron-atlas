@@ -76,7 +76,7 @@
       onStatus(s);
       if (s.stage === 'done' || s.stage === 'error' || s.stage === 'cancelled') return s;
       await sleep(delay);
-      delay = Math.min(500, delay * 1.5);
+      delay = Math.min(150, delay * 1.5);
     }
   }
 
@@ -100,6 +100,7 @@
     );
     if (s.stage === 'done') {
       projectionCurrent = true;
+      harness.lastProjectResult = s.result || {};  // exposes cached/waitedForNeighbours etc. to scenarios
       post({ type: 'projected', seconds: (s.result && s.result.seconds) || 0, exact, backend: s.result && s.result.backend });
     } else if (s.stage === 'error') {
       const err = new Error(s.error || `${task} failed`);
@@ -120,6 +121,7 @@
       pcaDims: s.pcaDims ?? 50,
       nativeCore: s.nativeCore ?? true,
       maxLazyRows: s.maxLazyRows ?? 10000000,
+      neighborCacheMB: s.neighborCacheMB ?? 1024,
     };
   }
 
@@ -149,8 +151,15 @@
       case 'prepare': {
         const gen = ++generation;
         projectionCurrent = false;
-        await call('prepare', jobId, JSON.stringify({ ...m.options, native: settings().nativeCore }));
-        const s = await waitForJob(jobId, (st) => post({ type: 'status', task: 'prepare', status: st }), gen);
+        const cfg = settings();
+        await call('prepare', jobId, JSON.stringify({ ...m.options, native: cfg.nativeCore, neighborCacheMB: cfg.neighborCacheMB }));
+        const s = await waitForJob(
+          jobId,
+          (st) => {
+            post({ type: 'status', task: 'prepare', status: st });
+          },
+          gen,
+        );
         if (s.stage === 'done') {
           const anchors = s.outputs.find((o) => o.kind === 'anchors');
           const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos');

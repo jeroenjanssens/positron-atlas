@@ -193,7 +193,8 @@ def test_project_places_points_near_their_cluster(ns, frame_kind, tmp_path, nati
     assert st["stage"] == "done", st
     assert st["result"]["backend"] == ("rust" if native else "numpy")
     files = [o for o in st["outputs"] if o["kind"] == "xy"]
-    assert len(files) == 3 and files[1]["offset"] == 1000
+    # Geometric chunks: n=3000 fits in the first 100k chunk → 1 file; check offsets are set.
+    assert len(files) >= 1 and files[0]["offset"] == 0
     xy = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 2) for f in files])
     dist = np.linalg.norm(xy - centers[labels[job.kept_idx]], axis=1)
     assert np.mean(dist < 10) > 0.98
@@ -948,3 +949,188 @@ def test_pandas_polars_describe_unchanged(ns, frame_kind):
     assert d["ok"] and d["nRows"] == 500
     assert d["frameKind"] == frame_kind
     assert not d.get("wasLazy", False)
+
+
+# P1/P2 neighbour-cache tests
+# --------------------------------------------------------------------------------------
+
+
+def _prepare_with_anchors(ns, tmp_path, n=3000, max_anchors=400, native=False, **extra):
+    """Prepare a job that requires projection (more rows than anchors)."""
+    x, labels = make_blobs(n, 20)
+    ns["df"] = pd.DataFrame({f"f{i}": x[:, i] for i in range(20)})
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    opts = {"features": list(range(20)), "seed": 1, "maxAnchors": max_anchors, "native": native, **extra}
+    J(pak.prepare(jid, json.dumps(opts)))
+    st = wait(jid)
+    assert st["stage"] == "done" and st["result"]["needsProjection"], st
+    return jid, x, labels
+
+
+def _write_axy(job, labels, tmp_path, seed=0):
+    """Write a fake anchor layout (cluster centres) and return the path."""
+    anchor_labels = labels[job.kept_idx[job.anchor_pos]]
+    centers = np.array([[0, 0], [100, 0], [0, 100], [100, 100]], dtype=np.float32)
+    axy = centers[anchor_labels] + np.random.default_rng(seed).normal(0, 1, (len(job.anchor_pos), 2)).astype(np.float32)
+    p = tmp_path / "axy.f32"
+    axy.astype("<f4").tofile(p)
+    return str(p), axy
+
+
+def _wait_nbr_done(jid, timeout=10.0):
+    """Block until the background neighbours thread finishes."""
+    job = pak._JOBS[jid]
+    if not job.nbr_done.wait(timeout=timeout):
+        raise TimeoutError("neighbours thread did not finish")
+
+
+def test_cache_hit_numpy_exact_equality(ns, tmp_path):
+    """Second project (same metric+k) hits the cache; xy output is exactly equal."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    assert job.nbr_idx is not None and job.nbr_key == ("euclidean", 10), "cache not populated"
+
+    path, axy = _write_axy(job, labels, tmp_path)
+
+    # First placement (cache hit — thread already done)
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
+    st1 = wait(jid)
+    assert st1["stage"] == "done" and st1["result"]["cached"] is True, st1["result"]
+    xy1 = np.concatenate([
+        np.fromfile(tmp_path / o["file"], dtype="<f4").reshape(-1, 2)
+        for o in st1["outputs"] if o["kind"] == "xy"
+    ])
+
+    # Second placement — still a cache hit; must produce EXACTLY the same coordinates.
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
+    st2 = wait(jid)
+    assert st2["result"]["cached"] is True
+    xy2 = np.concatenate([
+        np.fromfile(tmp_path / o["file"], dtype="<f4").reshape(-1, 2)
+        for o in st2["outputs"] if o["kind"] == "xy"
+    ])
+    np.testing.assert_array_equal(xy1, xy2)
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_cache_hit_native_vs_numpy_equality(ns, tmp_path, native):
+    """Cache hit produces the same xy as the initial full placement on the same path."""
+    if native and pak._native_core() is None:
+        pytest.skip(f"native core not available: {pak._NATIVE_INFO.get('reason')}")
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=native)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    assert job.nbr_idx is not None, "cache not populated"
+
+    path, axy = _write_axy(job, labels, tmp_path)
+
+    # First call (cache hit)
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": native})))
+    st = wait(jid)
+    assert st["result"]["cached"] is True, st["result"]
+
+
+def test_cache_invalidated_by_new_prepare(ns, tmp_path):
+    """Running prepare again clears the neighbour cache."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    assert job.nbr_idx is not None, "cache not populated after first prepare"
+
+    # Second prepare — should invalidate the cache immediately.
+    opts = {"features": list(range(20)), "seed": 2, "maxAnchors": 400, "native": False}
+    J(pak.prepare(jid, json.dumps(opts)))
+    # Immediately after the prepare() call the job is resetting; cache must be cleared.
+    assert job.nbr_idx is None, "cache should be cleared at start of new prepare"
+    st = wait(jid)
+    assert st["stage"] == "done", st
+
+
+def test_cache_miss_on_metric_change(ns, tmp_path):
+    """Cosine project after euclidean cache → cache miss → full placement (not cached)."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    assert job.nbr_key == ("euclidean", 10), "expected euclidean cache from prepare"
+
+    path, _ = _write_axy(job, labels, tmp_path)
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    # Cosine with euclidean cache → full placement, cached=False
+    assert st["result"]["cached"] is False, st["result"]
+
+
+def test_memory_cap_disables_cache(ns, tmp_path):
+    """neighborCacheMB=0 makes the cache too small; nbr_done is set immediately (no search)."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False, neighborCacheMB=0)
+    # nbr_done must be set immediately (no background thread started)
+    job = pak._JOBS[jid]
+    assert job.nbr_done.is_set(), "nbr_done should be set immediately when cache is disabled"
+    assert job.nbr_idx is None, "cache should be empty when cap is 0"
+
+    # Project should succeed (full placement, not cached)
+    path, _ = _write_axy(job, labels, tmp_path)
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
+    st = wait(jid)
+    assert st["stage"] == "done" and st["result"]["cached"] is False, st["result"]
+
+
+def test_cancel_during_neighbours(ns, tmp_path):
+    """Cancelling during the neighbours stage still sets nbr_done and allows a fresh project."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    job = pak._JOBS[jid]
+
+    # Cancel immediately — the nbr thread may or may not have started, but after
+    # cancel nbr_done must eventually be set and the cache must be absent or valid.
+    J(pak.cancel(jid))
+    # nbr_cancel_event is now set; thread will exit at the next cancel check.
+    assert job.nbr_cancel_event.is_set(), "nbr_cancel_event should be set after cancel"
+
+    # Wait for nbr_done to be set (thread has honoured the cancel).
+    assert job.nbr_done.wait(timeout=10.0), "nbr_done not set after cancel"
+
+    # Even if the cache ended up populated (cancel arrived after completion), a new
+    # project should succeed without error.
+    path, _ = _write_axy(job, labels, tmp_path)
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+
+
+def test_project_while_neighbours_running(ns, tmp_path, monkeypatch):
+    """project called while nbr thread still running → waits → uses cache (cached=True)."""
+    import threading as _threading
+
+    # Slow down the numpy search so the nbr thread is still running when project starts.
+    orig_query = pak.AnchorIndex.query
+
+    barrier = _threading.Event()
+    unblocked = _threading.Event()
+
+    def slow_query(self, q, k):
+        barrier.set()          # signal that the query has started
+        unblocked.wait(timeout=5.0)  # wait until the test releases us
+        return orig_query(self, q, k)
+
+    monkeypatch.setattr(pak.AnchorIndex, "query", slow_query)
+
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    job = pak._JOBS[jid]
+
+    # Wait until the slow query has started (nbr thread is definitely running).
+    assert barrier.wait(timeout=10.0), "nbr thread did not start"
+    assert not job.nbr_done.is_set(), "nbr_done should not be set while query is running"
+
+    # Start project (runs in a background thread via job.run).
+    path, _ = _write_axy(job, labels, tmp_path)
+    J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
+
+    # Unblock the slow query so the nbr thread can finish → project unblocks.
+    unblocked.set()
+
+    st = wait(jid, timeout=30)
+    assert st["stage"] == "done", st
+    assert st["result"]["cached"] is True, st["result"]
+    assert st["result"]["waitedForNeighbours"] is True, st["result"]

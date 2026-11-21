@@ -1,0 +1,30 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 5000,
+    "nativeCore": false
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "first placement done",
+      "assert": [
+        "a.phase === 'ready'",
+        "a.projection === 'done'",
+        "a.placementBackend === 'numpy'"
+      ],
+      "report": "{ cached: h.lastProjectResult && h.lastProjectResult.cached, backend: a.placementBackend }"
+    },
+    {
+      "name": "change min_dist to trigger re-placement",
+      "eval": "a.umap.minDist = 0.5; a.umapChanged()",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": [
+        "h.lastProjectResult && h.lastProjectResult.cached === true"
+      ],
+      "report": "{ cached: h.lastProjectResult.cached, waitedForNeighbours: h.lastProjectResult.waitedForNeighbours, backend: a.placementBackend }"
+    }
+  ]
+}
