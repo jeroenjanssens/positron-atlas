@@ -193,3 +193,37 @@ export function formatPercent(p: number): string {
   const v = p * 100;
   return `${v >= 10 || v === 0 ? Math.round(v) : v.toFixed(1)}%`;
 }
+
+/**
+ * Python that draws the map with DataMapPlot (datamapplot.create_interactive_plot), from the
+ * coordinates Atlas adds to the DataFrame (umap_x, umap_y) and an optional label column.
+ */
+export function dataMapPlotSnippet(variable: string, frameKind: 'pandas' | 'polars', labelColumn: string | null): string {
+  const col = (name: string) => JSON.stringify(name);
+  const lines = [
+    '# Atlas: Map → Result → "Add coordinates to DataFrame" adds umap_x and umap_y.',
+    '# pip install datamapplot',
+    'import datamapplot',
+  ];
+  if (frameKind === 'polars') {
+    lines.push('import polars as pl', '', `data = ${variable}.filter(pl.col("umap_x").is_not_nan())  # rows that are on the map`);
+    lines.push('coords = data.select("umap_x", "umap_y").to_numpy()');
+    if (labelColumn !== null) {
+      lines.push(`labels = data[${col(labelColumn)}].cast(pl.String).fill_null("Unlabelled").to_numpy()`);
+    }
+  } else {
+    lines.push('', `data = ${variable}[${variable}["umap_x"].notna()]  # rows that are on the map`);
+    lines.push('coords = data[["umap_x", "umap_y"]].to_numpy()');
+    if (labelColumn !== null) {
+      lines.push(`labels = data[${col(labelColumn)}].astype("string").fillna("Unlabelled").to_numpy(dtype=object)`);
+    }
+  }
+  lines.push('');
+  if (labelColumn !== null) {
+    lines.push('plot = datamapplot.create_interactive_plot(coords, labels, noise_label="Unlabelled")');
+  } else {
+    lines.push('plot = datamapplot.create_interactive_plot(coords)');
+  }
+  lines.push('plot  # or plot.save("map.html")');
+  return lines.join('\n') + '\n';
+}

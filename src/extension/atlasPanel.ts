@@ -295,6 +295,34 @@ export class AtlasPanel {
         });
         break;
       }
+      case 'writeLabels': {
+        const pick = await vscode.window.showWarningMessage(
+          `${m.description} in column ${m.column} of ${this.state.variable}? This modifies the DataFrame in your session.`,
+          { modal: true },
+          'Write Column',
+        );
+        if (pick !== 'Write Column') {
+          return;
+        }
+        const codesPath = path.join(this.jobDir.fsPath, `labels_${Date.now()}.u16`);
+        await fs.writeFile(codesPath, Buffer.from(m.codes, 'base64'));
+        try {
+          const r = await this.bridge.call<{ variable: string; column: string; rows: number }>(
+            'write_labels',
+            this.requireJob(),
+            codesPath,
+            m.names,
+            m.column,
+            m.keepOthers,
+          );
+          const describe = await this.bridge.call<DescribeResult>('describe', r.variable);
+          this.post({ type: 'labelsWritten', variable: r.variable, column: r.column, rows: r.rows, describe });
+          void vscode.window.showInformationMessage(`Wrote ${r.rows.toLocaleString('en-US')} labels to ${r.variable}.${r.column}.`);
+        } finally {
+          await fs.rm(codesPath, { force: true });
+        }
+        break;
+      }
       case 'describeGroups': {
         // Names for automatic clusters from their most distinguishing columns.
         const codesPath = path.join(this.jobDir.fsPath, `groups_${Date.now()}.u16`);

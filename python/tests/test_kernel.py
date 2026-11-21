@@ -488,3 +488,44 @@ def test_describe_groups(ns, frame_kind, tmp_path):
     assert "FileNotFoundError" in J(pak.describe_groups(jid, str(tmp_path / "missing.u2"), 3, [0]))["error"]
     (tmp_path / "short.u2").write_bytes(b"\x00\x00")
     assert "prepared rows" in J(pak.describe_groups(jid, str(tmp_path / "short.u2"), 3, [0]))["error"]
+
+
+def test_write_labels(ns, frame_kind, tmp_path):
+    jid, _, x, labels = prepared(ns, frame_kind, tmp_path, samplePct=50)
+    job = pak._JOBS[jid]
+    n_kept = len(job.kept_idx)
+    codes = np.full(n_kept, 65535, dtype="<u2")
+    codes[:3] = 0
+    codes[3:5] = 1
+    path = tmp_path / "codes.u2"
+    codes.tofile(path)
+    # A new column: the tagged rows get their names, all other rows are missing.
+    r = J(pak.write_labels(jid, str(path), ["a", "b"], "atlas_tag"))
+    assert r == {"ok": True, "variable": "df", "column": "atlas_tag", "rows": 5}
+    df = ns["df"]
+    col = list(df["atlas_tag"]) if frame_kind == "polars" else df["atlas_tag"].tolist()
+    expect = [None] * len(labels)
+    for i, row in enumerate(job.kept_idx[:5]):
+        expect[row] = "a" if i < 3 else "b"
+    norm = [None if (v is None or v is pd.NA) else v for v in col]
+    assert norm == expect
+    # Existing column, keep others: earlier tags stay, new ones overwrite.
+    codes[:] = 65535
+    codes[0] = 0
+    codes[10] = 0
+    codes.tofile(path)
+    pak.write_labels(jid, str(path), ["c"], "atlas_tag")
+    col = list(ns["df"]["atlas_tag"])
+    norm = [None if (v is None or v is pd.NA) else v for v in col]
+    assert norm[job.kept_idx[0]] == "c" and norm[job.kept_idx[1]] == "a" and norm[job.kept_idx[10]] == "c"
+    # keep_others=False clears the prepared rows that are not labeled (cluster noise).
+    pak.write_labels(jid, str(path), ["c"], "atlas_tag", False)
+    col = list(ns["df"]["atlas_tag"])
+    norm = [None if (v is None or v is pd.NA) else v for v in col]
+    assert norm[job.kept_idx[1]] is None and norm[job.kept_idx[0]] == "c"
+    # The frame is not reported as changed by the user, and the new column is described.
+    st = J(pak.status(jid))
+    assert st["stale"] is False
+    d = J(pak.describe("df"))
+    assert d["columns"][-1]["name"] == "atlas_tag" and d["columns"][-1]["kind"] == "categorical"
+    assert "empty" in J(pak.write_labels(jid, str(path), ["c"], "  "))["error"]

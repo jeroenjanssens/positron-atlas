@@ -12,6 +12,9 @@ python/positron_atlas_kernel.py, and serves:
     POST /call                  {"fn": name, "args": [...]} -> the helper's JSON result
     POST /write?name=<file>     write the request body into the job directory; returns its path
     POST /rm?name=<file>        remove a file from the job directory
+    POST /exec                  {"code": ...} run code in the scenario's namespace (tests only); a stub
+                                `datamapplot` module records create_interactive_plot calls in
+                                `_dmp_calls`. Returns {"ok", "error"}.
 
 It stands in for Positron (positron.runtime.evaluateCode) so the webview can be tested and
 screenshotted in a plain browser. See test/harness/host.js for the extension-host side.
@@ -48,6 +51,31 @@ def load_helper(namespace: dict):
     return module
 
 
+def install_datamapplot_stub(namespace: dict) -> None:
+    """A stand-in for datamapplot that records calls (checks snippets without installing it)."""
+    import types
+
+    import numpy as np
+
+    calls: list = []
+    namespace["_dmp_calls"] = calls
+
+    def create_interactive_plot(coords, *label_layers, **kwargs):
+        coords = np.asarray(coords)
+        if coords.ndim != 2 or coords.shape[1] != 2 or not np.isfinite(coords).all():
+            raise ValueError(f"bad coordinates: shape {coords.shape}")
+        for labels in label_layers:
+            labels = np.asarray(labels)
+            if labels.shape != (coords.shape[0],) or any(not isinstance(v, str) for v in labels):
+                raise ValueError("labels must be one string per point")
+        calls.append({"n": int(coords.shape[0]), "layers": [sorted(set(map(str, la))) for la in label_layers], "kwargs": sorted(kwargs)})
+        return types.SimpleNamespace(save=lambda path: None)
+
+    module = types.ModuleType("datamapplot")
+    module.create_interactive_plot = create_interactive_plot
+    sys.modules["datamapplot"] = module
+
+
 def safe_join(base: Path, rel: str) -> Path | None:
     p = (base / unquote(rel)).resolve()
     return p if p == base.resolve() or base.resolve() in p.parents else None
@@ -63,6 +91,7 @@ def main() -> None:
     namespace: dict = {"__name__": "__main__"}
     exec(compile(scenario["setup"], args.scenario, "exec"), namespace)  # noqa: S102 - test scenario
     helper = load_helper(namespace)
+    install_datamapplot_stub(namespace)
     job_root = Path(tempfile.mkdtemp(prefix="atlas-harness-"))
     # One kernel call at a time, like evaluateCode on a single kernel.
     call_lock = threading.Lock()
@@ -114,6 +143,14 @@ def main() -> None:
                     with call_lock:
                         result = fn(*req.get("args", []))
                     self.send(200, result.encode() if isinstance(result, str) else json.dumps(result).encode())
+                elif url.path == "/exec":
+                    code = json.loads(body)["code"]
+                    try:
+                        with call_lock:
+                            exec(compile(code, "<harness>", "exec"), namespace)  # noqa: S102 - test harness
+                        self.send(200, json.dumps({"ok": True}).encode())
+                    except Exception as e:  # noqa: BLE001
+                        self.send(200, json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}).encode())
                 elif url.path == "/write":
                     target = safe_join(job_root, query["name"][0])
                     if target is None:

@@ -1,0 +1,104 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "select c0",
+      "eval": "const g = a.colorMeta.categories.indexOf('c0'); const v = a['colorValues']; const m = new Uint8Array(v.length); for (let i = 0; i < v.length; i++) m[i] = v[i] === g ? 1 : 0; a.setSelection(m)",
+      "until": "a.selectedCount > 3000"
+    },
+    {
+      "name": "tag the selection",
+      "eval": "a.setTab('annotate'); const t = document.querySelector('input[aria-label=\"Tag\"]'); t.value = 'first'; t.dispatchEvent(new Event('input', { bubbles: true }))",
+      "until": "[...document.querySelectorAll('[data-section=tags] button')].some(b => !b.disabled && b.textContent.includes('selected rows'))",
+      "screenshot": "tags-panel.png"
+    },
+    {
+      "name": "write the tags",
+      "eval": "[...document.querySelectorAll('[data-section=tags] button')].find(b => b.textContent.includes('selected rows')).click()",
+      "until": "h.log.some(l => l.includes('labels to df.atlas_tag'))",
+      "assert": [
+        "h.log.some(l => l.includes('Wrote ' + a.selectedCount + ' labels to df.atlas_tag'))",
+        "a.describe.columns[a.describe.columns.length - 1].name === 'atlas_tag'",
+        "h.log.some(l => l.startsWith('confirm: Tag'))"
+      ]
+    },
+    {
+      "name": "label by the new tag column",
+      "eval": "a.setLabelSource(a.describe.columns.find(c => c.name === 'atlas_tag').index)",
+      "until": "a.labelCount === 1",
+      "assert": [
+        "a.renderer.labels[0].text === 'first'"
+      ],
+      "screenshot": "tags-label.png"
+    },
+    {
+      "name": "tag more rows keeps the earlier tags",
+      "eval": "const g = a.colorMeta.categories.indexOf('c1'); const v = a['colorValues']; const m = new Uint8Array(v.length); for (let i = 0; i < v.length; i++) m[i] = v[i] === g ? 1 : 0; a.setSelection(m); a.tagSelection('second', 'atlas_tag')",
+      "until": "h.log.filter(l => l.includes('labels to df.atlas_tag')).length === 2 && a.labelCount === 2",
+      "assert": [
+        "a.renderer.labels.map(l => l.text).sort().join() === 'first,second'"
+      ]
+    },
+    {
+      "name": "add coordinates",
+      "eval": "a.addCoordinates()",
+      "until": "a.toast && a.toast.includes('umap_x')"
+    },
+    {
+      "name": "DataMapPlot code runs (tag labels)",
+      "eval": "a.copyDataMapPlot(); await new Promise(r => setTimeout(r, 300)); window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard }) })).json()",
+      "until": "window.__exec",
+      "assert": [
+        "window.__exec.ok"
+      ],
+      "report": "{ exec: window.__exec, code: h.clipboard }"
+    },
+    {
+      "name": "check the call",
+      "eval": "window.__exec = null; window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: 'c = _dmp_calls[-1]\\nassert c[\"n\"] == 20000, c\\nassert c[\"layers\"] == [[\"Unlabelled\", \"first\", \"second\"]], c' }) })).json()",
+      "until": "window.__exec",
+      "assert": [
+        "window.__exec.ok"
+      ],
+      "report": "window.__exec"
+    },
+    {
+      "name": "automatic clusters to the DataFrame",
+      "eval": "a.setLabelSource('clusters')",
+      "until": "a.clusterCount > 0 && a.labelCount === a.clusterCount",
+      "timeout": 60000
+    },
+    {
+      "name": "add clusters",
+      "eval": "[...document.querySelectorAll('[data-section=labels] button')].find(b => b.textContent.includes('Add clusters')).click()",
+      "until": "h.log.some(l => l.includes('labels to df.atlas_cluster'))",
+      "assert": [
+        "a.describe.columns.some(c => c.name === 'atlas_cluster')"
+      ]
+    },
+    {
+      "name": "DataMapPlot code runs (clusters)",
+      "eval": "window.__exec = null; a.copyDataMapPlot(); await new Promise(r => setTimeout(r, 300)); window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard + 'c = _dmp_calls[-1]\\nassert c[\"n\"] == 20000 and \"Cluster 1\" in c[\"layers\"][0], c\\n' }) })).json()",
+      "until": "window.__exec",
+      "assert": [
+        "window.__exec.ok",
+        "h.clipboard.includes('atlas_cluster')"
+      ],
+      "report": "window.__exec",
+      "screenshot": "tags-share.png"
+    },
+    {
+      "name": "no labels: code without labels",
+      "eval": "window.__exec = null; a.setLabelSource(null); a.copyDataMapPlot(); await new Promise(r => setTimeout(r, 300)); window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard + 'assert _dmp_calls[-1][\"layers\"] == []\\n' }) })).json()",
+      "until": "window.__exec",
+      "assert": [
+        "window.__exec.ok"
+      ]
+    }
+  ]
+}

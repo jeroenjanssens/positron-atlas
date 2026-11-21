@@ -20,6 +20,8 @@
 
   const source = $derived(atlas.labels.clusters ? 'clusters' : atlas.labels.column === null ? '' : String(atlas.labels.column));
   const detailNames = ['Coarsest', 'Coarse', 'Medium', 'Fine', 'Finest'];
+  let tag = $state('');
+  let tagColumn = $state('atlas_tag');
 
   function onLabelChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
@@ -64,6 +66,8 @@
       <input type="checkbox" checked={atlas.labels.outlines} onchange={(e) => atlas.setLabelOptions({ outlines: (e.target as HTMLInputElement).checked })} />
       Show outlines
     </label>
+    <button disabled={!atlas.clusterCount || atlas.clustering} onclick={() => atlas.clustersToFrame('atlas_cluster')}
+      title="Write each row's cluster name into the column atlas_cluster of the DataFrame (rows in no cluster: missing)">Add clusters to DataFrame</button>
     <div class="hint muted">
       {#if atlas.clustering}
         Finding clusters…
@@ -102,4 +106,29 @@
       <div class="hint muted">Loading labels…</div>
     {/if}
   {/if}
+</Section>
+
+<Section {atlas} id="tags" title="Tags">
+  <label class="select" title="The text written into the tag column for the selected rows">
+    <span>Tag</span>
+    <input class="text" type="text" placeholder="e.g. outliers" bind:value={tag} aria-label="Tag" />
+  </label>
+  <label class="select" title="The DataFrame column that holds the tags (created if needed; other rows keep their tag)">
+    <span>Column</span>
+    <input class="text" type="text" bind:value={tagColumn} aria-label="Tag column" />
+  </label>
+  <button class="primary" disabled={!atlas.selection || !tag.trim() || !tagColumn.trim()} onclick={() => atlas.tagSelection(tag, tagColumn)}>
+    {atlas.selection ? `Tag ${formatCount(atlas.selectedCount)} selected rows` : 'Tag selected rows'}
+  </button>
+  <div class="hint muted">
+    {#if !atlas.selection}Select points first, with the lasso tool or Shift-drag.{:else}Writes the tag into {tagColumn.trim() || 'the column'} of {atlas.variable}; you can then color or label by it.{/if}
+  </div>
+</Section>
+
+<Section {atlas} id="share" title="Share">
+  <button onclick={() => atlas.copyDataMapPlot()} title="Python that draws this map with DataMapPlot, from the coordinates and the label column in the DataFrame">Copy as DataMapPlot code</button>
+  <div class="hint muted">
+    Uses umap_x and umap_y: add them first (Map → Result → Add coordinates to DataFrame).
+    {#if atlas.labels.clusters}Labels come from atlas_cluster (Add clusters to DataFrame).{/if}
+  </div>
 </Section>

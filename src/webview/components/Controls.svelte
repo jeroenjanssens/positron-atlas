@@ -10,7 +10,7 @@
   const tabs: { id: SidebarTab; label: string; hint: string }[] = [
     { id: 'map', label: 'Map', hint: 'How the map is computed: data, UMAP and placing all rows' },
     { id: 'explore', label: 'Explore', hint: 'What is in the map: colors, display and selection' },
-    { id: 'annotate', label: 'Annotate', hint: 'What the map means: labels' },
+    { id: 'annotate', label: 'Annotate', hint: 'What the map means: labels, tags and sharing' },
   ];
 
   function onKey(e: KeyboardEvent) {

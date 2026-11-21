@@ -186,6 +186,7 @@ export type ToWebview =
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
   | { type: 'groupNames'; seq: number; names: string[] }
+  | { type: 'labelsWritten'; variable: string; column: string; rows: number; describe: DescribeResult }
   | { type: 'comparison'; result: SelectionComparison }
   | { type: 'selectionFrame'; variable: string; rows: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
@@ -202,6 +203,17 @@ export type ToHost =
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
   | { type: 'describeGroups'; seq: number; codes: string /* base64 uint16 per prepared row */; k: number; columns: number[] }
+  | {
+      type: 'writeLabels';
+      /** base64 uint16 per prepared row: i < names.length writes names[i]. */
+      codes: string;
+      names: string[];
+      column: string;
+      /** Keep the current value of rows without a name (else: missing). */
+      keepOthers: boolean;
+      /** What is written, for the confirmation (e.g. 'Tag 1,234 rows as "outliers"'). */
+      description: string;
+    }
   | { type: 'compareSelection'; mask: string /* base64 packed bits, least significant first */ }
   | { type: 'selectionFrame'; mask: string /* base64 packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }

@@ -188,6 +188,20 @@
         post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length, purpose: m.purpose });
         break;
       }
+      case 'writeLabels': {
+        if (!confirmModal(`${m.description} in column ${m.column}`)) return;
+        const name = `labels_${Date.now()}.u16`;
+        const codesPath = await writeJobFile(name, base64ToBytes(m.codes));
+        try {
+          const r = await call('write_labels', jobId, codesPath, m.names, m.column, m.keepOthers);
+          const describe = await call('describe', r.variable);
+          harness.log.push(`info: Wrote ${r.rows} labels to ${r.variable}.${r.column}.`);
+          post({ type: 'labelsWritten', variable: r.variable, column: r.column, rows: r.rows, describe });
+        } finally {
+          await rmJobFile(name);
+        }
+        break;
+      }
       case 'describeGroups': {
         const name = `groups_${Date.now()}.u16`;
         const codesPath = await writeJobFile(name, base64ToBytes(m.codes));

@@ -168,15 +168,20 @@ When there is no label column:
   belong to the settled layout, so they are hidden while it moves; labels follow the points.
 - Later: two detail levels at once, with DataMapPlot's level-based collision priority.
 
-### Phase G: tags and sharing — [ ]
+### Phase G: tags and sharing — [x]
 
 - **Annotate → Tags**: type a tag name and click **Tag selection**. Atlas writes the tag into a
   string column (`atlas_tag` by default) of the user's DataFrame, after a confirmation like **Add
   coordinates**. Rows that are not selected keep their current tag. polars frames are rebound, as
   for coordinates.
+- **Add clusters to DataFrame** (Labels, with automatic clusters) writes the cluster names into
+  `atlas_cluster` (rows in no cluster: missing). Tags and clusters share one kernel function,
+  `write_labels`; afterwards the panel re-reads the columns so the new column can be used for
+  colors and labels without a reload.
 - **Annotate → Share → Copy as DataMapPlot code**: Python that builds the same picture with
-  `datamapplot.create_interactive_plot` (or `create_plot`), using the coordinate columns and the
-  label column. It reminds the user to add the coordinates first.
+  `datamapplot.create_interactive_plot`, using the coordinate columns and the label column (pandas
+  or polars). It reminds the user to add the coordinates first. The harness runs the snippet
+  against the real DataFrame with a stub `datamapplot` that checks the arguments.
 
 ### Phase H: later
 

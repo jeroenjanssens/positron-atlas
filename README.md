@@ -17,6 +17,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Points are images.** For image data with one pixel per column (such as `px0` … `px783`), the tooltip shows the row as a picture.
 - **Points or additive density mode**, a background color picker, pan and zoom, PNG export.
 - **Write coordinates back** to the DataFrame (`umap_x`, `umap_y`) and **copy equivalent umap-learn code**.
+- **Tags and clusters back to the DataFrame.** Tag the selected rows (`atlas_tag`) or write the automatic cluster names (`atlas_cluster`); the new column can be used for colors and labels right away. **Copy as DataMapPlot code** draws the same map with [DataMapPlot](https://github.com/TutteInstitute/datamapplot).
 - **Optional exact mode**: if `umap-learn` is installed in the kernel, run full UMAP there instead.
 
 ## Requirements
@@ -70,6 +71,8 @@ The sidebar has three tabs. The plot has its own toolbar (top left): **Pan and z
 | Explore | Color | Color by, treat as categories, palette (follows the map or Tableau 20), colormap, range | Recolors |
 | Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
 | Explore | Selection | Selected rows, clear, invert, compare with all rows, new DataFrame | Comparison and new DataFrame run in the kernel |
+| Annotate | Tags | Tag the selected rows (writes a string column, `atlas_tag` by default) | Writes to the DataFrame after a confirmation |
+| Annotate | Share | Copy as DataMapPlot code | Python for `datamapplot.create_interactive_plot` |
 | Annotate | Labels | Label by a column or by automatic clusters (detail, name by number, distinguishing columns or the most common value of a column, outlines), smallest and largest label size, color labels like the points | Rendering; clusters are found when the layout settles |
 
 The active tab and collapsed sections are remembered per tab.
@@ -148,7 +151,7 @@ Screenshots land in `/tmp/positron-atlas-e2e/`.
 Without Positron, the **browser harness** runs the built webview in Chromium against the real kernel helper (a small Python server stands in for Positron). It is quicker and also produces screenshots:
 
 ```sh
-npm run build && npm run test:harness                   # synthetic data: scenario-small, scenario-ui
+npm run build && npm run test:harness                   # synthetic data: small, ui, tags (pandas and polars)
 npm run test:harness:mnist                               # MNIST (downloaded once): labels, palette, selection, clusters
 npm run harness -- test/harness/scenario-mnist.json      # any scenario; --theme light for the light theme
 ```

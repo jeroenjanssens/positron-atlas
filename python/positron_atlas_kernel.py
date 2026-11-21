@@ -1201,6 +1201,57 @@ def describe_groups(job_id: str, codes_path: str, k: int, columns: list[int], ma
     return _json({"ok": True, "names": out, "counts": counts.tolist(), "sampled": bool(n > max_rows)})
 
 
+@_guard
+def write_labels(job_id: str, codes_path: str, names: list[str], column: str, keep_others: bool = True) -> str:
+    """Write text labels into a string column of the user's DataFrame (tags, cluster names).
+
+    ``codes_path`` holds uint16 codes per prepared row: code i < len(names) writes names[i];
+    other codes keep the row's current value (``keep_others``) or set it to missing. Rows that
+    were not prepared (sampled out or dropped) are left unchanged, or missing in a new column.
+    pandas frames are modified in place; polars frames are rebound to the same name.
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    column = str(column).strip()
+    if not column:
+        raise ValueError("The column name is empty.")
+    codes = np.fromfile(codes_path, dtype="<u2")
+    if len(codes) != len(job.kept_idx):
+        raise ValueError(f"Got {len(codes)} codes for {len(job.kept_idx)} prepared rows.")
+    names = [str(x) for x in names]
+    frame = job.frame
+    n = frame.n_rows
+    existing = column in frame.column_names()
+    if existing:
+        old = frame.column(frame.column_names().index(column))
+        values = np.array([None if _is_null(v) else str(v) for v in old], dtype=object)
+    else:
+        values = np.full(n, None, dtype=object)
+    lookup = np.array(names + [None], dtype=object)
+    labelled = codes < len(names)
+    rows = job.kept_idx
+    values[rows[labelled]] = lookup[codes[labelled]]
+    if not keep_others:
+        values[rows[~labelled]] = None
+    written = int(labelled.sum())
+    if frame.kind == "pandas":
+        import pandas as pd
+
+        frame.obj[column] = pd.array(values, dtype="string")
+        target = job.name
+    else:
+        import polars as pl
+
+        new = frame.obj.with_columns(pl.Series(column, values.tolist(), dtype=pl.String))
+        target = job.name if job.name.isidentifier() else "atlas_result"
+        _user_ns()[target] = new
+        job.frame = _Frame(new)
+    # Adding a column is our own change: don't report the frame as changed by the user.
+    job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
+    return _json({"ok": True, "variable": target, "column": column, "rows": written})
+
+
 def _unique_name(base: str, ns: dict) -> str:
     import keyword
 

@@ -78,6 +78,7 @@ input, select { background: var(--input-bg); color: var(--input-fg); border: 1px
 input:focus, select:focus, button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .select { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .select select { max-width: 170px; }
+.select input.text { width: 170px; }
 .inline { display: inline-flex; gap: 4px; align-items: center; }
 .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .tag { font-size: 0.7em; padding: 0 4px; margin-left: 6px; border-radius: 6px; vertical-align: middle; border: 1px solid var(--border); color: var(--muted); }

@@ -25,7 +25,7 @@ import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './
 import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
 import { mapPalette } from './color/mapPalette';
 import { combineSelection, countSelected, fadeUnselected, invertSelection, packBits, pointsInPolygon, type SelectMode } from './select/lasso';
-import { formatCount, pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
+import { dataMapPlotSnippet, formatCount, pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
 export { DEFAULT_UMAP };
@@ -269,6 +269,9 @@ export class Atlas {
         break;
       case 'groupNames':
         this.onGroupNames(msg.seq, msg.names);
+        break;
+      case 'labelsWritten':
+        this.onLabelsWritten(msg.variable, msg.column, msg.rows, msg.describe);
         break;
       case 'comparison':
         this.comparing = false;
@@ -1129,6 +1132,61 @@ export class Atlas {
   selectionToFrame(): void {
     if (!this.selection) return;
     vscode.post({ type: 'selectionFrame', mask: bytesToBase64(packBits(this.selection)) });
+  }
+
+  // ---- writing labels to the DataFrame (tags, clusters) ------------------------------
+  /** Tag the selected rows: write `tag` into a string column; other rows keep their value. */
+  tagSelection(tag: string, column: string): void {
+    const t = tag.trim();
+    if (!this.selection || !t || !column.trim()) return;
+    const codes = new Uint16Array(this.nKept).fill(65535);
+    for (let i = 0; i < codes.length; i++) if (this.selection[i]) codes[i] = 0;
+    vscode.post({
+      type: 'writeLabels',
+      codes: bytesToBase64(new Uint8Array(codes.buffer)),
+      names: [t],
+      column: column.trim(),
+      keepOthers: true,
+      description: `Tag ${formatCount(this.selectedCount)} rows as "${t}"`,
+    });
+  }
+
+  /** Write the automatic cluster names into a column (rows in no cluster: missing). */
+  clustersToFrame(column: string): void {
+    const c = this.cluster;
+    if (!c || !column.trim() || this.clusterNames.length !== c.k) return;
+    vscode.post({
+      type: 'writeLabels',
+      codes: bytesToBase64(new Uint8Array(c.codes.buffer, c.codes.byteOffset, c.codes.byteLength)),
+      names: this.clusterNames.slice(),
+      column: column.trim(),
+      keepOthers: false,
+      description: `Write the names of ${formatCount(c.k)} clusters`,
+    });
+  }
+
+  private onLabelsWritten(variable: string, column: string, rows: number, describe: DescribeResult): void {
+    this.flash(`Wrote ${formatCount(rows)} labels to ${variable}.${column}`);
+    const old = this.describe;
+    // Columns are only ever added (at the end) or overwritten, so existing indices stay valid.
+    if (old && describe.columns.length >= old.columns.length && old.columns.every((c, i) => describe.columns[i]?.name === c.name)) {
+      this.describe = describe;
+      const idx = describe.columns.findIndex((c) => c.name === column);
+      if (idx === this.labels.column && !this.labels.clusters) this.requestLabelCodes();
+      if (idx === this.colorColumn) this.requestColors();
+      if (this.nameSource?.column === idx) {
+        this.nameSource = null;
+        this.nameClusters();
+      }
+    }
+  }
+
+  /** Python that draws this map with DataMapPlot (to the clipboard). */
+  copyDataMapPlot(): void {
+    const d = this.describe;
+    if (!d) return;
+    const label = !this.labels.clusters && this.labels.column !== null ? (d.columns[this.labels.column]?.name ?? null) : this.labels.clusters ? 'atlas_cluster' : null;
+    vscode.post({ type: 'copyText', text: dataMapPlotSnippet(this.variable, d.frameKind, label) });
   }
 
   // ---- sidebar -----------------------------------------------------------------------
