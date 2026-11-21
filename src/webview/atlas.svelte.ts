@@ -2,6 +2,7 @@ import type {
   CategoricalColorMeta,
   ColorMeta,
   DescribeResult,
+  ExactEngine,
   FileRef,
   JobStatus,
   LabelOptions,
@@ -25,7 +26,7 @@ import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './
 import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
 import { mapPalette } from './color/mapPalette';
 import { combineSelection, countSelected, fadeUnselected, invertSelection, packBits, pointsInPolygon, type SelectMode } from './select/lasso';
-import { dataMapPlotSnippet, formatCount, pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
+import { dataMapPlotSnippet, formatCount, polarsUmapSnippet, pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
 export { DEFAULT_UMAP };
@@ -130,8 +131,8 @@ export class Atlas {
   placementBackend = $state<'rust' | 'numpy' | null>(null);
   /** Set by probing navigator.gpu.requestAdapter() at startup. */
   gpuAvailable = $state(false);
-  /** 'browser': live WASM UMAP; 'kernel': exact umap-learn in the kernel (if installed). */
-  computeMode = $state<'browser' | 'kernel'>('browser');
+  /** 'browser': live WASM UMAP; otherwise exact UMAP of all rows in the kernel with that engine (if installed). */
+  computeMode = $state<'browser' | ExactEngine>('browser');
 
   // ---- non-reactive data -------------------------------------------------------------
   private renderer: ScatterRenderer | null = null;
@@ -301,7 +302,7 @@ export class Atlas {
         this.comparing = false;
         if (msg.fatal) {
           this.phase = 'error';
-        } else if (this.phase === 'preparing' || (this.phase === 'embedding' && this.computeMode === 'kernel')) {
+        } else if (this.phase === 'preparing' || (this.phase === 'embedding' && this.computeMode !== 'browser')) {
           this.phase = this.prepared ? 'ready' : 'error';
           this.umapProgress = null;
         }
@@ -465,7 +466,7 @@ export class Atlas {
 
   /** Called when UMAP controls change; rebuilds or applies live. */
   umapChanged(): void {
-    if (this.computeMode === 'kernel' || !this.appliedUmap || !this.anchors) {
+    if (this.computeMode !== 'browser' || !this.appliedUmap || !this.anchors) {
       return;
     }
     const next = $state.snapshot(this.umap) as UmapParams;
@@ -576,9 +577,10 @@ export class Atlas {
     vscode.post({ type: 'project', anchorXY: float32ToBase64(this.anchorXY), metric: this.umap.metric, seed: this.umap.seed });
   }
 
-  /** Exact UMAP of all prepared rows with umap-learn in the kernel. */
+  /** Exact UMAP of all prepared rows in the kernel, with the chosen engine. */
   runExact(): void {
-    if (!this.prepared) {
+    const engine = this.computeMode;
+    if (!this.prepared || engine === 'browser') {
       return;
     }
     this.stopWorker();
@@ -587,10 +589,10 @@ export class Atlas {
     this.projection = 'running';
     this.projectProgress = 0;
     this.phase = 'embedding';
-    this.umapProgress = { stage: 'umap-learn (kernel)', progress: 0, epoch: 0, total: 0 };
+    this.umapProgress = { stage: `${engine} (kernel)`, progress: 0, epoch: 0, total: 0 };
     this.hit = null;
     this.tooltip = null;
-    vscode.post({ type: 'exact', params: $state.snapshot(this.umap) as UmapParams });
+    vscode.post({ type: 'exact', params: $state.snapshot(this.umap) as UmapParams, engine });
   }
 
   private onProjected(seconds: number, exact: boolean): void {
@@ -1250,7 +1252,15 @@ export class Atlas {
 
   copyPython(): void {
     const names = (this.describe?.columns ?? []).filter((c) => this.prepare.features.includes(c.index)).map((c) => c.name);
-    vscode.post({ type: 'copyText', text: pythonSnippet(this.variable, names, $state.snapshot(this.prepare) as PrepareOptions, $state.snapshot(this.umap) as UmapParams) });
+    const kind = this.describe?.frameKind ?? 'pandas';
+    vscode.post({ type: 'copyText', text: pythonSnippet(this.variable, names, $state.snapshot(this.prepare) as PrepareOptions, $state.snapshot(this.umap) as UmapParams, kind) });
+  }
+
+  /** The same with polars-umap (Rust) instead of umap-learn. */
+  copyPolarsUmap(): void {
+    const names = (this.describe?.columns ?? []).filter((c) => this.prepare.features.includes(c.index)).map((c) => c.name);
+    const kind = this.describe?.frameKind ?? 'pandas';
+    vscode.post({ type: 'copyText', text: polarsUmapSnippet(this.variable, names, $state.snapshot(this.prepare) as PrepareOptions, $state.snapshot(this.umap) as UmapParams, kind) });
   }
 
   reload(): void {

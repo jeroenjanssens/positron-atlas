@@ -651,3 +651,64 @@ def test_fast_categories_skip_other_dtypes_and_int_nulls_in_polars():
     p = pd.DataFrame({"k": pd.array([3, None, 1, 3], dtype="Int64")})
     _, codes, meta = pak._color_values(pak._Frame(p), 0, np.arange(4), True, 200)
     assert meta["categories"] == ["1", "3"] and meta["nullCount"] == 1 and codes.tolist() == [1, 3, 0, 1]
+
+
+def run_exact(jid, params):
+    pak.exact_umap(jid, json.dumps(params))
+    st = wait(jid, timeout=300)
+    return st
+
+
+def test_exact_polars_umap(ns, frame_kind, tmp_path):
+    pytest.importorskip("polars_umap")
+    jid, _, _, labels = prepared(ns, frame_kind, tmp_path)
+    params = {"engine": "polars-umap", "nNeighbors": 10, "minDist": 0.2, "spread": 1.0, "metric": "euclidean", "nEpochs": 60, "seed": 3}
+    st = run_exact(jid, params)
+    assert st["stage"] == "done", st
+    assert st["result"]["engine"] == "polars-umap" and st["result"]["nRows"] == 3000
+    job = pak._JOBS[jid]
+    xy1 = job.xy.copy()
+    assert xy1.shape == (3000, 2) and np.isfinite(xy1).all()
+    # Clusters stay together: each label's points are closer to their own centroid than to others'.
+    lab = labels[job.kept_idx]
+    cents = np.array([xy1[lab == c].mean(0) for c in range(4)])
+    nearest = np.argmin(((xy1[:, None, :] - cents[None]) ** 2).sum(-1), axis=1)
+    assert np.mean(nearest == lab) > 0.95
+    # The same seed gives the same layout.
+    run_exact(jid, params)
+    np.testing.assert_array_equal(job.xy, xy1)
+    assert json.loads(pak.describe("df"))["deps"]["polars_umap"] is True
+
+
+def test_polars_umap_arguments(ns, tmp_path, monkeypatch):
+    pu = pytest.importorskip("polars_umap")
+    seen = {}
+    real = pu.umap
+
+    def spy(*a, **kw):
+        seen.update(kw)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(pu, "umap", spy)
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    params = {"engine": "polars-umap", "nNeighbors": 7, "minDist": 0.3, "spread": 2.0, "metric": "cosine", "nEpochs": 30,
+              "learningRate": 0.5, "negativeSampleRate": 3, "repulsionStrength": 1.5, "seed": 11}
+    assert run_exact(jid, params)["stage"] == "done"
+    assert seen == {"n_components": 2, "n_neighbors": 7, "min_dist": 0.3, "spread": 2.0, "metric": "cosine", "n_epochs": 30,
+                    "learning_rate": 0.5, "negative_sample_rate": 3, "repulsion_strength": 1.5, "random_state": 11}
+
+
+def test_exact_polars_umap_missing(ns, tmp_path, monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_pu(name, *a, **kw):
+        if name == "polars_umap":
+            raise ImportError("no polars_umap")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_pu)
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    st = run_exact(jid, {"engine": "polars-umap"})
+    assert st["stage"] == "error" and "polars-umap is not installed" in st["error"]

@@ -147,3 +147,15 @@ general path). Results are identical, except that integers with missing values a
 The selection comparison and cluster descriptions already take 0.03–0.08 s at 5·10⁶ rows, because
 they use a random sample of 50,000–100,000 rows; using every row would make them slower without a
 visible change in the result, so they keep the sample.
+
+## Exact UMAP in the kernel: polars-umap vs umap-learn (2026-11-21)
+
+`python/bench_exact.py`, same 4-core Xeon, 50 blobs, `n_neighbors=15`, 200 epochs, fixed seed
+(umap-learn then runs single-threaded; numba warmed up first):
+
+| Rows × dims | polars-umap | umap-learn |
+|---|---:|---:|
+| 10,000 × 50 | 1.1 s | 22.4 s |
+| 100,000 × 50 | 12.4 s | 43.0 s |
+
+Atlas offers polars-umap first when both are installed.

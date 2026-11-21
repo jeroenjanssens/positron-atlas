@@ -264,7 +264,7 @@ export class AtlasPanel {
       }
       case 'exact': {
         const job = this.requireJob();
-        await this.runXYTask('exact', () => this.bridge.call('exact_umap', job, JSON.stringify(m.params)), true);
+        await this.runXYTask('exact', () => this.bridge.call('exact_umap', job, JSON.stringify({ ...m.params, engine: m.engine })), true);
         break;
       }
       case 'colors': {

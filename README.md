@@ -18,7 +18,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Points or additive density mode**, a background color picker, pan and zoom, PNG export.
 - **Write coordinates back** to the DataFrame (`umap_x`, `umap_y`) and **copy equivalent umap-learn code**.
 - **Tags and clusters back to the DataFrame.** Tag the selected rows (`atlas_tag`) or write the automatic cluster names (`atlas_cluster`); the new column can be used for colors and labels right away. **Copy as DataMapPlot code** draws the same map with [DataMapPlot](https://github.com/TutteInstitute/datamapplot).
-- **Optional exact mode**: if `umap-learn` is installed in the kernel, run full UMAP there instead.
+- **Optional exact mode**: if [polars-umap](https://polars-umap.jeroenjanssens.com) or `umap-learn` is installed in the kernel, run full UMAP on all rows there instead (Map → UMAP → Compute). polars-umap is UMAP in Rust and 3.5–20× faster.
 
 ## Requirements
 
@@ -75,7 +75,7 @@ The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zo
 | Annotate | Tags | Tag the selected rows (writes a string column, `atlas_tag` by default) | Writes to the DataFrame after a confirmation |
 | Export | Image | Export PNG (with labels and outlines) | |
 | Export | To the DataFrame | Add coordinates (`umap_x`, `umap_y`), new DataFrame from the selection | Kernel; asks before modifying the DataFrame |
-| Export | Code | Copy as Python (umap-learn), copy as DataMapPlot code | Clipboard |
+| Export | Code | Copy as Python (umap-learn or polars-umap; pandas or polars code), copy as DataMapPlot code | Clipboard |
 
 The active tab and collapsed sections are remembered per tab.
 

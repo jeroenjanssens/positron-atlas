@@ -72,7 +72,7 @@
     }
     const t = atlas.timings;
     const times = [
-      t.umap && `UMAP ${formatSeconds(t.umap)}${atlas.computeMode === 'kernel' ? ' (umap-learn)' : atlas.useGpu ? ' (GPU)' : ' (CPU)'}`,
+      t.umap && `UMAP ${formatSeconds(t.umap)}${atlas.computeMode !== 'browser' ? ` (${atlas.computeMode})` : atlas.useGpu ? ' (GPU)' : ' (CPU)'}`,
       t.update && `update ${formatSeconds(t.update)}`,
       t.project && `placement ${formatSeconds(t.project)}${atlas.placementBackend === 'rust' ? ' (Rust)' : atlas.placementBackend === 'numpy' ? ' (numpy)' : ''}`,
     ].filter(Boolean);

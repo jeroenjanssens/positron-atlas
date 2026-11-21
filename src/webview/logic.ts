@@ -47,16 +47,17 @@ function pyRepr(v: unknown): string {
   return String(v);
 }
 
-/** Equivalent umap-learn code for the current settings. */
-export function pythonSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams): string {
-  const lines = ['import numpy as np', 'import umap', ''];
-  lines.push(`features = ${'['}${features.map((f) => JSON.stringify(f)).join(', ')}${']'}`);
-  if (prep.samplePct < 100) {
-    lines.push(`data = ${variable}.sample(frac=${prep.samplePct / 100}, random_state=${prep.seed})  # polars: .sample(fraction=..., seed=...)`);
+/** Python that builds the feature matrix X like Atlas's Data settings (pandas or polars). */
+function prepLines(variable: string, features: string[], prep: PrepareOptions, frameKind: 'pandas' | 'polars'): string[] {
+  const lines = [`features = [${features.map((f) => JSON.stringify(f)).join(', ')}]`];
+  const sampled = prep.samplePct < 100;
+  if (frameKind === 'polars') {
+    lines.push(sampled ? `data = ${variable}.sample(fraction=${prep.samplePct / 100}, seed=${prep.seed})` : `data = ${variable}`);
+    lines.push('X = data.select(features).to_numpy().astype("float32")  # missing values become NaN');
   } else {
-    lines.push(`data = ${variable}`);
+    lines.push(sampled ? `data = ${variable}.sample(frac=${prep.samplePct / 100}, random_state=${prep.seed})` : `data = ${variable}`);
+    lines.push('X = data[features].to_numpy(dtype="float32", na_value=np.nan)');
   }
-  lines.push('X = data[features].to_numpy(dtype="float32")');
   lines.push(prep.nanPolicy === 'drop' ? 'X = X[~np.isnan(X).any(axis=1)]' : 'X = np.where(np.isnan(X), np.nanmedian(X, axis=0), X)');
   if (prep.standardize) {
     lines.push('X = (X - X.mean(axis=0)) / np.where(X.std(axis=0) > 0, X.std(axis=0), 1)');
@@ -64,7 +65,12 @@ export function pythonSnippet(variable: string, features: string[], prep: Prepar
   if (prep.pca) {
     lines.push('from sklearn.decomposition import PCA', `X = PCA(n_components=${prep.pcaDims}, random_state=${prep.seed}).fit_transform(X)`);
   }
-  const args = {
+  return lines;
+}
+
+/** UMAP keyword arguments with umap-learn's names (polars-umap uses the same). */
+function umapArgs(p: UmapParams): [string, unknown][] {
+  return Object.entries({
     n_neighbors: p.nNeighbors,
     min_dist: p.minDist,
     spread: p.spread,
@@ -74,13 +80,39 @@ export function pythonSnippet(variable: string, features: string[], prep: Prepar
     negative_sample_rate: p.negativeSampleRate,
     learning_rate: p.learningRate,
     random_state: p.seed,
-  };
+  });
+}
+
+/** Equivalent umap-learn code for the current settings. */
+export function pythonSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas'): string {
+  const lines = ['import numpy as np', 'import umap', '', ...prepLines(variable, features, prep, frameKind)];
+  lines.push('', 'reducer = umap.UMAP(', ...umapArgs(p).map(([k, v]) => `    ${k}=${pyRepr(v)},`), ')', 'embedding = reducer.fit_transform(X)');
+  return lines.join('\n') + '\n';
+}
+
+/** Equivalent polars-umap code for the current settings (UMAP in Rust, inside Polars). */
+export function polarsUmapSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas'): string {
+  const lines = [
+    '# pip install polars-umap',
+    'import numpy as np',
+    'import polars as pl',
+    'import polars_umap as pu',
+    '',
+    ...prepLines(variable, features, prep, frameKind),
+  ];
   lines.push(
     '',
-    'reducer = umap.UMAP(',
-    ...Object.entries(args).map(([k, v]) => `    ${k}=${pyRepr(v)},`),
+    '# One Array column with a feature vector per row.',
+    'embedding = (',
+    '    pl.DataFrame([pl.Series("features", X)])',
+    '    .select(',
+    '        xy=pu.umap(',
+    '            "features",',
+    ...umapArgs(p).map(([k, v]) => `            ${k}=${pyRepr(v)},`),
+    '        )',
+    '    )["xy"]',
+    '    .to_numpy()',
     ')',
-    'embedding = reducer.fit_transform(X)',
   );
   return lines.join('\n') + '\n';
 }

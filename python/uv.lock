@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -641,6 +641,25 @@ wheels = [
 ]
 
 [[package]]
+name = "polars-umap"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "polars", version = "2.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "polars", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/b0/844ac24da1a573592cc0efa224ba720bac3c62fc6c6b837c93c6cedc833b/polars_umap-0.1.0.tar.gz", hash = "sha256:ceb1182073ad6d58d9ea865dcf48dfe505ab04a4fd3bc8fc321bd62183c66690", size = 58873, upload-time = "2026-11-20T20:46:02.548Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/ef/e921b0c5141df823879e00dd7af94513168f9281c8f8612d6559f67ce37a/polars_umap-0.1.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:52e24ef53054d09e17e199fe95745fcb395633359eed210e6353642c0e364cc7", size = 7247523, upload-time = "2026-11-20T20:45:51.819Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/88/99c50d40b47d61fd396ef2a44944a6c34bfdc209728f503bb45b2ea519c8/polars_umap-0.1.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4ee14c6f19d5876dab5b4bc9ba8f0bc4a3b5dcc8074a4c3d6042e79cb5ffd442", size = 6796260, upload-time = "2026-11-20T20:45:53.572Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/93/3ffed4c52b449cde566890fd34c9699b1fb9c8aaa1dd1a4c7b5459264da7/polars_umap-0.1.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:35ab8e93ff4614b933126bc51818a26fa5bc75c762590858b52ba55d2433e3f3", size = 7442990, upload-time = "2026-11-20T20:45:54.967Z" },
+    { url = "https://files.pythonhosted.org/packages/21/fb/a5780b45d87e1c41622fcf204ec635526805c7f180ffb7d7cee0ea038e89/polars_umap-0.1.0-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:71a96e6733fcb60896be0d0c6daa1475eb74b02a3e642682c204f9e39d3abc29", size = 7939770, upload-time = "2026-11-20T20:45:56.749Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/ff/b332b591a75a364c446e413b22650a5429ad54e1917611a0c7c81af9ed94/polars_umap-0.1.0-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:345fa1bc6c712a8ce738c49cab497433357ecdb6f6c15911ec8280a92679194d", size = 7622770, upload-time = "2026-11-20T20:45:58.4Z" },
+    { url = "https://files.pythonhosted.org/packages/90/6e/b021e7f92e7f59af54541bc50defd1b711a7a224f69b0adc7250eb733638/polars_umap-0.1.0-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ff935619687176b821f4462c185c804b2f2e1b029b60d287b3a21c3d1fcb97f2", size = 8123739, upload-time = "2026-11-20T20:45:59.691Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/a1/8f9c2876dfc46a2a7bd16191e10f457998892abed1a0326a7f1fc89a9285/polars_umap-0.1.0-cp39-abi3-win_amd64.whl", hash = "sha256:461f3028d6a8944061aa13d1ef129390bf1200b80d795dfb5596d33c836d9a6b", size = 8558609, upload-time = "2026-11-20T20:46:01.184Z" },
+]
+
+[[package]]
 name = "positron-atlas-kernel"
 version = "0.1.0"
 source = { virtual = "." }
@@ -656,6 +675,7 @@ dev = [
     { name = "pandas", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "polars", version = "2.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "polars", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "polars-umap" },
     { name = "pyarrow", version = "25.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pyarrow", version = "26.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
@@ -671,6 +691,7 @@ requires-dist = [{ name = "numpy" }]
 dev = [
     { name = "pandas" },
     { name = "polars" },
+    { name = "polars-umap", specifier = ">=0.1.0" },
     { name = "pyarrow" },
     { name = "pytest" },
     { name = "scikit-learn" },

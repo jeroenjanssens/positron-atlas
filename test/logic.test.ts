@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRebuild, liveChanges, lowerBound, pythonSnippet, formatSeconds, toHex } from '../src/webview/logic';
+import { isRebuild, liveChanges, lowerBound, polarsUmapSnippet, pythonSnippet, formatSeconds, toHex } from '../src/webview/logic';
 import { DEFAULT_UMAP } from '../src/webview/defaults';
 
 describe('umap param classification', () => {
@@ -34,6 +34,20 @@ describe('helpers', () => {
     expect(s).toContain('PCA(n_components=20');
     expect(s).toContain('metric="euclidean"');
     expect(s).toContain('n_neighbors=15');
+    expect(s).toContain('to_numpy(dtype="float32", na_value=np.nan)');
+  });
+
+  it('writes polars code for polars frames, and a polars-umap variant', () => {
+    const prep = { features: [0, 1], samplePct: 50, standardize: false, pca: false, pcaDims: 20, nanPolicy: 'impute' as const, seed: 3, maxAnchors: 1, anchorBudget: 1 };
+    const s = pythonSnippet('df', ['a'], prep, DEFAULT_UMAP, 'polars');
+    expect(s).toContain('data = df.sample(fraction=0.5, seed=3)');
+    expect(s).toContain('X = data.select(features).to_numpy().astype("float32")');
+    expect(s).not.toContain('frac=');
+    const p = polarsUmapSnippet('df', ['a'], prep, DEFAULT_UMAP, 'polars');
+    expect(p).toContain('import polars_umap as pu');
+    expect(p).toContain('xy=pu.umap(');
+    expect(p).toContain('            min_dist=0.1,');
+    expect(p).toContain('np.nanmedian');
   });
 });
 

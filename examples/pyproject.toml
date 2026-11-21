@@ -10,8 +10,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-# Optional: enables Atlas's "Kernel (umap-learn)" compute mode.
-exact = ["umap-learn"]
+# Optional: enables Atlas's "Kernel (polars-umap)" and "Kernel (umap-learn)" compute modes.
+exact = [
+    "polars-umap>=0.1.0",
+    "umap-learn",
+]
 
 [tool.uv]
 package = false

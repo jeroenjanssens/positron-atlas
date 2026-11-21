@@ -1,6 +1,8 @@
 # Plan: a Rust core for the kernel work, and polars-umap as an exact mode
 
-> **Status (2026-11-21).** Plan only; nothing implemented yet. Each phase ends with tests, numbers
+> **Status (2026-11-21).** Implemented: R0–R6 and phase P (see the checkboxes and
+> `docs/benchmarks.md`). Still to check on real machines: the macOS, Windows and Remote-SSH items of R3.
+> Earlier status: plan only. Each phase ends with tests, numbers
 > in `docs/benchmarks.md` and a commit. Do the work on its own branch, so it can ship independently
 > of the DataMapPlot features (`docs/datamapplot-plan.md`).
 
@@ -185,7 +187,7 @@ Rust engine (multithreaded) with nothing to ship. pandas frames keep the numpy p
 - **Tests:** every existing pytest case for polars frames gives the same result as before;
   benchmarks for 10⁶ and 10⁷ rows in `docs/benchmarks.md`.
 
-### Phase R5: polars-umap as an exact engine — [ ]
+### Phase R5: polars-umap as an exact engine — [x]
 
 [polars-umap](https://polars-umap.jeroenjanssens.com) computes UMAP in Rust inside Polars. Atlas
 already has an exact mode with umap-learn; this adds polars-umap as a second engine.
@@ -213,7 +215,7 @@ already has an exact mode with umap-learn; this adds polars-umap as a second eng
 - **Done when:** the exact mode runs with either engine from the UI, and the benchmark table has
   both engines at 10⁴–10⁶ rows.
 
-### Phase R6: docs — [ ]
+### Phase R6: docs — [x]
 
 - README: requirements stay "numpy plus pandas or polars"; a note that platform builds include a
   Rust core for placing rows, and which platforms fall back to numpy.

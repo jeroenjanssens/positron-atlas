@@ -299,7 +299,7 @@ def _sanitize(obj: Any) -> Any:
 def _optional_deps() -> dict[str, bool]:
     import importlib.util
 
-    return {m: importlib.util.find_spec(m) is not None for m in ("pynndescent", "faiss", "sklearn", "umap")}
+    return {m: importlib.util.find_spec(m) is not None for m in ("pynndescent", "faiss", "sklearn", "umap", "polars_umap")}
 
 
 # --------------------------------------------------------------------------------------
@@ -1001,9 +1001,11 @@ def _write_xy_chunks(job: _Job, xy: np.ndarray, chunk_rows: int = 1_000_000) -> 
 
 
 def _exact_impl(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
-    """Full UMAP on all prepared rows with umap-learn (optional dependency)."""
+    """Full UMAP on all prepared rows with umap-learn or polars-umap (optional dependencies)."""
     if job.features is None:
         raise RuntimeError("Run prepare first.")
+    if params.get("engine") == "polars-umap":
+        return _exact_polars_umap(job, params)
     try:
         import umap  # type: ignore
     except ImportError as e:
@@ -1025,7 +1027,43 @@ def _exact_impl(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
     job.set("writing", 0.95, "Writing coordinates")
     job.xy = xy
     files = _write_xy_chunks(job, xy)
-    return {"nRows": int(len(xy)), "files": files, "seconds": time.time() - t0}
+    return {"nRows": int(len(xy)), "files": files, "seconds": time.time() - t0, "engine": "umap-learn"}
+
+
+def _polars_umap_args(params: dict[str, Any]) -> dict[str, Any]:
+    """Atlas's UMAP parameters as polars_umap.umap keyword arguments (umap-learn's names)."""
+    return {
+        "n_components": 2,
+        "n_neighbors": int(params.get("nNeighbors", 15)),
+        "min_dist": float(params.get("minDist", 0.1)),
+        "spread": float(params.get("spread", 1.0)),
+        "metric": str(params.get("metric", "euclidean")),
+        "n_epochs": int(params.get("nEpochs", 200)),
+        "learning_rate": float(params.get("learningRate", 1.0)),
+        "negative_sample_rate": int(params.get("negativeSampleRate", 5)),
+        "repulsion_strength": float(params.get("repulsionStrength", 1.0)),
+        "random_state": int(params["seed"]) if params.get("seed") is not None else None,
+    }
+
+
+def _exact_polars_umap(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
+    """Full UMAP on all prepared rows with polars-umap (Rust, embedding-atlas's implementation)."""
+    try:
+        import polars as pl
+        import polars_umap as pu  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("polars-umap is not installed in this Python environment.") from e
+    n = len(job.features)
+    job.set("polars-umap", 0.05, f"Running polars-umap on {n:,} rows (no progress available)")
+    t0 = time.time()
+    # One Array(Float32, d) column holding the prepared (possibly PCA'd) features.
+    vectors = pl.Series("features", np.ascontiguousarray(job.features, dtype=np.float32))
+    out = pl.DataFrame([vectors]).select(xy=pu.umap("features", **_polars_umap_args(params)))
+    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, 2)
+    job.set("writing", 0.95, "Writing coordinates")
+    job.xy = xy
+    files = _write_xy_chunks(job, xy)
+    return {"nRows": int(n), "files": files, "seconds": time.time() - t0, "engine": "polars-umap"}
 
 
 @_guard

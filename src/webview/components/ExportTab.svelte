@@ -30,6 +30,7 @@
 
 <Section {atlas} id="export-code" title="Code">
   <button onclick={() => atlas.copyPython()} title="Python that computes this map with umap-learn, with the current data and UMAP settings">Copy as Python (umap-learn)</button>
+  <button onclick={() => atlas.copyPolarsUmap()} title="Python that computes this map with polars-umap (UMAP in Rust, inside Polars), with the current data and UMAP settings">Copy as Python (polars-umap)</button>
   <button onclick={() => atlas.copyDataMapPlot()} title="Python that draws this map with DataMapPlot, from the coordinates and the label column in the DataFrame">Copy as DataMapPlot code</button>
   <div class="hint muted">
     The DataMapPlot code uses umap_x and umap_y: add them first (above).

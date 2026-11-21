@@ -1,0 +1,48 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "both kernel engines are offered",
+      "assert": [
+        "[...document.querySelectorAll('select[aria-label=\"Compute\"] option')].map(o => o.value).join() === 'browser,polars-umap,umap-learn'"
+      ]
+    },
+    {
+      "name": "run polars-umap in the kernel",
+      "eval": "const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'polars-umap'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
+      "until": "a.phase === 'ready' && a.computeMode === 'polars-umap' && a.timings.umap && document.querySelector('footer .summary').textContent.includes('(polars-umap)')",
+      "timeout": 180000,
+      "assert": [
+        "a.projection === 'done'",
+        "a.anchorXY.every(Number.isFinite)"
+      ],
+      "report": "document.querySelector('footer .summary').textContent",
+      "screenshot": "exact-polars-umap.png"
+    },
+    {
+      "name": "umap-learn snippet runs",
+      "eval": "a.prepare.samplePct = 10; a.setTab('export'); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('[data-section=export-code] button')].find(b => b.textContent.includes('umap-learn')).click(); await new Promise(r => setTimeout(r, 200)); window.__exec = null; window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard + 'assert embedding.shape == (2000, 2), embedding.shape\\n' }) })).json()",
+      "until": "window.__exec",
+      "timeout": 300000,
+      "assert": [
+        "window.__exec.ok"
+      ],
+      "report": "window.__exec"
+    },
+    {
+      "name": "polars-umap snippet runs",
+      "eval": "[...document.querySelectorAll('[data-section=export-code] button')].find(b => b.textContent.includes('polars-umap')).click(); await new Promise(r => setTimeout(r, 200)); window.__exec = null; window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard + 'import numpy as np\\nassert embedding.shape == (2000, 2) and np.isfinite(embedding).all(), embedding.shape\\n' }) })).json()",
+      "until": "window.__exec",
+      "timeout": 300000,
+      "assert": [
+        "window.__exec.ok"
+      ],
+      "report": "{ exec: window.__exec, code: h.clipboard }"
+    }
+  ]
+}

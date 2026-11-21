@@ -179,7 +179,7 @@
         break;
       }
       case 'exact':
-        await runXYTask('exact', () => call('exact_umap', jobId, JSON.stringify(m.params)), true);
+        await runXYTask('exact', () => call('exact_umap', jobId, JSON.stringify({ ...m.params, engine: m.engine })), true);
         break;
       case 'colors': {
         const r = await call('colors', jobId, m.column, !!m.forceCategorical);

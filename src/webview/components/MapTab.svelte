@@ -110,16 +110,17 @@
 </Section>
 
 <Section {atlas} id="umap" title="UMAP">
-    {#if atlas.describe?.deps?.umap}
-      <label class="select">
+    {#if atlas.describe?.deps?.umap || atlas.describe?.deps?.polars_umap}
+      <label class="select" title="Browser: live UMAP on the anchors, animated. Kernel: exact UMAP of all prepared rows in the Python session, with polars-umap (Rust) or umap-learn, whichever is installed.">
         <span>Compute</span>
-        <select bind:value={atlas.computeMode}>
+        <select bind:value={atlas.computeMode} aria-label="Compute">
           <option value="browser">Browser (live)</option>
-          <option value="kernel">Kernel (umap-learn)</option>
+          {#if atlas.describe?.deps?.polars_umap}<option value="polars-umap">Kernel (polars-umap)</option>{/if}
+          {#if atlas.describe?.deps?.umap}<option value="umap-learn">Kernel (umap-learn)</option>{/if}
         </select>
       </label>
-      {#if atlas.computeMode === 'kernel'}
-        <div class="hint muted">Runs umap-learn on all {formatCount(atlas.nKept)} prepared rows in the kernel. No animation; parameters apply when you click Run.</div>
+      {#if atlas.computeMode !== 'browser'}
+        <div class="hint muted">Runs {atlas.computeMode} on all {formatCount(atlas.nKept)} prepared rows in the kernel. No animation; parameters apply when you click Run.</div>
       {/if}
     {/if}
     <Slider label="Neighbors" tag="rebuild" bind:value={atlas.umap.nNeighbors} min={2} max={200} onchange={umapChanged}
@@ -155,7 +156,7 @@
       </label>
     {/if}
     <div class="buttons">
-      {#if atlas.computeMode === 'kernel'}
+      {#if atlas.computeMode !== 'browser'}
         <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>
         {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
       {:else if atlas.paused}

@@ -102,6 +102,9 @@ export interface CategoricalColorMeta {
 
 export type ColorMeta = NumericColorMeta | CategoricalColorMeta;
 
+/** Exact UMAP on all prepared rows in the kernel. */
+export type ExactEngine = 'umap-learn' | 'polars-umap';
+
 export interface UmapParams {
   nNeighbors: number;
   minDist: number;
@@ -203,7 +206,7 @@ export type ToHost =
   | { type: 'prepare'; options: PrepareOptions }
   | { type: 'estimate' }
   | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
-  | { type: 'exact'; params: UmapParams }
+  | { type: 'exact'; params: UmapParams; engine: ExactEngine }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
   | { type: 'describeGroups'; seq: number; codes: string /* base64 uint16 per prepared row */; k: number; columns: number[] }
