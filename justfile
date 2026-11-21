@@ -38,3 +38,27 @@ e2e: build
 # Build the .vsix package
 package:
     npm run package
+
+# Open the webview in a browser, without Positron (scenario: small, tags, mnist, ... or a JSON path; port 0: any free port)
+harness scenario="small" theme="dark" port="0": build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    s="{{ scenario }}"
+    [[ -f "$s" ]] || s="test/harness/scenario-$s.json"
+    [[ -f "$s" ]] || { echo "No such scenario: {{ scenario }} (try: $(ls test/harness/scenario-*.json | sed 's/.*scenario-//; s/\.json$//' | paste -sd ' ' -))"; exit 1; }
+    log=$(mktemp "${TMPDIR:-/tmp}/atlas-harness.XXXXXX")
+    uv run --project python python test/harness/server.py "$s" --port {{ port }} > >(tee "$log") &
+    server=$!
+    cleanup() { kill $server 2>/dev/null; wait $server 2>/dev/null; rm -f "$log"; }
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM HUP
+    # The scenario's setup runs before the server listens (MNIST downloads once): wait for it.
+    until url=$(grep -o 'http://127.0.0.1:[0-9]*/' "$log"); do
+        kill -0 $server 2>/dev/null || exit 1
+        sleep 0.5
+    done
+    rm -f "$log"
+    url="${url}?theme={{ theme }}"
+    echo "Opening $url (Ctrl-C to stop)"
+    open "$url" 2>/dev/null || xdg-open "$url" 2>/dev/null || true
+    wait $server
