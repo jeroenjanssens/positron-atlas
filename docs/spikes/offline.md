@@ -105,46 +105,59 @@ a one-time cost.
 ### Embedding throughput
 
 Model: `minishlab/potion-multilingual-128M` (MIT licence, CPU-only, model2vec).
+Output dimension: **256** (then PCA to 64 dims as specified in the notebook plan).
+Model file: 512 MB safetensors.
 
-| Batch | Titles | Time | Throughput |
-|---|---:|---:|---:|
-| — | — | — | — |
+| Batch size | Throughput |
+|---:|---:|
+| 1,000 | 52,000 titles/s |
+| 10,000 | 186,000 titles/s |
+| 50,000 | 361,000 titles/s |
 
-*Results from E2 embedding benchmark; filled once the run completes.*
+Throughput scales with batch size because model2vec is essentially a lookup-and-average
+operation (no transformer, no attention). At 361k titles/s, **11.8 M titles embeds in
+≈ 33 seconds** (batch size 50k).
 
-Estimated total embedding time at the measured throughput for 11.8 M titles:
-*to be calculated*.
+**Model loading:** 76–210 s from cache (the 512 MB embedding matrix is memory-mapped
+and read into RAM). First-ever run downloads the matrix from Hugging Face: ~15 min on
+this machine.
 
 ### Disk use estimate
 
 | Artefact | Size |
 |---|---:|
 | Raw parquet (full text, 3 languages) | 22 GB |
-| Title + URL columns only (cached) | ≈ 0.9 GB |
-| Embeddings (pre-PCA, fp32) | — |
-| Embeddings after PCA to 64 dims (fp32) | — |
-| Final Parquet (`title`, `url`, `language`, `first_sentence`, 64-dim embedding) | — |
+| Model download (one-time, `~/.cache/huggingface`) | ≈ 530 MB |
+| Per-shard embedding cache (78 × ~160 MB, optional) | ≈ 12.5 GB |
+| Final Parquet (`title`, `url`, `language`, `first_sentence`, 64-dim fp32) | ≈ 4 GB |
 
-*Embedding sizes filled once model dimension is confirmed.*
+The notebook does not need to store the full 22 GB of article text. Each shard is
+processed in turn: download → extract `first_sentence` from `text` → embed `title`
+→ keep the 64-dim result → discard the text. Peak per-shard memory is about 160 MB.
 
 ### First-run time estimate
 
 | Step | Time |
 |---|---:|
-| Download title+url from 78 shards (4 parallel) | ≈ 8 min |
-| Embed 11.8 M titles (at measured throughput) | — |
-| PCA to 64 dims (sklearn, 11.8 M × emb_dim) | ≈ 5 min (estimate) |
-| Write final Parquet | ≈ 1 min (estimate) |
+| Download model (one-time) | ≈ 15 min |
+| Download and process 78 shards (4 parallel, full columns for `first_sentence`) | ≈ 15–20 min |
+| Embed 11.8 M titles (batch 50k, all cores) | ≈ 1 min |
+| PCA fit + transform (11.8 M × 256 → 64 dims) | ≈ 5 min (estimate) |
+| Write final Parquet | ≈ 1 min |
+| **Total (after model download)** | **≈ 25 min** |
+| **Total first ever run** | **≈ 40 min** |
 
-The notebook caches embeddings per shard so a restart after a failure resumes from
-the last shard.
+The notebook caches per-shard embeddings so a restart resumes from the last shard.
 
 ### Conclusion
 
-- **E2 is feasible on a laptop.** 11.8 M titles, CPU-only embedding, one-time download.
-- The main first-run cost is the parquet download; embedding speed determines whether
-  the total stays under an hour.
-- `first_sentence` needs extraction from `text`; a simple `text.split(". ")[0]`
-  captures the lead sentence for most articles.
-- The final dataset fits in a few GB of Parquet; the full 22 GB raw download is
-  avoided by selecting only `title` and `url` columns.
+- **E2 is feasible on a laptop in about 25 minutes** (after the one-time model
+  download). Embedding takes only ~1 minute; the bottleneck is downloading 22 GB
+  of parquet shards (even column-selectively, the `text` column is needed for
+  `first_sentence`).
+- **`first_sentence` needs extraction** from `text`; a simple
+  `text.split(". ")[0]` captures the lead sentence for most articles.
+- **Final dataset: ≈ 4 GB** of Parquet (11.8 M rows × 64 dims + 4 string columns).
+  Well within a typical laptop's storage.
+- **Model loading (1–3 min on restarts)** is the unexpected cost. The notebook
+  should load the model once at the top, before the shard loop.
