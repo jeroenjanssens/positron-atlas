@@ -136,7 +136,7 @@
         {#if c.categorical.length}
           <h3>Over-represented values</h3>
           {#each c.categorical as r (r.column + '\u0000' + r.value)}
-            <div class="row" title="{r.column} = {r.value}: {formatPercent(r.shareSelected)} of the selection, {formatPercent(r.shareAll)} of all rows">
+            <div class="row" title="{r.column} = {r.value === '' ? '(missing)' : r.value}: {formatPercent(r.shareSelected)} of the selection, {formatPercent(r.shareAll)} of all rows">
               <span class="name">{r.column} = {r.value === '' ? '(missing)' : r.value}</span>
               <span class="val">{formatPercent(r.shareSelected)} vs {formatPercent(r.shareAll)}</span>
               <div class="bar"><span style="left:0; width:{Math.round(r.shareSelected * 100)}%"></span></div>

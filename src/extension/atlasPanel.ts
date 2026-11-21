@@ -337,7 +337,7 @@ export class AtlasPanel {
       }
       case 'compareSelection': {
         const result = await this.withMask(m.mask, (p) => this.bridge.call<SelectionComparison & { ok: true }>('compare_selection', this.requireJob(), p));
-        this.post({ type: 'comparison', result });
+        this.post({ type: 'comparison', seq: m.seq, result });
         break;
       }
       case 'selectionFrame': {

@@ -529,3 +529,67 @@ def test_write_labels(ns, frame_kind, tmp_path):
     d = J(pak.describe("df"))
     assert d["columns"][-1]["name"] == "atlas_tag" and d["columns"][-1]["kind"] == "categorical"
     assert "empty" in J(pak.write_labels(jid, str(path), ["c"], "  "))["error"]
+
+
+def test_changed_frame_is_refused(ns, frame_kind, tmp_path):
+    jid, _, _, _ = prepared(ns, frame_kind, tmp_path)
+    job = pak._JOBS[jid]
+    n = len(job.kept_idx)
+    mask = write_mask(tmp_path / "m.bin", np.ones(n))
+    codes = tmp_path / "c.u2"
+    np.zeros(n, dtype="<u2").tofile(codes)
+    # Atlas's own columns (coordinates, tags) don't count as changes.
+    xy = tmp_path / "xy.f32"
+    np.zeros((n, 2), dtype="<f4").tofile(xy)
+    assert J(pak.add_coordinates(jid, str(xy)))["ok"]
+    assert J(pak.write_labels(jid, str(codes), ["a"], "atlas_tag"))["ok"]
+    assert J(pak.compare_selection(jid, mask))["ok"]
+    # A change by the user (rows removed): everything that uses row positions refuses.
+    df = ns["df"]
+    ns["df"] = df.iloc[:-5] if frame_kind == "pandas" else df.head(len(df) - 5)
+    job.frame = pak._Frame(ns["df"])  # the job's frame object, as when the user mutates it in place
+    for r in (
+        pak.compare_selection(jid, mask),
+        pak.selection_frame(jid, mask),
+        pak.describe_groups(jid, str(codes), 1, [0]),
+        pak.write_labels(jid, str(codes), ["a"], "atlas_tag"),
+        pak.add_coordinates(jid, str(xy)),
+    ):
+        assert "changed since Atlas loaded it" in J(r)["error"]
+
+
+def test_compare_dates_and_durations(ns, tmp_path):
+    n = 400
+    g = np.arange(n) % 2 == 0
+    base = pd.Timestamp("2024-01-01", tz="UTC")
+    ns["df"] = pd.DataFrame(
+        {
+            "a": np.arange(n, dtype=float),
+            "when": [base + pd.Timedelta(days=int(d)) for d in np.where(g, 100, 0)],
+            "took": pd.to_timedelta(np.where(g, 10, 0), unit="s"),
+        }
+    )
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": [0]}))
+    wait(jid)
+    job = pak._JOBS[jid]
+    r = J(pak.compare_selection(jid, write_mask(tmp_path / "m.bin", g[job.kept_idx])))
+    by = {x["column"]: x for x in r["numeric"]}
+    assert by["when"]["isDatetime"] is True
+    # Nanoseconds since the epoch, like datetime64 columns: the selection is at 2024-04-10.
+    assert pd.Timestamp(int(by["when"]["meanSelected"]), unit="ns") == pd.Timestamp("2024-04-10")
+    assert by["took"]["isDatetime"] is False
+
+
+def test_write_labels_non_string_label(ns, tmp_path):
+    ns["df"] = pd.DataFrame({0: np.arange(50.0), 1: np.arange(50.0) * 2})
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": [0, 1]}))
+    wait(jid)
+    n = len(pak._JOBS[jid].kept_idx)
+    codes = np.zeros(n, dtype="<u2")
+    codes.tofile(tmp_path / "c.u2")
+    assert J(pak.write_labels(jid, str(tmp_path / "c.u2"), ["x"], "1"))["ok"]
+    # Column 1 (an integer label) is overwritten, not duplicated as "1".
+    assert list(ns["df"].columns) == [0, 1]
+    assert set(ns["df"][1]) == {"x"}

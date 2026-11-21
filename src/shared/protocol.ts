@@ -187,7 +187,7 @@ export type ToWebview =
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
   | { type: 'groupNames'; seq: number; names: string[] }
   | { type: 'labelsWritten'; variable: string; column: string; rows: number; describe: DescribeResult }
-  | { type: 'comparison'; result: SelectionComparison }
+  | { type: 'comparison'; seq: number; result: SelectionComparison }
   | { type: 'selectionFrame'; variable: string; rows: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
@@ -214,7 +214,7 @@ export type ToHost =
       /** What is written, for the confirmation (e.g. 'Tag 1,234 rows as "outliers"'). */
       description: string;
     }
-  | { type: 'compareSelection'; mask: string /* base64 packed bits, least significant first */ }
+  | { type: 'compareSelection'; seq: number; mask: string /* base64 packed bits, least significant first */ }
   | { type: 'selectionFrame'; mask: string /* base64 packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'cancel' }

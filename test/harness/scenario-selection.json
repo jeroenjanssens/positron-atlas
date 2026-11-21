@@ -47,6 +47,23 @@
       "screenshot": "select-compare.png"
     },
     {
+      "name": "a result for an earlier selection is dropped",
+      "eval": "a.compareSelection(); a.setSelection(a.selection.slice())",
+      "until": "!a.comparing",
+      "assert": [
+        "a.comparison === null"
+      ],
+      "report": "{ comparing: a.comparing }"
+    },
+    {
+      "name": "wait for the dropped result",
+      "eval": "await new Promise(r => setTimeout(r, 2000))",
+      "assert": [
+        "a.comparison === null",
+        "!a.comparing"
+      ]
+    },
+    {
       "name": "pan tool, Shift-drag adds the 0s",
       "click": ".plot-toolbar [aria-label='Pan and zoom']",
       "drag": "(() => {\n  // Page-coordinate lasso around a digit's main blob: the convex hull of its anchors near their median.\n  const codes = a.labelCodesAnchors, xy = a.anchorXY, g = a.labelMeta.categories.indexOf('0');\n  const vp = a.renderer.deck.getViewports()[0], r = document.querySelector('.plot').getBoundingClientRect();\n  let pts = [];\n  for (let i = 0; i < codes.length; i++) if (codes[i] === g) pts.push(vp.project([xy[2 * i], xy[2 * i + 1]]));\n  const med = k => pts.map(p => p[k]).sort((u, v) => u - v)[pts.length >> 1];\n  const cx = med(0), cy = med(1);\n  const d = pts.map(p => Math.hypot(p[0] - cx, p[1] - cy));\n  const dm = [...d].sort((u, v) => u - v)[d.length >> 1];\n  pts = pts.filter((p, i) => d[i] < 2.5 * dm).sort((p, q) => p[0] - q[0] || p[1] - q[1]);\n  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);\n  const lower = [], upper = [];\n  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }\n  for (const p of [...pts].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }\n  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));\n  return hull.map(([x, y]) => { const k = Math.hypot(x - cx, y - cy) || 1; return [r.left + x + 6 * (x - cx) / k, r.top + y + 6 * (y - cy) / k]; });\n})()",

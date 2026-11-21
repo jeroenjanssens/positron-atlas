@@ -220,7 +220,7 @@
         try {
           if (m.type === 'compareSelection') {
             const result = await call('compare_selection', jobId, maskPath);
-            post({ type: 'comparison', result });
+            post({ type: 'comparison', seq: m.seq, result });
           } else {
             const r = await call('selection_frame', jobId, maskPath);
             harness.log.push(`info: Created ${r.variable} with ${r.rows} selected rows.`);

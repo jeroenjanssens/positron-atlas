@@ -49,10 +49,13 @@
     },
     {
       "name": "finer detail gives more clusters",
-      "eval": "window.__k = a.clusterCount; a.setLabelOptions({ detail: 4 })",
+      "eval": "window.__k = a.clusterCount; const r = document.querySelector('[data-section=labels] input[type=range][aria-label=\"Detail\"]'); r.value = '4'; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true }))",
       "until": "!a.clustering && a.clusterCount > window.__k",
       "timeout": 60000,
-      "report": "{ before: window.__k, after: a.clusterCount }"
+      "report": "{ before: window.__k, after: a.clusterCount }",
+      "assert": [
+        "a.labels.detail === 4"
+      ]
     },
     {
       "name": "outlines off",

@@ -104,6 +104,8 @@ export class Atlas {
   /** The selection was made on the anchors (before all rows were placed). */
   selectionOnAnchors = $state(false);
   comparison = $state.raw<SelectionComparison | null>(null);
+  /** The variable that has Atlas's columns (umap_x, tags): differs from `variable` when polars frames are rebound. */
+  dataVariable = $state('');
   comparing = $state(false);
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
@@ -150,6 +152,9 @@ export class Atlas {
   private clusterFinder: ClusterFinder | null = null;
   private clusterSeq = 0;
   private nameSeq = 0;
+  private compareSeq = 0;
+  /** The seq of the clustering run in progress (to clear `clustering` when it is superseded). */
+  private clusterRunning = 0;
   /** Codes of the column that names the clusters (Name clusters by → a column). */
   private nameSource: { column: number; codes: Uint16Array; meta: CategoricalColorMeta } | null = null;
   private labelAt = 0;
@@ -274,10 +279,10 @@ export class Atlas {
         this.onLabelsWritten(msg.variable, msg.column, msg.rows, msg.describe);
         break;
       case 'comparison':
-        this.comparing = false;
-        // Ignore a result for a selection that has changed since.
-        if (this.selection && msg.result.selected === this.selectedCount) {
-          this.comparison = msg.result;
+        // Ignore a result for an earlier request (the selection has changed since).
+        if (msg.seq === this.compareSeq) {
+          this.comparing = false;
+          this.comparison = this.selection ? msg.result : null;
         }
         break;
       case 'selectionFrame':
@@ -302,6 +307,7 @@ export class Atlas {
         }
         break;
       case 'coordsAdded':
+        this.dataVariable = msg.variable;
         this.flash(`Added ${msg.columns.join(', ')} to ${msg.variable}`);
         break;
     }
@@ -311,6 +317,7 @@ export class Atlas {
     this.describe = d;
     this.settings = settings;
     this.variable = variable;
+    this.dataVariable = '';
     this.error = null;
     const numeric = d.columns.filter((c) => c.kind === 'numeric' || c.kind === 'bool').map((c) => c.index);
     const valid = new Set(d.columns.map((c) => c.index));
@@ -780,19 +787,26 @@ export class Atlas {
       return;
     }
     this.clustering = true;
+    this.clusterRunning = seq;
     let found;
     try {
       this.clusterFinder ??= new ClusterFinder();
       found = await this.clusterFinder.find(grid, DETAIL_THRESHOLDS[Math.min(5, Math.max(1, Math.round(this.labels.detail))) - 1]);
     } catch (e) {
-      if (seq === this.clusterSeq) {
+      if (this.clusterRunning === seq) {
         this.clustering = false;
+      }
+      if (seq === this.clusterSeq) {
         this.showError(e instanceof Error ? e.message : String(e));
       }
       return;
     }
     if (seq !== this.clusterSeq || prepared !== this.prepared || !this.labels.clusters) {
-      return; // superseded
+      // Superseded. Unless a newer run is in progress, nothing is clustering anymore.
+      if (this.clusterRunning === seq) {
+        this.clustering = false;
+      }
+      return;
     }
     const a = assignToClusters(grid, found, xy, n);
     let codes: Uint16Array;
@@ -1109,6 +1123,7 @@ export class Atlas {
     }
     this.comparison = null;
     this.comparing = false;
+    this.compareSeq++; // drop results for the previous selection
     this.recolor();
   }
 
@@ -1126,7 +1141,7 @@ export class Atlas {
     if (!this.selection) return;
     this.comparing = true;
     this.comparison = null;
-    vscode.post({ type: 'compareSelection', mask: bytesToBase64(packBits(this.selection)) });
+    vscode.post({ type: 'compareSelection', seq: ++this.compareSeq, mask: bytesToBase64(packBits(this.selection)) });
   }
 
   selectionToFrame(): void {
@@ -1166,6 +1181,7 @@ export class Atlas {
   }
 
   private onLabelsWritten(variable: string, column: string, rows: number, describe: DescribeResult): void {
+    this.dataVariable = variable;
     this.flash(`Wrote ${formatCount(rows)} labels to ${variable}.${column}`);
     const old = this.describe;
     // Columns are only ever added (at the end) or overwritten, so existing indices stay valid.
@@ -1186,7 +1202,7 @@ export class Atlas {
     const d = this.describe;
     if (!d) return;
     const label = !this.labels.clusters && this.labels.column !== null ? (d.columns[this.labels.column]?.name ?? null) : this.labels.clusters ? 'atlas_cluster' : null;
-    vscode.post({ type: 'copyText', text: dataMapPlotSnippet(this.variable, d.frameKind, label) });
+    vscode.post({ type: 'copyText', text: dataMapPlotSnippet(this.dataVariable || this.variable, d.frameKind, label) });
   }
 
   // ---- sidebar -----------------------------------------------------------------------

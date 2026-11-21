@@ -47,7 +47,8 @@
     </select>
   </label>
   {#if atlas.labels.clusters}
-    <Slider label="Detail" bind:value={atlas.labels.detail} min={1} max={5} format={(v) => detailNames[v - 1] ?? ''}
+    <!-- Not bound: setLabelOptions compares with the previous detail to decide whether to re-cluster. -->
+    <Slider label="Detail" value={atlas.labels.detail} min={1} max={5} format={(v) => detailNames[v - 1] ?? ''}
       hint="How finely the layout is split into clusters: 1 gives fewer, larger clusters; 5 more, smaller ones"
       onchange={(v) => atlas.setLabelOptions({ detail: v })} />
     <label class="select" title="How to name each cluster: by number, by the columns whose means differ most from all rows, or by the most common value of a column">

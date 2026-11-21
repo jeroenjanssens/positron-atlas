@@ -290,8 +290,8 @@ def _to_float(vals: np.ndarray, kind: str) -> np.ndarray:
             out = arr.astype("datetime64[ns]" if arr.dtype.kind == "M" else "timedelta64[ns]").astype("int64").astype(np.float64)
             out[np.isnat(arr)] = np.nan
             return out
-        # Python datetimes (object)
-        out = np.array([np.nan if _is_null(v) else v.timestamp() for v in arr], dtype=np.float64)
+        # Python datetimes (object, e.g. timezone-aware pandas): nanoseconds, like datetime64[ns].
+        out = np.array([np.nan if _is_null(v) else v.timestamp() * 1e9 for v in arr], dtype=np.float64)
         return out
     try:
         return np.asarray(vals, dtype=np.float64)
@@ -436,6 +436,12 @@ def _get(job_id: str) -> _Job:
     if job_id not in _JOBS:
         raise KeyError(f"Unknown job {job_id}; the kernel may have restarted.")
     return _JOBS[job_id]
+
+
+def _require_unchanged(job: "_Job") -> None:
+    """Refuse to use prepared row positions when the DataFrame's shape changed since prepare."""
+    if (job.frame.n_rows, job.frame.n_cols) != job.shape_at_start:
+        raise RuntimeError("The DataFrame changed since Atlas loaded it. Click Reload to use the current data.")
 
 
 def _guard(fn):
@@ -1025,6 +1031,7 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
+    _require_unchanged(job)
     if xy_path:
         xy = np.fromfile(xy_path, dtype="<f4").reshape(-1, 2)
     elif job.xy is not None:
@@ -1041,6 +1048,8 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
         job.frame.obj[x_name] = full[:, 0]
         job.frame.obj[y_name] = full[:, 1]
         target = job.name
+        # Our own change (new columns), not the user's: keep the job current.
+        job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
     else:
         import polars as pl
 
@@ -1085,6 +1094,7 @@ def compare_selection(job_id: str, mask_path: str, max_rows: int = 50_000, top: 
     (``max_rows`` rows each for the selection and for all rows).
     """
     job = _get(job_id)
+    _require_unchanged(job)
     mask = _read_mask(job, mask_path)
     n_sel = int(mask.sum())
     if n_sel == 0:
@@ -1097,7 +1107,7 @@ def compare_selection(job_id: str, mask_path: str, max_rows: int = 50_000, top: 
     categorical: list[dict[str, Any]] = []
     names = frame.column_names()
     for j, name in enumerate(names):
-        _, kind = frame.column_kind(j)
+        dtype, kind = frame.column_kind(j)
         try:
             if kind in ("numeric", "bool", "datetime"):
                 a = _to_float(frame.column(j, rows_all), kind)
@@ -1114,7 +1124,8 @@ def compare_selection(job_id: str, mask_path: str, max_rows: int = 50_000, top: 
                 numeric.append(
                     {
                         "column": name,
-                        "isDatetime": kind == "datetime",
+                        # Dates are shown as dates; durations (timedelta) as numbers.
+                        "isDatetime": kind == "datetime" and not any(t in dtype.lower() for t in ("timedelta", "duration")),
                         "meanSelected": mean_sel,
                         "meanAll": mean_all,
                         "effect": (mean_sel - mean_all) / sd,
@@ -1162,6 +1173,7 @@ def describe_groups(job_id: str, codes_path: str, k: int, columns: list[int], ma
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
+    _require_unchanged(job)
     n = len(job.kept_idx)
     codes = np.fromfile(codes_path, dtype="<u2")
     if len(codes) != n:
@@ -1213,6 +1225,7 @@ def write_labels(job_id: str, codes_path: str, names: list[str], column: str, ke
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
+    _require_unchanged(job)
     column = str(column).strip()
     if not column:
         raise ValueError("The column name is empty.")
@@ -1223,8 +1236,11 @@ def write_labels(job_id: str, codes_path: str, names: list[str], column: str, ke
     frame = job.frame
     n = frame.n_rows
     existing = column in frame.column_names()
+    key: Any = column
     if existing:
-        old = frame.column(frame.column_names().index(column))
+        idx = frame.column_names().index(column)
+        key = frame.obj.columns[idx]  # the original label (pandas labels need not be strings)
+        old = frame.column(idx)
         values = np.array([None if _is_null(v) else str(v) for v in old], dtype=object)
     else:
         values = np.full(n, None, dtype=object)
@@ -1238,7 +1254,7 @@ def write_labels(job_id: str, codes_path: str, names: list[str], column: str, ke
     if frame.kind == "pandas":
         import pandas as pd
 
-        frame.obj[column] = pd.array(values, dtype="string")
+        frame.obj[key] = pd.array(values, dtype="string")
         target = job.name
     else:
         import polars as pl
@@ -1247,7 +1263,8 @@ def write_labels(job_id: str, codes_path: str, names: list[str], column: str, ke
         target = job.name if job.name.isidentifier() else "atlas_result"
         _user_ns()[target] = new
         job.frame = _Frame(new)
-    # Adding a column is our own change: don't report the frame as changed by the user.
+    # The shape was unchanged before this call, so the only change is the column added here:
+    # don't report it as a change by the user.
     job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
     return _json({"ok": True, "variable": target, "column": column, "rows": written})
 
@@ -1269,6 +1286,7 @@ def _unique_name(base: str, ns: dict) -> str:
 def selection_frame(job_id: str, mask_path: str, base_name: str = "") -> str:
     """Assign the selected rows (in their original order) to a new variable; never overwrites."""
     job = _get(job_id)
+    _require_unchanged(job)
     mask = _read_mask(job, mask_path)
     rows = np.sort(job.kept_idx[mask])
     if len(rows) == 0:
