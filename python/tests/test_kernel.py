@@ -456,3 +456,35 @@ def test_selection_frame(ns, frame_kind, tmp_path):
     if frame_kind == "pandas":
         sel.iloc[0, 0] = -1.0  # a copy: the original is untouched
         assert ns["df"].iloc[rows[0], 0] == x[rows[0], 0]
+
+
+def test_describe_groups(ns, frame_kind, tmp_path):
+    rng = np.random.default_rng(0)
+    n = 2000
+    g = rng.integers(0, 3, n)
+    df = pd.DataFrame(
+        {
+            "income": np.where(g == 0, 5.0, 0.0) + rng.normal(0, 1, n),
+            "age": np.where(g == 1, -5.0, 0.0) + rng.normal(0, 1, n),
+            "noise": rng.normal(0, 1, n),
+            "flag": g == 2,
+            "name": [f"r{i}" for i in range(n)],
+        }
+    )
+    ns["df"] = df if frame_kind == "pandas" else pl.from_pandas(df)
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": [0, 1, 2]}))
+    wait(jid)
+    job = pak._JOBS[jid]
+    codes = g[job.kept_idx].astype("<u2")
+    codes[:10] = 3  # not in a group
+    codes.tofile(tmp_path / "codes.u2")
+    r = J(pak.describe_groups(jid, str(tmp_path / "codes.u2"), 3, [0, 1, 2, 3, 4], 100_000, 1))
+    assert r["names"] == ["↑ income", "↓ age", "↑ flag"]
+    assert sum(r["counts"]) == len(codes) - 10
+    # Two names per group by default; weak differences are left out.
+    r = J(pak.describe_groups(jid, str(tmp_path / "codes.u2"), 3, [2]))
+    assert r["names"] == ["", "", ""]
+    assert "FileNotFoundError" in J(pak.describe_groups(jid, str(tmp_path / "missing.u2"), 3, [0]))["error"]
+    (tmp_path / "short.u2").write_bytes(b"\x00\x00")
+    assert "prepared rows" in J(pak.describe_groups(jid, str(tmp_path / "short.u2"), 3, [0]))["error"]

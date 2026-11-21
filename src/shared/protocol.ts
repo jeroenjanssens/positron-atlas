@@ -143,6 +143,14 @@ export interface LabelOptions {
   maxSize: number;
   /** Color the label text like the points when labels and colors use the same column. */
   colorText: boolean;
+  /** Label automatic clusters of the layout instead of a column. */
+  clusters: boolean;
+  /** Cluster detail, 1 (fewer, larger clusters) to 5 (more, smaller ones). */
+  detail: number;
+  /** Cluster names: numbers, distinguishing features (kernel), or the most common value of a column. */
+  nameBy: 'number' | 'features' | number;
+  /** Draw cluster outlines. */
+  outlines: boolean;
 }
 
 /** Persisted in the webview state so tabs can be restored after a reload. */
@@ -176,7 +184,8 @@ export type ToWebview =
   | { type: 'xyChunk'; file: FileRef; total: number }
   | { type: 'projected'; seconds: number; exact?: boolean }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
-  | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number }
+  | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
+  | { type: 'groupNames'; seq: number; names: string[] }
   | { type: 'comparison'; result: SelectionComparison }
   | { type: 'selectionFrame'; variable: string; rows: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
@@ -191,7 +200,8 @@ export type ToHost =
   | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
   | { type: 'exact'; params: UmapParams }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
-  | { type: 'labelCodes'; column: number; maxCategories: number }
+  | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
+  | { type: 'describeGroups'; seq: number; codes: string /* base64 uint16 per prepared row */; k: number; columns: number[] }
   | { type: 'compareSelection'; mask: string /* base64 packed bits, least significant first */ }
   | { type: 'selectionFrame'; mask: string /* base64 packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }

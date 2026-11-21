@@ -18,6 +18,8 @@ import UmapWorker from './workers/umap.worker.ts?worker&inline';
 import type { WorkerIn, WorkerOut } from './workers/umap.worker';
 import { ScatterRenderer, type MapLabel, type PointSet } from './render/renderer';
 import { collisionPriorities, labelSizes, placeGroupLabels } from './labels/place';
+import { DETAIL_THRESHOLDS, assignToClusters, densityGrid } from './labels/clusters';
+import { ClusterFinder } from './labels/clusterWorker';
 import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
 import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
@@ -85,7 +87,11 @@ export class Atlas {
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
   view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false, palette: 'map' });
   ui = $state<UiState>({ tab: 'map', closed: [] });
-  labels = $state<LabelOptions>({ column: null, minSize: 12, maxSize: 26, colorText: true });
+  labels = $state<LabelOptions>({ ...DEFAULT_LABELS });
+  /** Automatic clusters: how many were found, their names, and whether clustering runs. */
+  clusterCount = $state(0);
+  clusterNames = $state.raw<string[]>([]);
+  clustering = $state(false);
   /** Categories of the label column (null until loaded). */
   labelMeta = $state.raw<CategoricalColorMeta | null>(null);
   /** Number of labels on the map (before overlapping ones are hidden). */
@@ -140,6 +146,12 @@ export class Atlas {
   private labelCodes: Uint16Array | null = null;
   private labelCodesAnchors: Uint16Array | null = null;
   private labelTimer: ReturnType<typeof setTimeout> | undefined;
+  private cluster: { codes: Uint16Array; codesAnchors: Uint16Array; k: number; counts: number[]; outlines: [number, number][][][] } | null = null;
+  private clusterFinder: ClusterFinder | null = null;
+  private clusterSeq = 0;
+  private nameSeq = 0;
+  /** Codes of the column that names the clusters (Name clusters by → a column). */
+  private nameSource: { column: number; codes: Uint16Array; meta: CategoricalColorMeta } | null = null;
   private labelAt = 0;
   private hit: { index: HitIndex; map: (i: number) => number } | null = null;
   private hoverTimer: ReturnType<typeof setTimeout> | undefined;
@@ -189,6 +201,7 @@ export class Atlas {
 
   destroy(): void {
     clearTimeout(this.labelTimer);
+    this.clusterFinder?.destroy();
     this.worker?.terminate();
     this.renderer?.destroy();
   }
@@ -252,7 +265,10 @@ export class Atlas {
         await this.onColors(msg.column, msg.file, msg.meta);
         break;
       case 'labelCodes':
-        await this.onLabelCodes(msg.column, msg.file, msg.meta);
+        await this.onLabelCodes(msg.column, msg.file, msg.meta, msg.purpose ?? 'labels');
+        break;
+      case 'groupNames':
+        this.onGroupNames(msg.seq, msg.names);
         break;
       case 'comparison':
         this.comparing = false;
@@ -323,7 +339,9 @@ export class Atlas {
       const col = l.column !== null && l.column !== undefined && valid.has(l.column) ? l.column : null;
       const minSize = Number.isFinite(l.minSize) ? Math.min(48, Math.max(6, l.minSize)) : 12;
       const maxSize = Number.isFinite(l.maxSize) ? Math.min(64, Math.max(minSize, l.maxSize)) : Math.max(minSize, 26);
-      this.labels = { column: col, minSize, maxSize, colorText: l.colorText !== false };
+      const detail = Number.isFinite(l.detail) ? Math.min(5, Math.max(1, Math.round(l.detail))) : DEFAULT_LABELS.detail;
+      const nameBy = l.nameBy === 'features' || l.nameBy === 'number' ? l.nameBy : typeof l.nameBy === 'number' && valid.has(l.nameBy) ? l.nameBy : 'number';
+      this.labels = { column: col, minSize, maxSize, colorText: l.colorText !== false, clusters: l.clusters === true && col === null, detail, nameBy, outlines: l.outlines !== false };
     }
     if (state?.view) {
       this.view = { ...this.view, ...state.view };
@@ -385,6 +403,11 @@ export class Atlas {
     this.autoFit = true;
     this.labelCodes = null;
     this.labelCodesAnchors = null;
+    this.cluster = null;
+    this.clusterCount = 0;
+    this.clusterNames = [];
+    this.nameSource = null;
+    this.clusterSeq++;
     this.recolor();
     if (this.colorColumn !== null) {
       this.requestColors();
@@ -510,6 +533,7 @@ export class Atlas {
         this.umapProgress = null;
         this.updateMapColors(false);
         this.recolor();
+        this.refreshClusters();
         if (this.prepared?.needsProjection) {
           vscode.post({ type: 'estimate' });
         }
@@ -579,6 +603,7 @@ export class Atlas {
     }
     this.updateMapColors(false);
     this.recolor();
+    this.refreshClusters();
   }
 
   cancelKernel(): void {
@@ -659,36 +684,69 @@ export class Atlas {
   }
 
   // ---- labels ------------------------------------------------------------------------
-  setLabelColumn(c: number | null): void {
-    this.labels.column = c;
+  /** Label source: a column (index), automatic clusters, or none. */
+  setLabelSource(source: number | 'clusters' | null): void {
+    const clusters = source === 'clusters';
+    this.labels = { ...this.labels, column: typeof source === 'number' ? source : null, clusters };
+    // Clear the previous source's labels right away (the new ones may take a moment).
+    this.labelCount = 0;
+    this.renderer?.setLabels([]);
+    this.renderer?.setOutlines([]);
     this.labelMeta = null;
     this.labelCodes = null;
     this.labelCodesAnchors = null;
-    if (c === null) {
-      this.updateLabels();
-    } else {
+    if (typeof source === 'number') {
       this.requestLabelCodes();
+    } else if (clusters) {
+      this.refreshClusters();
     }
+    this.updateLabels();
+  }
+
+  /** Label by a column (null: no labels). */
+  setLabelColumn(c: number | null): void {
+    this.setLabelSource(c);
   }
 
   setLabelOptions(o: Partial<LabelOptions>): void {
+    const prev = this.labels;
     this.labels = { ...this.labels, ...o };
+    if (this.labels.clusters && o.detail !== undefined && o.detail !== prev.detail) {
+      this.refreshClusters();
+    } else if (this.labels.clusters && o.nameBy !== undefined && o.nameBy !== prev.nameBy) {
+      this.nameClusters();
+    }
     this.updateLabels();
   }
 
   private requestLabelCodes(): void {
-    if (this.labels.column !== null && this.prepared) {
+    if (this.labels.column !== null && !this.labels.clusters && this.prepared) {
       vscode.post({ type: 'labelCodes', column: this.labels.column, maxCategories: MAX_LABELS });
     }
   }
 
-  private async onLabelCodes(column: number, file: FileRef, meta: ColorMeta): Promise<void> {
-    if (column !== this.labels.column || meta.kind !== 'categorical') {
+  private async onLabelCodes(column: number, file: FileRef, meta: ColorMeta, purpose: 'labels' | 'names'): Promise<void> {
+    if (meta.kind !== 'categorical') {
+      return;
+    }
+    const wanted = purpose === 'names' ? this.labels.clusters && this.labels.nameBy === column : !this.labels.clusters && column === this.labels.column;
+    if (!wanted) {
       return;
     }
     const codes = (await fetchTyped(file.uri, 'u16')) as Uint16Array;
-    if (codes.length !== this.nKept || !this.anchorPos || column !== this.labels.column) {
-      return; // stale (from a previous prepare or column)
+    if (codes.length !== this.nKept || !this.anchorPos) {
+      return; // stale (from a previous prepare)
+    }
+    if (purpose === 'names') {
+      if (this.labels.clusters && this.labels.nameBy === column) {
+        this.nameSource = { column, codes, meta };
+        this.nameClusters();
+        this.updateLabels();
+      }
+      return;
+    }
+    if (column !== this.labels.column || this.labels.clusters) {
+      return;
     }
     this.labelCodes = codes;
     this.labelCodesAnchors = this.prepared?.needsProjection ? gatherU16(codes, this.anchorPos) : codes;
@@ -696,9 +754,108 @@ export class Atlas {
     this.updateLabels();
   }
 
+  // ---- automatic clusters -------------------------------------------------------------
+  /** Re-cluster the current layout (when it has settled; labels follow the points meanwhile). */
+  refreshClusters(): void {
+    if (this.labels.clusters && (this.phase === 'ready' || this.paused)) {
+      void this.runClustering();
+    }
+  }
+
+  private async runClustering(): Promise<void> {
+    if (!this.labels.clusters || !this.prepared || !this.anchorXY || !this.anchorPos) {
+      return;
+    }
+    const seq = ++this.clusterSeq;
+    const prepared = this.prepared;
+    const anchorPos = this.anchorPos;
+    const onAll = !!prepared.needsProjection && this.projection === 'done' && !!this.allXY;
+    const xy = onAll ? this.allXY! : this.anchorXY.slice();
+    const n = onAll ? this.nKept : prepared.nAnchors;
+    const grid = densityGrid(xy, n);
+    if (!grid) {
+      return;
+    }
+    this.clustering = true;
+    let found;
+    try {
+      this.clusterFinder ??= new ClusterFinder();
+      found = await this.clusterFinder.find(grid, DETAIL_THRESHOLDS[Math.min(5, Math.max(1, Math.round(this.labels.detail))) - 1]);
+    } catch (e) {
+      if (seq === this.clusterSeq) {
+        this.clustering = false;
+        this.showError(e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+    if (seq !== this.clusterSeq || prepared !== this.prepared || !this.labels.clusters) {
+      return; // superseded
+    }
+    const a = assignToClusters(grid, found, xy, n);
+    let codes: Uint16Array;
+    if (onAll || !prepared.needsProjection) {
+      codes = a.codes;
+    } else {
+      // Clustered on the anchors only: the other rows are in no cluster until all rows are placed.
+      codes = new Uint16Array(this.nKept).fill(a.k);
+      for (let i = 0; i < anchorPos.length; i++) codes[anchorPos[i]] = a.codes[i];
+    }
+    this.cluster = {
+      codes,
+      codesAnchors: prepared.needsProjection ? gatherU16(codes, anchorPos) : codes,
+      k: a.k,
+      counts: a.counts,
+      outlines: a.outlines,
+    };
+    this.clusterCount = a.k;
+    this.clustering = false;
+    this.nameClusters();
+    this.updateLabels();
+  }
+
+  /** Cluster names: numbers, the most common value of a column, or distinguishing features (kernel). */
+  private nameClusters(): void {
+    const c = this.cluster;
+    if (!c) {
+      this.clusterNames = [];
+      return;
+    }
+    const numbered = c.counts.map((_, i) => `Cluster ${i + 1}`);
+    const by = this.labels.nameBy;
+    if (by === 'features') {
+      this.clusterNames = this.clusterNames.length === c.k ? this.clusterNames : numbered;
+      const seq = ++this.nameSeq;
+      const columns = (this.applied?.features ?? []).slice();
+      vscode.post({ type: 'describeGroups', seq, codes: bytesToBase64(new Uint8Array(c.codes.buffer, c.codes.byteOffset, c.codes.byteLength)), k: c.k, columns });
+      return;
+    }
+    if (typeof by === 'number') {
+      const src = this.nameSource;
+      if (!src || src.column !== by) {
+        this.clusterNames = numbered;
+        if (this.prepared) {
+          vscode.post({ type: 'labelCodes', column: by, maxCategories: MAX_LABELS, purpose: 'names' });
+        }
+        return;
+      }
+      this.clusterNames = dominantNames(c.codes, c.k, src.codes, src.meta.categories);
+      return;
+    }
+    this.clusterNames = numbered;
+  }
+
+  private onGroupNames(seq: number, names: string[]): void {
+    const c = this.cluster;
+    if (seq !== this.nameSeq || !c || names.length !== c.k || this.labels.nameBy !== 'features') {
+      return;
+    }
+    this.clusterNames = names.map((nm, i) => nm || `Cluster ${i + 1}`);
+    this.updateLabels();
+  }
+
   /** Recompute labels now, or soon (throttled) while the layout animates. */
   private scheduleLabels(): void {
-    if (this.labels.column === null && this.labelCount === 0) {
+    if (this.labels.column === null && !this.labels.clusters && this.labelCount === 0) {
       return;
     }
     const wait = this.labelAt + LABEL_INTERVAL_MS - performance.now();
@@ -709,27 +866,40 @@ export class Atlas {
     }
   }
 
+  /** The group codes and names that label the map right now, or null. */
+  private labelGroups(): { all: Uint16Array; anchors: Uint16Array; names: string[] } | null {
+    if (this.labels.clusters) {
+      const c = this.cluster;
+      return c && this.clusterNames.length === c.k ? { all: c.codes, anchors: c.codesAnchors, names: this.clusterNames } : null;
+    }
+    if (this.labels.column !== null && this.labelMeta && this.labelCodes && this.labelCodesAnchors) {
+      return { all: this.labelCodes, anchors: this.labelCodesAnchors, names: this.labelMeta.categories };
+    }
+    return null;
+  }
+
   /** Place the labels on the points currently shown and hand them to the renderer. */
   updateLabels(): void {
     clearTimeout(this.labelTimer);
     this.labelTimer = undefined;
     this.labelAt = performance.now();
-    const meta = this.labelMeta;
-    if (!this.renderer || this.labels.column === null || !meta || !this.prepared || !this.anchorXY) {
-      if (this.labelCount !== 0 || this.labels.column === null) {
+    if (!this.renderer) {
+      return;
+    }
+    const groups = this.labelGroups();
+    if (!groups || !this.prepared || !this.anchorXY) {
+      // Keep the current labels while codes are loading; clear them when labels are off.
+      if (this.labels.column === null && !this.labels.clusters) {
         this.labelCount = 0;
-        this.renderer?.setLabels([]);
+        this.renderer.setLabels([]);
+        this.renderer.setOutlines([]);
       }
       return;
     }
-    let placed;
-    if (this.projection === 'done' && this.allXY && this.labelCodes) {
-      placed = placeGroupLabels(this.allXY, this.labelCodes, this.nKept, meta.categories);
-    } else if (this.labelCodesAnchors) {
-      placed = placeGroupLabels(this.anchorXY, this.labelCodesAnchors, this.prepared.nAnchors, meta.categories);
-    } else {
-      return;
-    }
+    const placed =
+      this.projection === 'done' && this.allXY
+        ? placeGroupLabels(this.allXY, groups.all, this.nKept, groups.names)
+        : placeGroupLabels(this.anchorXY, groups.anchors, this.prepared.nAnchors, groups.names);
     const counts = placed.map((l) => l.count);
     const sizes = labelSizes(counts, this.labels.minSize, this.labels.maxSize);
     const priorities = collisionPriorities(counts);
@@ -739,7 +909,7 @@ export class Atlas {
     // and cut categories differently (20 colors, 200 labels), so match categories by name.
     const cm = this.colorMeta;
     const colorIndex =
-      this.labels.colorText && this.labels.column === this.colorColumn && cm?.kind === 'categorical'
+      !this.labels.clusters && this.labels.colorText && this.labels.column === this.colorColumn && cm?.kind === 'categorical'
         ? new Map(cm.categories.map((c, i) => [c, i]))
         : null;
     const out: MapLabel[] = placed.map((l, i) => {
@@ -754,6 +924,9 @@ export class Atlas {
     });
     this.labelCount = out.length;
     this.renderer.setLabels(out, { outline: [...hexToRgb(toHex(background)), 220], fontFamily: fontFamily() });
+    // Outlines are static polygons of the settled layout: hide them while it moves.
+    const showOutlines = this.labels.clusters && this.labels.outlines && this.cluster && this.phase !== 'embedding';
+    this.renderer.setOutlines(showOutlines ? this.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
   }
 
   /** Point color of category i of the color column. */
@@ -1088,4 +1261,50 @@ export function labelTextColor(rgb: [number, number, number], plain: [number, nu
 /** The editor's font family (for map labels). */
 function fontFamily(): string {
   return getComputedStyle(document.body).fontFamily || 'sans-serif';
+}
+
+/** Default label options. */
+export const DEFAULT_LABELS: LabelOptions = {
+  column: null,
+  minSize: 12,
+  maxSize: 26,
+  colorText: true,
+  clusters: false,
+  detail: 2,
+  nameBy: 'number',
+  outlines: true,
+};
+
+/**
+ * Name each group by the most common value of a column among its rows: the value alone when it
+ * covers at least 80% of the group, otherwise with its share ("7 (62%)").
+ */
+export function dominantNames(groups: Uint16Array, k: number, values: Uint16Array, categories: string[]): string[] {
+  const m = categories.length;
+  const counts = new Uint32Array(k * (m + 2));
+  const totals = new Uint32Array(k);
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    if (g >= k) continue;
+    totals[g]++;
+    const v = values[i];
+    if (v < m) counts[g * (m + 2) + v]++;
+  }
+  const out: string[] = [];
+  for (let g = 0; g < k; g++) {
+    let best = -1;
+    let bestN = 0;
+    for (let v = 0; v < m; v++) {
+      const c = counts[g * (m + 2) + v];
+      if (c > bestN) [best, bestN] = [v, c];
+    }
+    if (best < 0 || totals[g] === 0) {
+      out.push(`Cluster ${g + 1}`);
+      continue;
+    }
+    const share = bestN / totals[g];
+    const name = categories[best] === '' ? '(empty)' : categories[best];
+    out.push(share >= 0.8 ? name : `${name} (${Math.round(share * 100)}%)`);
+  }
+  return out;
 }

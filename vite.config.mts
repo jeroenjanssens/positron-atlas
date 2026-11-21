@@ -8,10 +8,12 @@ export default defineConfig({
   root: r('./src/webview'),
   plugins: [svelte()],
   resolve: {
-    alias: {
+    alias: [
       // Import only the UMAP part of embedding-atlas (its package exports hide this entry).
-      'embedding-atlas-umap': r('./node_modules/embedding-atlas/dist/umap.js'),
-    },
+      { find: 'embedding-atlas-umap', replacement: r('./node_modules/embedding-atlas/dist/umap.js') },
+      // embedding-atlas's clustering worker (density clustering in WASM), imported with ?worker&inline.
+      { find: /^embedding-atlas-clustering-worker(\?.*)?$/, replacement: `${r('./node_modules/embedding-atlas/dist/clustering.worker.js')}$1` },
+    ],
   },
   // Library mode keeps process.env references (e.g. in deck.gl); the webview has no `process`.
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },

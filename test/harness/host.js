@@ -185,7 +185,18 @@
       }
       case 'labelCodes': {
         const r = await call('colors', jobId, m.column, true, m.maxCategories);
-        post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length });
+        post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length, purpose: m.purpose });
+        break;
+      }
+      case 'describeGroups': {
+        const name = `groups_${Date.now()}.u16`;
+        const codesPath = await writeJobFile(name, base64ToBytes(m.codes));
+        try {
+          const r = await call('describe_groups', jobId, codesPath, m.k, m.columns);
+          post({ type: 'groupNames', seq: m.seq, names: r.names });
+        } finally {
+          await rmJobFile(name);
+        }
         break;
       }
       case 'compareSelection':

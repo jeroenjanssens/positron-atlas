@@ -291,7 +291,20 @@ export class AtlasPanel {
           file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
           meta: r.meta,
           length: r.length,
+          purpose: m.purpose,
         });
+        break;
+      }
+      case 'describeGroups': {
+        // Names for automatic clusters from their most distinguishing columns.
+        const codesPath = path.join(this.jobDir.fsPath, `groups_${Date.now()}.u16`);
+        await fs.writeFile(codesPath, Buffer.from(m.codes, 'base64'));
+        try {
+          const r = await this.bridge.call<{ names: string[] }>('describe_groups', this.requireJob(), codesPath, m.k, m.columns);
+          this.post({ type: 'groupNames', seq: m.seq, names: r.names });
+        } finally {
+          await fs.rm(codesPath, { force: true });
+        }
         break;
       }
       case 'compareSelection': {

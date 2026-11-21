@@ -1150,6 +1150,57 @@ def compare_selection(job_id: str, mask_path: str, max_rows: int = 50_000, top: 
     )
 
 
+@_guard
+def describe_groups(job_id: str, codes_path: str, k: int, columns: list[int], max_rows: int = 100_000, top: int = 2) -> str:
+    """Name groups (e.g. automatic clusters) by their most distinguishing columns.
+
+    ``codes_path`` holds uint16 group codes per prepared row (0..k-1; k or more = no group).
+    For each group, the columns whose group mean differs most from the overall mean, in
+    standard deviations (at least 0.5), become a name such as "↑ income ↓ age". Uses the
+    original values of ``columns`` (numeric or boolean), not PCA components, on a subsample.
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    n = len(job.kept_idx)
+    codes = np.fromfile(codes_path, dtype="<u2")
+    if len(codes) != n:
+        raise ValueError(f"Got {len(codes)} codes for {n} prepared rows.")
+    k = int(k)
+    frame = job.frame
+    names = frame.column_names()
+    cols = [int(c) for c in columns if 0 <= int(c) < frame.n_cols and frame.column_kind(int(c))[1] in ("numeric", "bool")]
+    pos = _subsample(np.arange(n), max_rows, 3)
+    rows = job.kept_idx[pos]
+    g = codes[pos].astype(np.int64)
+    in_group = g < k
+    counts = np.bincount(g[in_group], minlength=k)[:k]
+    z = np.zeros((k, len(cols)), dtype=np.float64)
+    for start in range(0, len(cols), 64):
+        chunk = cols[start : start + 64]
+        x = frame.block(chunk, rows).astype(np.float64)
+        ok = np.isfinite(x)
+        x0 = np.where(ok, x, 0.0)
+        cnt = ok.sum(0)
+        mean = x0.sum(0) / np.maximum(cnt, 1)
+        var = (np.where(ok, (x - mean) ** 2, 0.0)).sum(0) / np.maximum(cnt - 1, 1)
+        sd = np.sqrt(var)
+        for j in range(len(chunk)):
+            if sd[j] <= 0 or not np.isfinite(sd[j]):
+                continue
+            m = ok[:, j] & in_group
+            s_ = np.bincount(g[m], weights=x0[m, j], minlength=k)[:k]
+            c_ = np.bincount(g[m], minlength=k)[:k]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                z[:, start + j] = np.where(c_ > 0, (s_ / np.maximum(c_, 1) - mean[j]) / sd[j], 0.0)
+    out = []
+    for gi in range(k):
+        order = np.argsort(-np.abs(z[gi]))[:top]
+        parts = [f"{'↑' if z[gi, j] > 0 else '↓'} {names[cols[j]]}" for j in order if abs(z[gi, j]) >= 0.5]
+        out.append(" ".join(parts))
+    return _json({"ok": True, "names": out, "counts": counts.tolist(), "sampled": bool(n > max_rows)})
+
+
 def _unique_name(base: str, ns: dict) -> str:
     import keyword
 

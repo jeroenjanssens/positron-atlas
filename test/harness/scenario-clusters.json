@@ -1,0 +1,101 @@
+{
+  "variable": "mnist",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\n\ndef download(url: str, name: str) -> Path:\n    \"\"\"Download a file once and cache it.\"\"\"\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        print(f\"Downloading {url} ...\")\n        tmp = path.with_suffix(path.suffix + \".part\")\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\n\ndef read_idx(path: Path) -> np.ndarray:\n    \"\"\"Read an IDX file (the MNIST format): images as (n, 784) uint8, labels as (n,).\"\"\"\n    with gzip.open(path, \"rb\") as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], \"big\") for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nBASE = \"https://ossci-datasets.s3.amazonaws.com/mnist/\"\nLABELS = [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"]\n\nfiles = {\n    name: download(BASE + name, \"mnist-\" + name)\n    for name in [\n        \"train-images-idx3-ubyte.gz\",\n        \"train-labels-idx1-ubyte.gz\",\n        \"t10k-images-idx3-ubyte.gz\",\n        \"t10k-labels-idx1-ubyte.gz\",\n    ]\n}\ntrain_x = read_idx(files[\"train-images-idx3-ubyte.gz\"])\ntest_x = read_idx(files[\"t10k-images-idx3-ubyte.gz\"])\ntrain_y = read_idx(files[\"train-labels-idx1-ubyte.gz\"])\ntest_y = read_idx(files[\"t10k-labels-idx1-ubyte.gz\"])\nn_train = len(train_y)\n\npixels = np.concatenate([train_x, test_x])  # (70000, 784) uint8\nlabels = np.concatenate([train_y, test_y])\npixels.shape, labels.shape\n\nimport polars as pl\n\nmnist = pl.from_numpy(pixels, schema=[f\"px{i}\" for i in range(pixels.shape[1])]).with_columns(\n    pl.Series(\"label\", [LABELS[v] for v in labels], dtype=pl.Enum(LABELS)),\n    pl.Series(\"split\", np.where(np.arange(len(labels)) < n_train, \"train\", \"test\")),\n    pl.Series(\"ink\", pixels.mean(axis=1)),  # average pixel intensity: a numeric column to color by\n)\nmnist.shape",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 50,
+    "maxAnchorsCpu": 20000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "annotate tab",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "automatic clusters",
+      "eval": "const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterCount > 0 && a.labelCount === a.clusterCount",
+      "timeout": 60000,
+      "assert": [
+        "a.clusterCount >= 8 && a.clusterCount <= 25",
+        "a.renderer.outlines.length >= a.clusterCount",
+        "a.clusterNames[0] === 'Cluster 1'",
+        "a.labels.clusters && a.labels.column === null"
+      ],
+      "report": "{ k: a.clusterCount, names: a.clusterNames }",
+      "screenshot": "clusters.png"
+    },
+    {
+      "name": "name by the most common digit",
+      "eval": "const s = document.querySelector('select[aria-label=\"Name clusters by\"]'); s.value = String(a.describe.columns.find(c => c.name === 'label').index); s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterNames.length && a.clusterNames.every(n => !n.startsWith('Cluster'))",
+      "timeout": 60000,
+      "assert": [
+        "a.clusterNames.filter(n => /^[0-9]$/.test(n)).length >= 6",
+        "a.renderer.labels.some(l => /^[0-9]/.test(l.text))"
+      ],
+      "report": "a.clusterNames",
+      "screenshot": "clusters-digits.png"
+    },
+    {
+      "name": "name by distinguishing columns",
+      "eval": "const s = document.querySelector('select[aria-label=\"Name clusters by\"]'); s.value = 'features'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterNames.some(n => n.includes('↑') || n.includes('↓'))",
+      "timeout": 60000,
+      "report": "a.clusterNames.slice(0, 5)",
+      "screenshot": "clusters-features.png"
+    },
+    {
+      "name": "finer detail gives more clusters",
+      "eval": "window.__k = a.clusterCount; a.setLabelOptions({ detail: 4 })",
+      "until": "!a.clustering && a.clusterCount > window.__k",
+      "timeout": 60000,
+      "report": "{ before: window.__k, after: a.clusterCount }"
+    },
+    {
+      "name": "outlines off",
+      "eval": "a.setLabelOptions({ outlines: false })",
+      "until": "a.renderer.outlines.length === 0",
+      "assert": [
+        "a.labelCount > 0"
+      ]
+    },
+    {
+      "name": "outlines on",
+      "eval": "a.setLabelOptions({ outlines: true, detail: 2, nameBy: 'number' })",
+      "until": "!a.clustering && a.renderer.outlines.length > 0 && a.clusterNames[0] === 'Cluster 1'",
+      "timeout": 60000
+    },
+    {
+      "name": "outlines hide while the layout moves",
+      "eval": "a.umap.minDist = 0.5; a.umapChanged()",
+      "until": "a.phase === 'embedding' && a.renderer.outlines.length === 0 && a.labelCount > 0",
+      "timeout": 30000
+    },
+    {
+      "name": "re-clustered when settled",
+      "until": "a.phase === 'ready' && a.projection === 'done' && !a.clustering && a.renderer.outlines.length > 0",
+      "timeout": 180000,
+      "screenshot": "clusters-relayout.png"
+    },
+    {
+      "name": "label by a column clears outlines",
+      "eval": "a.setLabelSource(a.describe.columns.find(c => c.name === 'label').index)",
+      "until": "a.labelCount === 10 && a.renderer.outlines.length === 0",
+      "assert": [
+        "!a.labels.clusters"
+      ]
+    },
+    {
+      "name": "no labels",
+      "eval": "a.setLabelSource(null)",
+      "until": "a.labelCount === 0 && a.renderer.labels.length === 0"
+    },
+    {
+      "name": "persisted options",
+      "until": "h.state && h.state.labels && h.state.labels.column === null && h.state.labels.clusters === false && h.state.labels.detail === 2"
+    }
+  ]
+}

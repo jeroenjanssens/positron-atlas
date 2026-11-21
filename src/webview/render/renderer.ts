@@ -1,5 +1,5 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
-import { ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension } from '@deck.gl/extensions';
 
 export interface PointSet {
@@ -55,6 +55,8 @@ export class ScatterRenderer {
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
   private userMoved = false;
   private labels: MapLabel[] = [];
+  private outlines: [number, number][][] = [];
+  private outlineColor: [number, number, number] = [200, 200, 200];
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
   private readonly collision = new CollisionFilterExtension();
 
@@ -130,6 +132,18 @@ export class ScatterRenderer {
     this.render();
   }
 
+  /** Replace the cluster outlines (rings in world coordinates; an empty list removes them). */
+  setOutlines(rings: [number, number][][], color?: [number, number, number]): void {
+    if (rings.length === 0 && this.outlines.length === 0) {
+      return;
+    }
+    this.outlines = rings;
+    if (color) {
+      this.outlineColor = color;
+    }
+    this.render();
+  }
+
   /** Fit the view to the given bounds unless the user has panned/zoomed (force overrides). */
   fit(b: [number, number, number, number], force = false, padRight = 0): void {
     if (this.userMoved && !force) {
@@ -155,7 +169,7 @@ export class ScatterRenderer {
   private render(): void {
     const { pointSize, opacity, mode } = this.style;
     const density = mode === 'density';
-    const layers: (ScatterplotLayer | TextLayer<MapLabel>)[] = this.sets
+    const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = this.sets
       .filter((s) => s.length > 0)
       .map(
         (s) =>
@@ -180,6 +194,24 @@ export class ScatterRenderer {
             updateTriggers: { getPosition: this.version, getFillColor: this.version },
           }),
       );
+    if (this.outlines.length) {
+      const [r, g, b] = this.outlineColor;
+      layers.push(
+        new PolygonLayer<[number, number][]>({
+          id: 'outlines',
+          data: this.outlines,
+          getPolygon: (d: [number, number][]) => d,
+          stroked: true,
+          filled: true,
+          getFillColor: [r, g, b, 14],
+          getLineColor: [r, g, b, 150],
+          lineWidthUnits: 'pixels',
+          getLineWidth: 1.25,
+          pickable: false,
+          parameters: NORMAL as any,
+        } as any),
+      );
+    }
     if (this.labels.length) {
       const { outline, fontFamily } = this.labelStyle;
       layers.push(

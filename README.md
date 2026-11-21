@@ -10,7 +10,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Live parameters.** `min_dist`, `spread`, repulsion strength, negative sample rate and learning rate change the running layout. `n_neighbors`, metric, epochs and seed rebuild the neighbor graph.
 - **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, with numpy only and streamed in chunks.
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
-- **Labels on the map.** Label the map by a categorical column: each value is written at the densest spot of its points, sized by group size, and labels that would overlap are hidden (larger groups win).
+- **Labels on the map.** Label the map by a categorical column, or by **automatic clusters** of the layout (density clustering from embedding-atlas, with outlines). Each label is written at the densest spot of its points, sized by group size, and labels that would overlap are hidden (larger groups win). Clusters can be named by number, by their most distinguishing columns ("↑ income ↓ age", computed in the kernel) or by the most common value of a column.
 - **Color by any column.** Numeric and datetime columns get continuous colormaps (viridis, cividis, magma, …). Text, categorical, boolean and low-cardinality integer columns get categorical colors, with a legend. By default the categorical palette follows the map: groups that are close together get related hues and outlying groups are more saturated (after DataMapPlot).
 - **Lasso selection.** Draw around points with the lasso tool, or hold Shift (add) or Alt (remove) and drag. The other points fade. **Compare with all rows** lists the most over-represented values and the largest differences in column means; **New DataFrame** puts the selected rows in a new variable (`<name>_selection`). The selection is kept when the layout changes.
 - **Hover tooltips** with the row's values, fetched from the kernel on demand.
@@ -70,7 +70,7 @@ The sidebar has three tabs. The plot has its own toolbar (top left): **Pan and z
 | Explore | Color | Color by, treat as categories, palette (follows the map or Tableau 20), colormap, range | Recolors |
 | Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
 | Explore | Selection | Selected rows, clear, invert, compare with all rows, new DataFrame | Comparison and new DataFrame run in the kernel |
-| Annotate | Labels | Label by a column, smallest and largest label size, color labels like the points | Rendering only (the codes come from the kernel once) |
+| Annotate | Labels | Label by a column or by automatic clusters (detail, name by number, distinguishing columns or the most common value of a column, outlines), smallest and largest label size, color labels like the points | Rendering; clusters are found when the layout settles |
 
 The active tab and collapsed sections are remembered per tab.
 
@@ -149,7 +149,7 @@ Without Positron, the **browser harness** runs the built webview in Chromium aga
 
 ```sh
 npm run build && npm run test:harness                   # synthetic data: scenario-small, scenario-ui
-npm run test:harness:mnist                               # MNIST (downloaded once): labels, palette, selection
+npm run test:harness:mnist                               # MNIST (downloaded once): labels, palette, selection, clusters
 npm run harness -- test/harness/scenario-mnist.json      # any scenario; --theme light for the light theme
 ```
 

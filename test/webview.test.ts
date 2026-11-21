@@ -91,3 +91,12 @@ describe('label text colors', async () => {
     expect(labelTextColor([255, 200, 0], [25, 25, 25, 255])).toEqual([163, 130, 10, 255]);
   });
 });
+
+describe('dominantNames', async () => {
+  const { dominantNames } = await import('../src/webview/atlas.svelte');
+  it('names groups by their most common value, with its share when below 80%', () => {
+    const groups = Uint16Array.from([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 3]);
+    const values = Uint16Array.from([1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 5, 0]); // 5 = other/missing
+    expect(dominantNames(groups, 3, values, ['a', 'b', ''])).toEqual(['b', 'a (60%)', 'Cluster 3']);
+  });
+});

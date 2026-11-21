@@ -147,7 +147,7 @@ hues, and outlying categories are more saturated.
     name without asking).
 - The mask travels as packed bits (`np.unpackbits(..., bitorder="little")`), 1.25 MB for 10⁷ rows.
 
-### Phase F: automatic clusters and outlines — [ ]
+### Phase F: automatic clusters and outlines — [x]
 
 When there is no label column:
 
@@ -155,13 +155,17 @@ When there is no label column:
   embedding-atlas's `findClusters` (density clustering in WASM; its worker ships with the npm
   package already in use). It returns each cluster's density-weighted center and boundary polygons.
 - Points get their cluster through their grid cell; points outside every cluster are unlabeled.
-- **Detail** slider: the grid resolution and blur, so fewer, larger or more, smaller clusters.
+- The density map is a 256-cell grid, blurred by 3 cells and scaled to a maximum of 100. **Detail**
+  (1–5) sets findClusters' union threshold (16, 10, 6, 3, 1.5): on a UMAP of MNIST that gives
+  about 11, 13, 20, 43 and 55 clusters (tuned with the WASM in Node). Clusters below 0.5 % of the
+  largest one's density are dropped, as in embedding-atlas.
 - **Name clusters by**: number ("Cluster 3"), the dominant value of a column ("mostly 7 (93 %)"),
   or distinguishing features (kernel `describe_groups`: the largest standardized differences of
   the cluster mean from the overall mean, like "↑ income ↓ age"). Feature names come from the
   original columns, not PCA components.
 - **Show outlines**: the boundary polygons as a `PolygonLayer` (DataMapPlot's
-  `cluster_boundary_polygons`), stroked in the cluster color with a light fill.
+  `cluster_boundary_polygons`), a thin line in the label text color with a faint fill. Outlines
+  belong to the settled layout, so they are hidden while it moves; labels follow the points.
 - Later: two detail levels at once, with DataMapPlot's level-based collision priority.
 
 ### Phase G: tags and sharing — [ ]
