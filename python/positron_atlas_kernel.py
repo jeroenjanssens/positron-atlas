@@ -232,7 +232,11 @@ class _Frame:
             df = df[rows]
         names = [df.columns[c] for c in cols]
         sub = df.select([pl.col(n).cast(pl.Float32) for n in names])
-        arr = sub.to_numpy()
+        try:
+            # Row-major straight from polars: ~25% faster than converting a column-major result.
+            arr = sub.to_numpy(order="c")
+        except TypeError:  # polars without the order argument
+            arr = sub.to_numpy()
         return np.ascontiguousarray(arr, dtype=np.float32)
 
     def declared_categories(self, j: int) -> list[str] | None:
@@ -665,7 +669,17 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     x = raw[:k_rows]
 
     # --- standardize (streaming exact mean/std) ---------------------------------------
-    if standardize:
+    core = _native_core() if opts.get("native", True) else None
+    if standardize and core is not None and x.dtype == np.float32 and x.flags.c_contiguous and x.flags.writeable:
+        # The Rust core: the same sums and formula, multithreaded, with the GIL released.
+        job.set("standardizing", 0.35, "Standardizing")
+        s1, s2 = core.column_moments(x)
+        mean = s1 / k_rows
+        std = np.sqrt(np.maximum(s2 / k_rows - mean * mean, 0.0))
+        std[std < 1e-12] = 1.0
+        core.scale_columns(x, mean.astype(np.float32), (1.0 / std).astype(np.float32))
+        job.set("standardizing", 0.55)
+    elif standardize:
         s1 = np.zeros(d, dtype=np.float64)
         s2 = np.zeros(d, dtype=np.float64)
         for start in range(0, k_rows, chunk):
@@ -1041,12 +1055,63 @@ def estimate_projection(job_id: str, native: bool = True) -> str:
 # --------------------------------------------------------------------------------------
 
 
+def _factorize(frame: _Frame, col: int, rows: np.ndarray) -> tuple[np.ndarray, list[Any]] | None:
+    """Vectorized codes for a column's values at ``rows``: (codes with -1 for missing, values).
+
+    Only for dtypes whose values turn into the same text as in the general path (``str`` of the
+    numpy values): text, categorical and boolean columns, and integers. Integers with missing
+    values are the one difference: pandas (nullable Int64) and polars give them to numpy as
+    floats, so the general path labels them "3.0"; here they are "3", as in the data. Returns None
+    for other dtypes (floats, dates), which take the general path.
+    """
+    if frame.kind == "pandas":
+        import pandas as pd
+
+        s = frame.obj.iloc[:, col]
+        dt = s.dtype
+        ok = (
+            isinstance(dt, pd.CategoricalDtype)
+            or pd.api.types.is_bool_dtype(dt)
+            or pd.api.types.is_integer_dtype(dt)
+            or pd.api.types.is_string_dtype(dt)
+            or dt == object
+        ) and not (pd.api.types.is_datetime64_any_dtype(dt) or pd.api.types.is_timedelta64_dtype(dt))
+        if not ok:
+            return None
+        if dt == object:
+            # Object columns can hold anything; only take the fast path for plain text and numbers.
+            sample = s.iloc[: min(len(s), 1000)].dropna()
+            if not all(isinstance(v, (str, int, bool, np.integer, np.bool_)) for v in sample):
+                return None
+        codes, uniques = pd.factorize(s.iloc[rows], use_na_sentinel=True)
+        return np.asarray(codes, dtype=np.int64), list(uniques)
+    import polars as pl
+
+    s = frame.obj.to_series(col)
+    dt = s.dtype
+    if not (dt in (pl.Utf8, pl.Categorical, pl.Boolean) or isinstance(dt, pl.Enum) or dt.is_integer()):
+        return None
+    s = s.gather(rows)
+    if dt == pl.Categorical or isinstance(dt, pl.Enum):
+        s = s.cast(pl.Utf8)
+    # Dense ranks number the distinct values in sorted order, matching s.unique().sort().
+    values = s.drop_nulls().unique().sort()
+    codes = (s.rank("dense") - 1).fill_null(-1).cast(pl.Int64).to_numpy()
+    return np.asarray(codes, dtype=np.int64), values.to_list()
+
+
 def _color_values(
-    frame: _Frame, col: int, rows: np.ndarray, force_categorical: bool = False, max_categories: int = _MAX_CATEGORIES
+    frame: _Frame,
+    col: int,
+    rows: np.ndarray,
+    force_categorical: bool = False,
+    max_categories: int = _MAX_CATEGORIES,
+    fast_categories: bool = True,
 ) -> tuple[str, np.ndarray, dict[str, Any]]:
     dtype, kind = frame.column_kind(col)
-    vals = frame.column(col, rows)
+    vals = None
     if kind in ("numeric", "datetime") and not force_categorical:
+        vals = frame.column(col, rows)
         fv = _to_float(vals, kind)
         finite = fv[np.isfinite(fv)]
         is_int = kind == "numeric" and finite.size > 0 and np.all(finite == np.round(finite))
@@ -1058,17 +1123,29 @@ def _color_values(
                 meta.update(min=q[0], q02=q[1], median=q[2], q98=q[3], max=q[4])
             meta["nullCount"] = int(len(fv) - finite.size)
             return "f32", fv.astype(np.float32), meta
-    # categorical
-    obj = np.asarray(vals, dtype=object)
-    nulls = np.array([_is_null(v) for v in obj], dtype=bool) if obj.size else np.zeros(0, bool)
-    keys = np.array([str(v) for v in obj], dtype=object)
-    keys[nulls] = ""
-    uniq, inverse, counts = np.unique(keys[~nulls], return_inverse=True, return_counts=True)
+    # categorical: distinct values as text, their counts, and each row's value
+    fast = _factorize(frame, col, rows) if fast_categories else None
+    if fast is not None:
+        # Vectorized (pandas factorize / polars rank): codes per row (-1 = missing) and the
+        # distinct values. Values with the same text are merged, as in the general path.
+        raw_codes, values = fast
+        nulls = raw_codes < 0
+        uniq, merged = np.unique(np.array([str(v) for v in values], dtype=object), return_inverse=True)
+        inverse = merged.reshape(-1)[raw_codes[~nulls]]
+        counts = np.bincount(inverse, minlength=len(uniq))
+        n_rows = len(raw_codes)
+    else:
+        obj = np.asarray(frame.column(col, rows) if vals is None else vals, dtype=object)
+        nulls = np.array([_is_null(v) for v in obj], dtype=bool) if obj.size else np.zeros(0, bool)
+        keys = np.array([str(v) for v in obj], dtype=object)
+        keys[nulls] = ""
+        uniq, inverse, counts = np.unique(keys[~nulls], return_inverse=True, return_counts=True)
+        n_rows = len(obj)
     order = _category_order(frame, col, kind, uniq, counts, max_categories)
     top = order[:max_categories]
     remap = np.full(len(uniq), len(top), dtype=np.uint16)  # "Other"
     remap[top] = np.arange(len(top), dtype=np.uint16)
-    codes = np.full(len(obj), len(top) + 1, dtype=np.uint16)  # null
+    codes = np.full(n_rows, len(top) + 1, dtype=np.uint16)  # null
     codes[~nulls] = remap[inverse]
     has_other = len(uniq) > len(top)
     meta = {

@@ -6,11 +6,13 @@
 //! exact for small anchor sets), a fixed-size top-k per row, and the UMAP-style weights. It is the
 //! same algorithm as the numpy code in `python/positron_atlas_kernel.py`, multithreaded.
 
+pub mod columns;
 mod dist;
 pub mod index;
 mod kmeans;
 pub mod place;
 pub mod rng;
 
+pub use columns::{column_moments, scale_columns};
 pub use index::{AnchorIndex, IndexOptions};
 pub use place::{neighbors, place_point, place_rows, Cancelled};

@@ -4,8 +4,8 @@
 //! heavy work runs with the GIL released, so the user's console stays responsive; Python is only
 //! called between blocks of rows, for cancellation and progress.
 
-use atlas_core::{neighbors, place_rows, AnchorIndex, IndexOptions};
-use numpy::{PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2, PyUntypedArrayMethods};
+use atlas_core::{column_moments, neighbors, place_rows, scale_columns, AnchorIndex, IndexOptions};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -143,9 +143,44 @@ impl Index {
     }
 }
 
+/// column_moments(x: float32[n, d]) -> (float64[d], float64[d]): per-column sums and sums of
+/// squares, in float64 (for exact means and standard deviations).
+#[pyfunction(name = "column_moments")]
+fn column_moments_py<'py>(py: Python<'py>, x: PyReadonlyArray2<'py, f32>) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let d = x.shape()[1];
+    if d == 0 {
+        return Err(PyValueError::new_err("x has no columns"));
+    }
+    let data = contiguous("x", &x)?;
+    let (s1, s2) = py.detach(|| column_moments(data, d));
+    Ok((PyArray1::from_vec(py, s1), PyArray1::from_vec(py, s2)))
+}
+
+/// scale_columns(x: float32[n, d], sub: float32[d], mul: float32[d]): in place,
+/// x = (x - sub) * mul per column.
+#[pyfunction(name = "scale_columns")]
+fn scale_columns_py(py: Python<'_>, mut x: PyReadwriteArray2<'_, f32>, sub: PyReadonlyArray1<'_, f32>, mul: PyReadonlyArray1<'_, f32>) -> PyResult<()> {
+    let d = x.shape()[1];
+    if sub.len() != d || mul.len() != d {
+        return Err(PyValueError::new_err("sub and mul must have one value per column"));
+    }
+    if !x.is_c_contiguous() {
+        return Err(PyValueError::new_err("x must be a C-contiguous float32 array"));
+    }
+    let sub = sub.as_slice()?.to_vec();
+    let mul = mul.as_slice()?.to_vec();
+    let data = x.as_slice_mut().map_err(|_| PyValueError::new_err("x must be a C-contiguous float32 array"))?;
+    if d > 0 {
+        py.detach(|| scale_columns(data, d, &sub, &mul));
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn _positron_atlas_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<Index>()?;
+    m.add_function(wrap_pyfunction!(column_moments_py, m)?)?;
+    m.add_function(wrap_pyfunction!(scale_columns_py, m)?)?;
     Ok(())
 }

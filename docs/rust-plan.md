@@ -158,7 +158,7 @@ listed below.
 - **Done when:** CI produces all VSIX files, and each one passes the harness scenarios on its
   platform (or at least the pytest suite with the native backend).
 
-### Phase R4: more of `prepare` in Rust (only if R0 says so) — [ ]
+### Phase R4: more of `prepare` in Rust (only if R0 says so) — [x] (standardizing moved; PCA stays in numpy, see docs/benchmarks.md)
 
 numpy's BLAS already does PCA's heavy lifting, so this phase only happens if R0 shows a large
 share of `prepare` outside BLAS (for example NaN handling, standardizing in chunks, or the
@@ -170,7 +170,7 @@ float32 conversions at 10⁷ rows). Candidates, each behind the same fallback:
 **Done when:** each moved step is faster in the R0 benchmark by at least 2×, or the phase is
 dropped with the numbers recorded in `docs/benchmarks.md`.
 
-### Phase P: polars-native path in the Python helper — [ ]
+### Phase P: polars-native path in the Python helper — [x] (vectorized category codes for pandas and polars, row-major reads; the comparison keeps its sample, see docs/benchmarks.md)
 
 For polars DataFrames, do in polars expressions what is now done in numpy, so it runs on Polars'
 Rust engine (multithreaded) with nothing to ship. pandas frames keep the numpy path.

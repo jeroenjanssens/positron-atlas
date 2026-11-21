@@ -232,7 +232,7 @@ export class AtlasPanel {
         const job = this.requireJob();
         const token = this.newToken();
         this.projectionCurrent = false;
-        await this.bridge.call('prepare', job, JSON.stringify(m.options));
+        await this.bridge.call('prepare', job, JSON.stringify({ ...m.options, native: readSettings().nativeCore }));
         const s = await this.bridge.waitForJob(job, (st) => this.post({ type: 'status', task: 'prepare', status: st }), token);
         if (s.stage === 'done') {
           const res = s.result as PrepareResult;

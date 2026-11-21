@@ -220,3 +220,41 @@ def test_falls_back_to_numpy(monkeypatch):
     monkeypatch.setattr(pak, "_native_target", lambda: "nowhere-x99")
     assert pak._native_core() is None
     assert "no native core for nowhere-x99" in pak._native_status()["reason"]
+
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_standardize_matches_numpy(tmp_path, monkeypatch, frame_kind):
+    import pandas as pd
+    import polars as pl
+
+    x = blobs(50_000, 12, 18) * np.linspace(0.1, 100, 12, dtype=np.float32) + np.arange(12, dtype=np.float32)
+    x[:, 3] = 5.0  # a constant column: std 0 -> scaled by 1
+    df = pd.DataFrame(x) if frame_kind == "pandas" else pl.from_numpy(x)
+    space = {"df": df}
+    monkeypatch.setattr(pak, "_user_ns", lambda: space)
+    feats = {}
+    for native in (True, False):
+        jid = json.loads(pak.create_job("df", str(tmp_path / str(native))))["jobId"]
+        pak.prepare(jid, json.dumps({"features": list(range(12)), "native": native}))
+        while (st := json.loads(pak.status(jid)))["stage"] not in ("done", "error"):
+            time.sleep(0.01)
+        assert st["stage"] == "done", st
+        feats[native] = np.asarray(pak._JOBS[jid].features).copy()
+    np.testing.assert_allclose(feats[True], feats[False], rtol=1e-5, atol=1e-5)
+    assert np.all(feats[True][:, 3] == 0.0)
+    np.testing.assert_allclose(feats[True].mean(0), 0, atol=1e-4)
+    np.testing.assert_allclose(np.delete(feats[True].std(0), 3), 1, atol=1e-3)
+
+
+def test_column_functions_validate_input():
+    x = np.ones((10, 3), dtype=np.float32)
+    s1, s2 = core.column_moments(x)
+    assert s1.tolist() == [10.0] * 3 and s2.tolist() == [10.0] * 3
+    core.scale_columns(x, np.ones(3, dtype=np.float32), np.full(3, 2.0, dtype=np.float32))
+    assert np.all(x == 0.0)
+    with pytest.raises(ValueError, match="one value per column"):
+        core.scale_columns(x, np.ones(2, dtype=np.float32), np.ones(3, dtype=np.float32))
+    with pytest.raises(ValueError, match="C-contiguous"):
+        core.scale_columns(np.asfortranarray(np.ones((10, 3), dtype=np.float32)), np.ones(3, dtype=np.float32), np.ones(3, dtype=np.float32))
+    with pytest.raises(ValueError, match="C-contiguous"):
+        core.column_moments(np.asfortranarray(np.ones((10, 3), dtype=np.float32)))

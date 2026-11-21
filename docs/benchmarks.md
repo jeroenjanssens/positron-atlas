@@ -110,3 +110,40 @@ Times are for placing the rows (index build: numpy 0.7–3 s, Rust 0.15–0.5 s,
 The IVF index is 8–40× faster at similar recall, so Atlas keeps it. The SIMD crates (`pulp`,
 `simsimd`) and `kiddo` are not needed: `gemm` already picks the SIMD kernels at runtime, and the
 IVF index is fast at low dimensions.
+
+## Preparing data and colors (2026-11-21)
+
+Same 4-core Xeon. `python/bench_prepare.py` times each stage of `prepare` (synthetic blobs, polars
+unless noted); "before" is the numpy-only helper.
+
+| Rows × dims | Options | Total before → after | Standardizing before → after | Reading | PCA fit / transform |
+|---|---|---:|---:|---:|---:|
+| 10⁶ × 50 | | 0.57 → 0.18 s | 0.29 → 0.02 s | 0.21 → 0.10 s | |
+| 10⁶ × 50, pandas | | 1.42 → 0.63 s | 0.33 → 0.02 s | 0.9 → 0.5 s | |
+| 10⁶ × 200 | PCA 50 | 4.5 → 4.0 s | 1.15 → 0.07 s | 0.9 s | 2.2–2.5 / 0.3 s |
+| 10⁷ × 20 | | 2.1 → 0.8 s | 1.30 → 0.07 s | 0.7 s | |
+| 5·10⁶ × 100 | PCA 20 | 15.6 → 10.4 s | 6.4 → 1.0 s | 4.0–4.3 s | 3.5–3.9 / 1.2–1.6 s |
+
+- **Standardizing** (Rust core, `column_moments` and `scale_columns`): the same float64 sums and
+  formula as numpy, multithreaded. 6–18× faster; the 6× case writes to a memory-mapped file
+  (features over 1 GiB are memory-mapped on purpose, to bound memory).
+- **Reading** polars frames asks polars for row-major arrays (`to_numpy(order="c")`), about 25 %
+  faster. Most of the remaining reading time at 5·10⁶ × 100 is writing the memory-mapped file.
+- **PCA** stays in numpy: its BLAS already does the heavy lifting, so Rust would not reach the 2×
+  bar set in the plan.
+
+`colors()` for categorical columns (300 text values, 8 integer values), before → after:
+
+| Rows | pandas text | pandas integers | polars text | polars integers |
+|---:|---:|---:|---:|---:|
+| 10⁶ | 0.90 → 0.03 s | 0.64 → 0.03 s | 1.00 → 0.18 s | 0.66 → 0.08 s |
+| 5·10⁶ | 8.2 → 0.20 s | 5.6 → 0.13 s | 7.9 → 0.94 s | 5.8 → 0.41 s |
+
+Category codes now come from `pandas.factorize` or polars dense ranks instead of Python-level
+`str()` on every value (text, categorical, boolean and integer columns; floats and dates keep the
+general path). Results are identical, except that integers with missing values are labeled "3"
+(as in the data) instead of "3.0".
+
+The selection comparison and cluster descriptions already take 0.03–0.08 s at 5·10⁶ rows, because
+they use a random sample of 50,000–100,000 rows; using every row would make them slower without a
+visible change in the result, so they keep the sample.

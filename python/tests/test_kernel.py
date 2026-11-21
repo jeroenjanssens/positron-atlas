@@ -597,3 +597,57 @@ def test_write_labels_non_string_label(ns, tmp_path):
     # Column 1 (an integer label) is overwritten, not duplicated as "1".
     assert list(ns["df"].columns) == [0, 1]
     assert set(ns["df"][1]) == {"x"}
+
+
+def _fast_slow(frame, col, rows, force=True, top=200):
+    fast = pak._color_values(frame, col, rows, force, top, fast_categories=True)
+    slow = pak._color_values(frame, col, rows, force, top, fast_categories=False)
+    return fast, slow
+
+
+@pytest.mark.parametrize("n_cat", [5, 40])
+def test_fast_categories_match_the_general_path(n_cat):
+    rng = np.random.default_rng(0)
+    n = 3000
+    words = np.array([f"w{i:02d}" for i in range(n_cat)] + ["é", "10", "9", ""], dtype=object)
+    text = words[rng.integers(0, len(words), n)].astype(object)
+    text[rng.random(n) < 0.05] = None
+    ints = rng.integers(-3, n_cat, n)
+    flags = rng.random(n) < 0.3
+    cols = {"text": text, "ints": ints, "flags": flags, "mixed": np.where(rng.random(n) < 0.5, ints, ints.astype(str)).astype(object)}
+    pdf = pd.DataFrame(cols)
+    pdf["cat"] = pd.Categorical(text[: n], categories=sorted({v for v in text if v is not None}, reverse=True))
+    pdf["nullable"] = pd.array(np.where(rng.random(n) < 0.1, None, ints), dtype="Int64")
+    pdf["nbool"] = pd.array(np.where(rng.random(n) < 0.1, None, flags), dtype="boolean")
+    pldf = pl.DataFrame({"text": list(text), "ints": ints, "flags": flags, "cat": pl.Series(list(text), dtype=pl.Categorical),
+                         "enum": pl.Series([v if v is not None else None for v in text], dtype=pl.Enum(sorted({v for v in text if v is not None})))})
+    rows = np.sort(rng.choice(n, size=2000, replace=False))
+    for frame_obj in (pdf, pldf):
+        frame = pak._Frame(frame_obj)
+        for j, name in enumerate(frame.column_names()):
+            if name == "nullable":
+                continue  # integers with missing values: "3" instead of "3.0" (tested below)
+            for top in (200, 7):
+                assert pak._factorize(frame, j, rows) is not None, name
+                (dt_f, codes_f, meta_f), (dt_s, codes_s, meta_s) = _fast_slow(frame, j, rows, top=top)
+                assert dt_f == dt_s == "u16", name
+                assert meta_f == meta_s, (name, top)
+                assert np.array_equal(codes_f, codes_s), (name, top)
+
+
+def test_fast_categories_skip_other_dtypes_and_int_nulls_in_polars():
+    n = 500
+    rng = np.random.default_rng(1)
+    pdf = pd.DataFrame({"f": rng.normal(size=n), "when": pd.date_range("2020-01-01", periods=n, freq="D"), "obj": [object()] * n})
+    frame = pak._Frame(pdf)
+    rows = np.arange(n)
+    assert pak._factorize(frame, 0, rows) is None
+    assert pak._factorize(frame, 1, rows) is None
+    assert pak._factorize(frame, 2, rows) is None
+    # polars integers with nulls: labeled "3", where the general path says "3.0".
+    s = pl.DataFrame({"k": pl.Series([3, None, 1, 3], dtype=pl.Int64)})
+    _, _, meta = pak._color_values(pak._Frame(s), 0, np.arange(4), True, 200)
+    assert meta["categories"] == ["1", "3"] and meta["nullCount"] == 1
+    p = pd.DataFrame({"k": pd.array([3, None, 1, 3], dtype="Int64")})
+    _, codes, meta = pak._color_values(pak._Frame(p), 0, np.arange(4), True, 200)
+    assert meta["categories"] == ["1", "3"] and meta["nullCount"] == 1 and codes.tolist() == [1, 3, 0, 1]

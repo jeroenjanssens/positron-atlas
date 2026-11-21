@@ -148,7 +148,7 @@
       case 'prepare': {
         const gen = ++generation;
         projectionCurrent = false;
-        await call('prepare', jobId, JSON.stringify(m.options));
+        await call('prepare', jobId, JSON.stringify({ ...m.options, native: settings().nativeCore }));
         const s = await waitForJob(jobId, (st) => post({ type: 'status', task: 'prepare', status: st }), gen);
         if (s.stage === 'done') {
           const anchors = s.outputs.find((o) => o.kind === 'anchors');
