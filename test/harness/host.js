@@ -119,15 +119,16 @@
       pcaEnabled: s.pcaEnabled ?? false,
       pcaDims: s.pcaDims ?? 50,
       nativeCore: s.nativeCore ?? true,
+      maxLazyRows: s.maxLazyRows ?? 10000000,
     };
   }
 
   async function init() {
     info = await (await fetch('/info')).json();
     const variable = params.get('variable') || info.variable;
-    const describe = await call('describe', variable);
+    const describe = await call('describe', variable, JSON.stringify({ maxLazyRows: settings().maxLazyRows }));
     jobDir = `job-${Date.now()}`;
-    const job = await call('create_job', variable, `${info.jobRoot}/${jobDir}`);
+    const job = await call('create_job', variable, `${info.jobRoot}/${jobDir}`, JSON.stringify({ maxLazyRows: settings().maxLazyRows }));
     jobId = job.jobId;
     post({ type: 'init', variable, sessionId: 'harness', describe, settings: settings(), state: harness.state });
   }

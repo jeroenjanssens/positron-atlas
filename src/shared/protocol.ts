@@ -127,6 +127,8 @@ export interface Settings {
   pcaDims: number;
   /** Use the Rust core for placing rows when available. */
   nativeCore: boolean;
+  /** Maximum rows to collect from a lazy frame (polars LazyFrame, DuckDB relation, etc.). */
+  maxLazyRows: number;
 }
 
 /** How selected rows differ from all prepared rows (kernel compare_selection). */

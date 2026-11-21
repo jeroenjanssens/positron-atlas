@@ -46,6 +46,7 @@ export function readSettings(): Settings {
     pcaEnabled: c.get('pcaEnabled', false),
     pcaDims: c.get('pcaDims', 50),
     nativeCore: c.get('nativeCore', true),
+    maxLazyRows: c.get('maxLazyRows', 10_000_000),
   };
 }
 
@@ -174,7 +175,7 @@ export class AtlasPanel {
     let describe: DescribeResult | undefined;
     for (let attempt = 0; !describe; attempt++) {
       try {
-        describe = await this.bridge.call<DescribeResult>('describe', this.state.variable);
+        describe = await this.bridge.call<DescribeResult>('describe', this.state.variable, JSON.stringify({ maxLazyRows: readSettings().maxLazyRows ?? 10_000_000 }));
       } catch (e) {
         // Right after startup a session can exit and restart (possibly under the same id):
         // wait, find the live Python session, and retry.
@@ -192,7 +193,7 @@ export class AtlasPanel {
         }
       }
     }
-    const job = await this.bridge.call<{ jobId: string }>('create_job', this.state.variable, this.jobDir.fsPath);
+    const job = await this.bridge.call<{ jobId: string }>('create_job', this.state.variable, this.jobDir.fsPath, JSON.stringify({ maxLazyRows: readSettings().maxLazyRows ?? 10_000_000 }));
     const probe = await fs.readFile(path.join(this.jobDir.fsPath, '.probe'), 'utf8').catch(() => '');
     if (probe !== job.jobId) {
       this.fail(
@@ -338,7 +339,7 @@ export class AtlasPanel {
             m.column,
             m.keepOthers,
           );
-          const describe = await this.bridge.call<DescribeResult>('describe', r.variable);
+          const describe = await this.bridge.call<DescribeResult>('describe', r.variable, JSON.stringify({ maxLazyRows: readSettings().maxLazyRows ?? 10_000_000 }));
           this.post({ type: 'labelsWritten', variable: r.variable, column: r.column, rows: r.rows, describe });
           void vscode.window.showInformationMessage(`Wrote ${r.rows.toLocaleString('en-US')} labels to ${r.variable}.${r.column}.`);
         } finally {

@@ -1,0 +1,28 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pyarrow as pa\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndata = centers[k] + rng.normal(0, 1, (20000, 30))\ndf = pa.table({f'x{i}': pa.array(data[:, i].tolist()) for i in range(30)})\ndf = df.append_column('cluster', pa.array([f'c{v}' for v in k]))\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "pyarrow table loads and describes as narwhals frame",
+      "assert": [
+        "a.describe.frameKind === 'narwhals'",
+        "a.describe.nRows === 20000",
+        "a.describe.nCols >= 30"
+      ],
+      "report": "{ frameKind: a.describe.frameKind, nRows: a.describe.nRows, nCols: a.describe.nCols }"
+    },
+    {
+      "name": "prepare and project succeed on pyarrow table",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": [
+        "a.anchorXY.every(Number.isFinite)"
+      ],
+      "report": "document.querySelector('footer .summary').textContent"
+    }
+  ]
+}
