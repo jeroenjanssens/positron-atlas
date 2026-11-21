@@ -1,24 +1,32 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
+
   interface Props {
-    label: string;
     checked?: boolean;
     disabled?: boolean;
-    title?: string;
-    /** Called when the value changes. */
+    id?: string;
     onchange?: (checked: boolean) => void;
+    children?: Snippet;
   }
-  let { label, checked = $bindable(false), disabled = false, title, onchange }: Props = $props();
+  let { checked = $bindable(false), disabled = false, id, onchange, children }: Props = $props();
+
+  function onChange(e: Event) {
+    checked = (e.target as HTMLInputElement).checked;
+    onchange?.(checked);
+  }
 </script>
 
-<label class="check" {title}>
+<label class="ctrl-check" class:disabled>
+  <span class="ctrl-check-box" class:checked aria-hidden="true">
+    {#if checked}<span class="codicon codicon-check"></span>{/if}
+  </span>
   <input
     type="checkbox"
+    {id}
     {checked}
     {disabled}
-    onchange={(e) => {
-      checked = (e.target as HTMLInputElement).checked;
-      onchange?.(checked);
-    }}
+    onchange={onChange}
+    class="sr-only"
   />
-  {label}
+  {#if children}{@render children()}{/if}
 </label>

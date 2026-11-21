@@ -465,6 +465,16 @@ export class AtlasPanel {
         }
         break;
       }
+      // --- Full-screen toggle (N5 / F1) ---
+      case 'fullscreen': {
+        // In Positron, maximize the editor panel (hides the sidebar and status bar).
+        // The same command toggles back when called again.
+        const command = m.on
+          ? 'workbench.action.maximizeEditorHideSidebar'
+          : 'workbench.action.evenEditorWidths';
+        await vscode.commands.executeCommand(command).then(undefined, () => undefined);
+        break;
+      }
     }
   }
 

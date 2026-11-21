@@ -1,0 +1,113 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(1)\nk = rng.integers(0, 4, 8000)\ncenters = rng.normal(0, 5, (4, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (8000, 10)), columns=[f'x{i}' for i in range(10)])\ndf['label'] = [f'cluster_{v}' for v in k]\n",
+  "settings": { "maxAnchorsCpu": 2000 },
+  "screenshot": "native-dark.png",
+  "steps": [
+    {
+      "name": "codicons load: toolbar uses codicon classes",
+      "assert": [
+        "!!document.querySelector('.plot-toolbar .tool .codicon-move')",
+        "!!document.querySelector('.plot-toolbar .tool .codicon-screen-normal')",
+        "!!document.querySelector('.plot-toolbar .tool .codicon-screen-full')"
+      ],
+      "report": "document.querySelectorAll('.plot-toolbar .tool').length"
+    },
+    {
+      "name": "section chevrons use codicons",
+      "assert": [
+        "!!document.querySelector('details.group > summary .codicon')"
+      ]
+    },
+    {
+      "name": "custom checkbox renders for standardize",
+      "assert": [
+        "!!document.querySelector('.ctrl-check')",
+        "!!document.querySelector('.ctrl-check-box')"
+      ]
+    },
+    {
+      "name": "info button appears for data.features",
+      "assert": [
+        "!!document.querySelector('.info-btn')"
+      ],
+      "report": "document.querySelectorAll('.info-btn').length"
+    },
+    {
+      "name": "info popover shows on hover",
+      "eval": "document.querySelector('.info-btn').dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))",
+      "until": "!!document.querySelector('.info-popover')",
+      "timeout": 1000,
+      "assert": [
+        "document.querySelector('.info-popover .info-title').textContent.length > 0",
+        "document.querySelector('.info-popover .info-what').textContent.length > 0"
+      ],
+      "report": "document.querySelector('.info-popover .info-title').textContent"
+    },
+    {
+      "name": "info popover closes on mouse leave",
+      "eval": "document.querySelector('.info-btn').dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))",
+      "until": "!document.querySelector('.info-popover')",
+      "timeout": 1000
+    },
+    {
+      "name": "info popover pins on click",
+      "eval": "document.querySelector('.info-btn').click()",
+      "until": "document.querySelector('.info-btn.pinned')",
+      "timeout": 1000,
+      "assert": [
+        "!!document.querySelector('.info-popover')"
+      ]
+    },
+    {
+      "name": "Escape closes pinned info popover",
+      "eval": "document.querySelector('.info-btn').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))",
+      "until": "!document.querySelector('.info-popover')",
+      "timeout": 1000,
+      "assert": [
+        "!document.querySelector('.info-btn.pinned')"
+      ]
+    },
+    {
+      "name": "fullscreen button triggers toggle (browser API, not Positron)",
+      "assert": [
+        "!!document.querySelector('.plot-toolbar .tool .codicon-screen-full')"
+      ],
+      "report": "h.fullscreen"
+    },
+    {
+      "name": "switch to light theme via URL param",
+      "eval": "const url = new URL(location.href); url.searchParams.set('theme', 'light-modern'); history.replaceState({}, '', url)",
+      "report": "getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-background').trim() || '(no token)'"
+    },
+    {
+      "name": "explore tab: codicon checkboxes visible",
+      "click": "#tab-explore",
+      "until": "a.ui.tab === 'explore'",
+      "screenshot": "native-explore.png",
+      "assert": [
+        "!!document.querySelector('.ctrl-check')"
+      ]
+    },
+    {
+      "name": "annotate tab loads",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'",
+      "screenshot": "native-annotate.png",
+      "assert": [
+        "!!document.querySelector('[data-section=labels]')",
+        "!!document.querySelector('[data-section=tags]')"
+      ]
+    },
+    {
+      "name": "export tab loads",
+      "click": "#tab-export",
+      "until": "a.ui.tab === 'export'",
+      "screenshot": "native-export.png",
+      "assert": [
+        "!!document.querySelector('[data-section=export-image]')",
+        "!!document.querySelector('.info-btn')"
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 // - The clipboard is window.__harness.clipboard.
 
 (() => {
-  const harness = { log: [], clipboard: '', png: '', state: undefined, posted: [] };
+  const harness = { log: [], clipboard: '', png: '', state: undefined, posted: [], fullscreen: false };
   window.__harness = harness;
   const params = new URLSearchParams(location.search);
   let info;
@@ -311,6 +311,14 @@
         post({ type: 'fontCatalog', families });
         break;
       }
+      // --- Full-screen toggle (N5 / F1) ---
+      case 'fullscreen':
+        // In the harness, the webview is not in Positron, so isPositron is false and
+        // PlotToolbar.svelte uses requestFullscreen() directly. This case handles the
+        // (unlikely) path where isPositron was true in a harness run.
+        harness.log.push(`fullscreen: ${m.on ? 'on' : 'off'}`);
+        harness.fullscreen = !!m.on;
+        break;
     }
   }
 

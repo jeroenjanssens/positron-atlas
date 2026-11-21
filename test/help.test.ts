@@ -1,6 +1,33 @@
 import { describe, expect, it } from 'vitest';
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { HELP } from '../src/webview/help';
 import type { HelpEntry } from '../src/webview/help';
+
+/** Collect all .svelte files under a directory recursively. */
+function svelteFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...svelteFiles(full));
+    else if (entry.name.endsWith('.svelte')) out.push(full);
+  }
+  return out;
+}
+
+/** Extract all Help ids referenced in .svelte files via <Info id="..."/> and infoId="...". */
+function referencedIds(): Set<string> {
+  const componentsDir = join(__dirname, '../src/webview/components');
+  const ids = new Set<string>();
+  for (const file of svelteFiles(componentsDir)) {
+    const src = readFileSync(file, 'utf-8');
+    // <Info id="toolbar.pan" /> or <Info id='toolbar.pan' />
+    for (const m of src.matchAll(/<Info\s+id=["']([\w.]+)["']\s*\/>/g)) ids.add(m[1]);
+    // infoId="data.pcaDims" (Slider prop) followed by whitespace or />
+    for (const m of src.matchAll(/infoId=["']([\w.]+)["'][\s/>]/g)) ids.add(m[1]);
+  }
+  return ids;
+}
 
 const VALID_COSTS: HelpEntry['cost'][] = ['live', 'rebuild', 'reprepare', 'none'];
 const ID_PATTERN = /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
@@ -108,6 +135,24 @@ describe('HELP entries', () => {
         expect(typeof entry.dataMapPlot, `dataMapPlot for "${id}" is not a string`).toBe('string');
         expect(entry.dataMapPlot.trim().length, `dataMapPlot is empty for "${id}"`).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+// ---- I3: cross-reference checks (I3) -----------------------------------------
+
+describe('Info component cross-references (I3)', () => {
+  const inComponents = referencedIds();
+
+  it('every <Info id> and infoId used in a component exists in help.ts', () => {
+    for (const id of inComponents) {
+      expect(id in HELP, `Component references id "${id}" which is not in HELP`).toBe(true);
+    }
+  });
+
+  it('every help.ts id is referenced by at least one component (no dead entries)', () => {
+    for (const id of Object.keys(HELP)) {
+      expect(inComponents.has(id), `HELP entry "${id}" is not referenced in any component`).toBe(true);
     }
   });
 });

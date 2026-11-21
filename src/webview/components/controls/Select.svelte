@@ -2,26 +2,24 @@
   import type { Snippet } from 'svelte';
 
   interface Props {
-    label: string;
-    value?: string;
+    value?: string | number;
+    disabled?: boolean;
     ariaLabel?: string;
-    title?: string;
+    onchange?: (e: Event) => void;
     children?: Snippet;
-    onchange?: (value: string) => void;
   }
-  let { label, value = $bindable(''), ariaLabel, title, children, onchange }: Props = $props();
+  let { value, disabled = false, ariaLabel, onchange, children }: Props = $props();
 </script>
 
-<label class="select" {title}>
-  <span>{label}</span>
+<div class="ctrl-select-wrap">
   <select
+    class="ctrl-select"
     {value}
-    aria-label={ariaLabel ?? label}
-    onchange={(e) => {
-      value = (e.target as HTMLSelectElement).value;
-      onchange?.(value);
-    }}
+    {disabled}
+    aria-label={ariaLabel}
+    onchange={onchange}
   >
-    {@render children?.()}
+    {#if children}{@render children()}{/if}
   </select>
-</label>
+  <span class="ctrl-select-chevron codicon codicon-chevron-down" aria-hidden="true"></span>
+</div>

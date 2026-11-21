@@ -255,4 +255,6 @@ export type ToHost =
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
   /** Font plumbing (D11). */
   | { type: 'fontRequest'; seq: number; family: string; weights?: number[]; scripts?: string[] }
-  | { type: 'fontCatalog' };
+  | { type: 'fontCatalog' }
+  /** Full-screen toggle (N5 / F1). */
+  | { type: 'fullscreen'; on: boolean };

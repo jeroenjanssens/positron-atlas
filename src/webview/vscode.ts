@@ -2,6 +2,9 @@ import type { PanelState, ToHost } from '../shared/protocol';
 
 const api = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : undefined;
 
+/** True when running inside a VS Code / Positron webview (acquireVsCodeApi was available). */
+export const isVsCodeWebview = !!api;
+
 export const vscode = {
   post(msg: ToHost): void {
     api?.postMessage(msg);

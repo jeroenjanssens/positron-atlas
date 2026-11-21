@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Info from './controls/Info.svelte';
+
   interface Props {
     label: string;
     value: number;
@@ -8,11 +10,12 @@
     hint?: string;
     tag?: 'live' | 'rebuild' | 'apply';
     disabled?: boolean;
+    infoId?: string;
     /** Called while dragging (debounced) when live, else on release. */
     onchange?: (v: number) => void;
     format?: (v: number) => string;
   }
-  let { label, value = $bindable(), min, max, step = 1, hint, tag, disabled = false, onchange, format }: Props = $props();
+  let { label, value = $bindable(), min, max, step = 1, hint, tag, disabled = false, infoId, onchange, format }: Props = $props();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   function input(e: Event) {
@@ -33,7 +36,7 @@
 
 <label class="slider" class:disabled title={hint}>
   <span class="row">
-    <span class="name">{label}{#if tag}<span class="tag {tag}">{tag}</span>{/if}</span>
+    <span class="name">{label}{#if tag}<span class="tag {tag}">{tag}</span>{/if}{#if infoId}<Info id={infoId} />{/if}</span>
     <input class="num" type="number" {min} {max} {step} {value} {disabled} onchange={commit} />
   </span>
   <input type="range" {min} {max} {step} {value} {disabled} oninput={input} onchange={commit} aria-label={label} />

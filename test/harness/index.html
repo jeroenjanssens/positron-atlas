@@ -4,74 +4,70 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Atlas harness</title>
-<link rel="stylesheet" href="/dist/main.css">
-<!-- The theme variables VS Code/Positron injects into webviews (Positron dark/light, abridged). -->
-<style id="theme-dark">
-  :root {
-    --vscode-font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    --vscode-font-size: 13px;
-    --vscode-foreground: #cccccc;
-    --vscode-descriptionForeground: #9d9d9d;
-    --vscode-editor-background: #1f1f1f;
-    --vscode-sideBar-background: #181818;
-    --vscode-panel-border: #2b2b2b;
-    --vscode-input-background: #313131;
-    --vscode-input-foreground: #cccccc;
-    --vscode-input-border: #3c3c3c;
-    --vscode-focusBorder: #0078d4;
-    --vscode-button-background: #0078d4;
-    --vscode-button-foreground: #ffffff;
-    --vscode-button-hoverBackground: #026ec1;
-    --vscode-button-secondaryBackground: #313131;
-    --vscode-button-secondaryForeground: #cccccc;
-    --vscode-button-secondaryHoverBackground: #3c3c3c;
-    --vscode-textLink-foreground: #4daafc;
-    --vscode-editorHoverWidget-background: #202020;
-    --vscode-editorHoverWidget-border: #454545;
-    --vscode-notifications-background: #1f1f1f;
-    --vscode-progressBar-background: #0078d4;
-    --vscode-charts-green: #89d185;
-    --vscode-charts-yellow: #cca700;
-    --vscode-editorWarning-foreground: #cca700;
-  }
-</style>
-<style id="theme-light">
-  :root {
-    --vscode-font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    --vscode-font-size: 13px;
-    --vscode-foreground: #3b3b3b;
-    --vscode-descriptionForeground: #717171;
-    --vscode-editor-background: #ffffff;
-    --vscode-sideBar-background: #f8f8f8;
-    --vscode-panel-border: #e5e5e5;
-    --vscode-input-background: #ffffff;
-    --vscode-input-foreground: #3b3b3b;
-    --vscode-input-border: #cecece;
-    --vscode-focusBorder: #005fb8;
-    --vscode-button-background: #005fb8;
-    --vscode-button-foreground: #ffffff;
-    --vscode-button-hoverBackground: #0258a8;
-    --vscode-button-secondaryBackground: #e5e5e5;
-    --vscode-button-secondaryForeground: #3b3b3b;
-    --vscode-button-secondaryHoverBackground: #cccccc;
-    --vscode-textLink-foreground: #005fb8;
-    --vscode-editorHoverWidget-background: #f8f8f8;
-    --vscode-editorHoverWidget-border: #c8c8c8;
-    --vscode-notifications-background: #ffffff;
-    --vscode-progressBar-background: #005fb8;
-    --vscode-charts-green: #388a34;
-    --vscode-charts-yellow: #bf8803;
-    --vscode-editorWarning-foreground: #bf8803;
-  }
-</style>
+<link rel="stylesheet" href="/dist/webview/main.css">
+<!-- Theme variables VS Code/Positron injects into webviews. Loaded from JSON dumps (N1/N2). -->
 <script>
-  // ?theme=light selects the light theme (dark by default).
-  document.getElementById(new URLSearchParams(location.search).get('theme') === 'light' ? 'theme-dark' : 'theme-light').remove();
+  // ?theme=light-modern|dark-modern|hc-dark selects the theme (dark-modern by default).
+  // Also supports legacy ?theme=light and ?theme=dark aliases.
+  (function() {
+    const params = new URLSearchParams(location.search);
+    const rawTheme = params.get('theme') || 'dark-modern';
+    // Normalize legacy aliases
+    const themeMap = { 'dark': 'dark-modern', 'light': 'light-modern', 'hc': 'high-contrast-dark' };
+    const themeId = themeMap[rawTheme] || rawTheme;
+    window.__harnessTheme = themeId;
+
+    // Load the theme JSON and apply as CSS variables
+    function applyTheme(vars) {
+      const style = document.createElement('style');
+      const lines = Object.entries(vars)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([k, v]) => `  ${k}: ${v};`);
+      style.textContent = ':root {\n' + lines.join('\n') + '\n}';
+      style.id = 'positron-theme';
+      document.head.appendChild(style);
+    }
+
+    // Fetch the theme file; fall back to embedded minimal theme on error.
+    fetch('/harness/themes/' + themeId + '.json')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(applyTheme)
+      .catch(function() {
+        // Minimal fallback (dark) so the harness still works without theme files
+        applyTheme({
+          '--vscode-font-family': '-apple-system, "Segoe UI", sans-serif',
+          '--vscode-font-size': '13px',
+          '--vscode-foreground': '#cccccc',
+          '--vscode-descriptionForeground': '#9d9d9d',
+          '--vscode-editor-background': '#1f1f1f',
+          '--vscode-sideBar-background': '#181818',
+          '--vscode-panel-border': '#2b2b2b',
+          '--vscode-input-background': '#313131',
+          '--vscode-input-foreground': '#cccccc',
+          '--vscode-input-border': '#3c3c3c',
+          '--vscode-focusBorder': '#0078d4',
+          '--vscode-button-background': '#0078d4',
+          '--vscode-button-foreground': '#ffffff',
+          '--vscode-button-hoverBackground': '#026ec1',
+          '--vscode-button-secondaryBackground': '#313131',
+          '--vscode-button-secondaryForeground': '#cccccc',
+          '--vscode-button-secondaryHoverBackground': '#3c3c3c',
+          '--vscode-textLink-foreground': '#4daafc',
+          '--vscode-editorHoverWidget-background': '#252526',
+          '--vscode-editorHoverWidget-border': '#454545',
+          '--vscode-notifications-background': '#1f1f1f',
+          '--vscode-progressBar-background': '#0078d4',
+          '--vscode-charts-green': '#89d185',
+          '--vscode-charts-yellow': '#cca700',
+          '--vscode-editorWarning-foreground': '#cca700',
+        });
+      });
+  })();
 </script>
 <script src="/harness/host.js"></script>
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="/dist/main.js"></script>
+<script type="module" src="/dist/webview/main.js"></script>
 </body>
 </html>

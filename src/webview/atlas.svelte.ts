@@ -20,7 +20,7 @@ import type {
   DescribeResult,
   JobStatus,
 } from '../shared/protocol';
-import { vscode } from './vscode';
+import { vscode, isVsCodeWebview } from './vscode';
 import { ScatterRenderer } from './render/renderer';
 import { HitIndex } from './render/hitIndex';
 import { ClusterFinder } from './labels/clusterWorker';
@@ -172,6 +172,8 @@ export class Atlas {
   gpuAvailable = $state(false);
   computeMode = $state<'browser' | ExactEngine>('browser');
   layoutEngine = $state<string>('');
+  /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
+  readonly isPositron = isVsCodeWebview;
 
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
@@ -424,4 +426,11 @@ export class Atlas {
   setSession(sessionId: string, languageId: string, variable: string): void { setSessionImpl(this, sessionId, languageId, variable); }
   showError(message: string): void { showErrorImpl(this, message); }
   flash(message: string): void { flashImpl(this, message); }
+
+  /** Request full-screen mode (N5 / F1).  In Positron, posts a ToHost message so the host
+   *  runs workbench.action.maximizeEditorHideSidebar.  In a plain browser the caller uses
+   *  the browser Fullscreen API instead (PlotToolbar.svelte checks isPositron). */
+  setFullscreen(on: boolean): void {
+    vscode.post({ type: 'fullscreen', on });
+  }
 }

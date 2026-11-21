@@ -36,10 +36,15 @@
     {/if}
   </header>
 
+  <!-- Positron segmented toggle: 20px high, 6px corners, outlined active item. -->
   <div class="tabs" role="tablist" aria-label="Control groups" tabindex="-1" onkeydown={onKey}>
     {#each tabs as t (t.id)}
-      <button id="tab-{t.id}" role="tab" class="tab" class:active={atlas.ui.tab === t.id} aria-selected={atlas.ui.tab === t.id}
-        aria-controls="panel-{t.id}" tabindex={atlas.ui.tab === t.id ? 0 : -1} title={t.hint} onclick={() => atlas.setTab(t.id)}>{t.label}</button>
+      <button id="tab-{t.id}" role="tab" class="tab" class:active={atlas.ui.tab === t.id}
+        aria-selected={atlas.ui.tab === t.id}
+        aria-controls="panel-{t.id}"
+        tabindex={atlas.ui.tab === t.id ? 0 : -1}
+        title={t.hint}
+        onclick={() => atlas.setTab(t.id)}>{t.label}</button>
     {/each}
   </div>
 

@@ -14,7 +14,10 @@
 </script>
 
 <details class="group" data-section={id} {open} ontoggle={(e) => atlas.setSectionOpen(id, (e.currentTarget as HTMLDetailsElement).open)}>
-  <summary>{title}</summary>
+  <summary>
+    <span class="codicon {open ? 'codicon-chevron-down' : 'codicon-chevron-right'}" aria-hidden="true"></span>
+    {title}
+  </summary>
   <div class="section">
     {@render children()}
   </div>

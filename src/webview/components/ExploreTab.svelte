@@ -2,6 +2,8 @@
   import type { Atlas } from '../atlas.svelte';
   import Section from './Section.svelte';
   import Slider from './Slider.svelte';
+  import Checkbox from './controls/Checkbox.svelte';
+  import Info from './controls/Info.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
   import { formatCount, formatPercent, formatStat } from '../logic';
 
@@ -15,7 +17,7 @@
 
 <Section {atlas} id="color" title="Color">
     <label class="select">
-      <span>Color by</span>
+      <span>Color by <Info id="explore.colorBy" /></span>
       <select value={atlas.colorColumn === null ? '' : String(atlas.colorColumn)} onchange={onColorChange}>
         <option value="">None</option>
         {#each atlas.describe?.columns ?? [] as c (c.index)}
@@ -24,11 +26,13 @@
       </select>
     </label>
     {#if atlas.colorColumn !== null && atlas.describe?.columns[atlas.colorColumn]?.kind === 'numeric'}
-      <label class="check"><input type="checkbox" bind:checked={atlas.forceCategorical} onchange={() => atlas.requestColors()} /> Treat as categories</label>
+      <Checkbox bind:checked={atlas.forceCategorical} onchange={() => atlas.requestColors()}>
+        Treat as categories <Info id="explore.treatAsCategories" />
+      </Checkbox>
     {/if}
     {#if atlas.colorMeta?.kind === 'categorical'}
-      <label class="select" title="Follows the map: groups that are close on the map get related hues, and outlying groups are more saturated (as in DataMapPlot). Tableau 20: a fixed list of distinct colors.">
-        <span>Palette</span>
+      <label class="select">
+        <span>Palette <Info id="explore.palette" /></span>
         <select value={atlas.view.palette} aria-label="Palette" onchange={(e) => atlas.setView({ palette: (e.target as HTMLSelectElement).value as 'map' | 'tableau' })}>
           <option value="map">Follows the map</option>
           <option value="tableau">Tableau 20</option>
@@ -40,7 +44,7 @@
     {/if}
     {#if atlas.colorMeta?.kind === 'numeric'}
       <label class="select">
-        <span>Colormap</span>
+        <span>Colormap <Info id="explore.colormap" /></span>
         <select value={atlas.view.colormap} onchange={(e) => atlas.setView({ colormap: (e.target as HTMLSelectElement).value })}>
           {#each Object.keys(SEQUENTIAL) as name}<option value={name}>{name}</option>{/each}
         </select>
@@ -48,7 +52,7 @@
       {#if atlas.colorRange}
         {@const m = atlas.colorMeta}
         <label class="select">
-          <span>Range</span>
+          <span>Range <Info id="explore.colorRange" /></span>
           <select onchange={(e) => {
               const v = (e.target as HTMLSelectElement).value;
               atlas.colorRange = v === 'full' ? [m.min ?? 0, m.max ?? 1] : [m.q02 ?? 0, m.q98 ?? 1];
@@ -64,43 +68,47 @@
 
 <Section {atlas} id="display" title="Display">
     <Slider label="Point size" bind:value={atlas.view.pointSize} min={0.5} max={20} step={0.5} tag={undefined}
-      onchange={(v) => atlas.setView({ pointSize: v })} />
+      onchange={(v) => atlas.setView({ pointSize: v })} infoId="explore.pointSize" />
     <Slider label="Opacity" bind:value={atlas.view.opacity} min={0.05} max={1} step={0.05}
-      onchange={(v) => atlas.setView({ opacity: v })} />
+      onchange={(v) => atlas.setView({ opacity: v })} infoId="explore.opacity" />
     <label class="select">
-      <span>Mode</span>
+      <span>Mode <Info id="explore.mode" /></span>
       <select value={atlas.view.mode} onchange={(e) => atlas.setView({ mode: (e.target as HTMLSelectElement).value as 'points' | 'density' })}>
         <option value="points">Points</option>
         <option value="density">Density (additive)</option>
       </select>
     </label>
     <label class="select">
-      <span>Background</span>
+      <span>Background <Info id="explore.background" /></span>
       <span class="inline">
         <input type="color" class="color" value={atlas.plotBackground()} aria-label="Plot background color"
           oninput={(e) => atlas.setView({ background: (e.target as HTMLInputElement).value })} />
         <button class="link" disabled={!atlas.view.background} title="Follow the color theme" onclick={() => atlas.setView({ background: '' })}>Theme</button>
       </span>
     </label>
-    <label class="check" title={atlas.imageColumns ? `Pixel columns ${atlas.imageColumns.first} … ${atlas.imageColumns.last}` : 'No pixel columns found (numeric columns named like px0, px1, …)'}>
-      <input type="checkbox" checked={atlas.view.images} disabled={!atlas.imageColumns}
-        onchange={(e) => atlas.setView({ images: (e.target as HTMLInputElement).checked })} />
-      Points are images
-    </label>
+    <Checkbox
+      checked={atlas.view.images}
+      disabled={!atlas.imageColumns}
+      onchange={(v) => atlas.setView({ images: v })}>
+      Points are images <Info id="explore.images" />
+    </Checkbox>
+    {#if !atlas.imageColumns}
+      <div class="hint muted">No pixel columns found (numeric columns named like px0, px1, …)</div>
+    {/if}
     {#if atlas.view.images && atlas.imageColumns && atlas.imageShape}
       <label class="select">
-        <span>Image width</span>
+        <span>Image width <Info id="explore.imageWidth" /></span>
         <span class="inline">
           <input class="num" type="number" min="1" max={atlas.imageColumns.indices.length} value={atlas.imageShape[0]}
             onchange={(e) => atlas.setView({ imageWidth: Math.max(1, Number((e.target as HTMLInputElement).value) || 0) })} />
           <span class="muted-text">× {atlas.imageShape[1]}</span>
         </span>
       </label>
-      <label class="check">
-        <input type="checkbox" checked={atlas.view.imageInvert}
-          onchange={(e) => atlas.setView({ imageInvert: (e.target as HTMLInputElement).checked })} />
-        Invert colors
-      </label>
+      <Checkbox
+        checked={atlas.view.imageInvert}
+        onchange={(v) => atlas.setView({ imageInvert: v })}>
+        Invert colors <Info id="explore.imageInvert" />
+      </Checkbox>
       <div class="hint muted">{atlas.imageColumns.indices.length.toLocaleString()} pixel columns ({atlas.imageColumns.first} … {atlas.imageColumns.last}). Hover a point to see its image.</div>
     {/if}
 </Section>
@@ -126,7 +134,7 @@
     <div class="buttons">
       <button class="primary" disabled={atlas.comparing} onclick={() => atlas.compareSelection()}
         title="How the selected rows differ from all rows: column means and over-represented values">
-        {atlas.comparing ? 'Comparing…' : 'Compare with all rows'}
+        {atlas.comparing ? 'Comparing…' : 'Compare with all rows'} <Info id="explore.compareSelection" />
       </button>
     </div>
     <div class="hint muted">To make a DataFrame of these rows, see Export → To the DataFrame.</div>

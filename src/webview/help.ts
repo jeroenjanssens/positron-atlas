@@ -703,3 +703,8 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 };
+
+/** Look up a help entry by its dot-separated id.  Returns undefined when not found. */
+export function getHelp(id: string): HelpEntry | undefined {
+  return HELP[id];
+}
