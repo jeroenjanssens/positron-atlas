@@ -298,10 +298,321 @@ higgs.shape'''
     ]
 )
 
+WIKIPEDIA_INTRO = """\
+# Wikipedia article titles (11.8 M × 64)
+
+Three language editions of Wikipedia (English, German, French) from the
+[`wikimedia/wikipedia`](https://huggingface.co/datasets/wikimedia/wikipedia)
+dataset on Hugging Face.  Each row is one article, embedded as a 64-dimensional
+PCA projection of a 256-dimensional static embedding produced by
+[`minishlab/potion-multilingual-128M`](https://huggingface.co/minishlab/potion-multilingual-128M).
+
+**Licence:** Wikipedia text is CC BY-SA 4.0 / GFDL.  The embedding model is MIT.
+
+**First run:** downloading the raw Parquet shards takes roughly 22 GB and
+dominates the ≈ 40-minute first run; the cached result is ≈ 4 GB.
+Subsequent runs skip every step that is already cached, so re-running the
+notebook is fast.
+
+**Quick try:** set `SAMPLE = True` at the top to process only one shard per
+language (≈ 400 k articles, a few minutes).
+
+**What to try in Atlas:** set `title` as the hover-title column, `url` as the
+link column, and color by `language` to see the three language editions as
+distinct regions.  Turn on cluster labels to discover topic areas.
+"""
+
+WIKIPEDIA_THINGS = """\
+- **Color by `language`.** The three editions form broad regional clusters with
+  some overlap where topics are covered in all three languages.
+- **Hover a point** to see the article title and first sentence.
+- **Cmd/Ctrl-click a point** (when `url` is the link column) to open the
+  Wikipedia article in a browser.
+- **Lower *Sample rows*** to 5–10 % for a quicker first UMAP run. At 11.8 M × 64
+  features, 10 % gives 1.18 M anchors — still a large and representative map.
+- **Turn on *Cluster labels*** to see topic regions emerge across languages.
+- **Search by title** to find specific articles and see where they land in the
+  embedding space.
+"""
+
+
+def wikipedia_titles() -> dict:
+    """Generate the Wikipedia titles notebook."""
+    cell_config = '''\
+# ── Configuration ──────────────────────────────────────────────────────────────
+# Set SAMPLE = True to process only 1 shard per language (~400 k rows, ~5 min).
+# Set SAMPLE = False for the full dataset (~11.8 M rows, ~40 min first run).
+SAMPLE = False
+
+LANGS = ["en", "de", "fr"]   # English, German, French Wikipedia
+DATE = "20231101"             # Wikipedia snapshot date
+N_COMPONENTS = 64             # PCA output dimensions (f0 … f63)
+BATCH_SIZE = 4096             # Titles per embedding batch
+PCA_SAMPLE = 500_000          # Number of titles used to fit PCA'''
+
+    cell_imports = '''\
+import json
+import re
+import time
+import urllib.request
+from pathlib import Path
+
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
+import polars as pl
+from model2vec import StaticModel
+
+CACHE = Path.home() / ".cache" / "positron-atlas" / "datasets" / "wikipedia"
+CACHE_RAW  = CACHE / "raw"      # downloaded HuggingFace Parquet shards
+CACHE_TEXT = CACHE / "text"     # small per-shard parquets (title, url, lang, first_sentence)
+CACHE_FEAT = CACHE / "features" # per-shard parquets after embedding + PCA
+WIKI_PARQUET = CACHE / "wiki.parquet"
+
+for _d in [CACHE_RAW, CACHE_TEXT, CACHE_FEAT]:
+    _d.mkdir(parents=True, exist_ok=True)
+
+
+def _download(url: str, path: Path) -> Path:
+    """Download url to path atomically; skip if already present."""
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    urllib.request.urlretrieve(url, tmp)
+    tmp.rename(path)
+    return path
+
+
+_SENT_END = re.compile(r\'[.!?](?:\\s|$)\')
+
+
+def _first_sentence(text: str) -> str:
+    """Return the first sentence of text, capped at 300 characters."""
+    text = text.strip()[:300]
+    m = _SENT_END.search(text)
+    return text[:m.end()].rstrip() if m else text
+
+
+def _embed_batched(model: StaticModel, titles: list[str]) -> np.ndarray:
+    """Embed titles in BATCH_SIZE chunks; return float32 (n, dim) array."""
+    out = []
+    for i in range(0, len(titles), BATCH_SIZE):
+        out.append(model.encode(titles[i : i + BATCH_SIZE]))
+    return np.concatenate(out, axis=0).astype(np.float32)'''
+
+    cell_shards = '''\
+def _list_shards(lang: str) -> list[tuple[str, str]]:
+    """Return [(filename, url), …] for all train shards of one language."""
+    config = f"{DATE}.{lang}"
+    api = (
+        "https://datasets-server.huggingface.co/parquet"
+        f"?dataset=wikimedia/wikipedia&config={config}&split=train"
+    )
+    with urllib.request.urlopen(api) as resp:
+        data = json.loads(resp.read())
+    shards = [(f["filename"], f["url"]) for f in data["parquet_files"]]
+    return shards[:1] if SAMPLE else shards
+
+
+shards_by_lang = {lang: _list_shards(lang) for lang in LANGS}
+total_shards = sum(len(v) for v in shards_by_lang.values())
+print(f"Shards to process: {total_shards}")
+for lang, shards in shards_by_lang.items():
+    print(f"  {lang}: {len(shards)} shards")'''
+
+    cell_phase1 = '''\
+# ── Phase 1: extract title, url, first_sentence from each shard ──────────────
+if WIKI_PARQUET.exists():
+    print("wiki.parquet already cached — skipping all phases")
+else:
+    print("Phase 1: extracting text from shards...")
+    _t0 = time.perf_counter()
+    _n_done = 0
+
+    for _lang, _shards in shards_by_lang.items():
+        for _fname, _url in _shards:
+            _stem = f"{_lang}_{_fname.replace(\'.parquet\', \'\')}"
+            _text_path = CACHE_TEXT / f"{_stem}.parquet"
+            if _text_path.exists():
+                _n_done += 1
+                continue
+
+            # Download raw shard (cached in CACHE_RAW)
+            _raw_path = CACHE_RAW / f"{_stem}.parquet"
+            if not _raw_path.exists():
+                print(f"  Downloading {_lang}/{_fname} ...")
+            _download(_url, _raw_path)
+
+            # Read only the columns we need; extract first sentence then drop text
+            _tbl = pq.read_table(_raw_path, columns=["title", "url", "text"])
+            _titles   = _tbl["title"].to_pylist()
+            _urls     = _tbl["url"].to_pylist()
+            _texts    = _tbl["text"].to_pylist()
+            _sents    = [_first_sentence(t) for t in _texts]
+            del _texts  # release memory immediately
+
+            pq.write_table(
+                pa.table({
+                    "title":          _titles,
+                    "url":            _urls,
+                    "language":       [_lang] * len(_titles),
+                    "first_sentence": _sents,
+                }),
+                _text_path,
+            )
+            _n_done += 1
+            print(f"  {_lang}/{_fname}: {len(_titles):,} articles ({_n_done}/{total_shards})")
+
+    if not WIKI_PARQUET.exists():
+        _elapsed = time.perf_counter() - _t0
+        print(f"Phase 1 done in {_elapsed:.0f} s ({_n_done} shards)")'''
+
+    cell_phase2 = '''\
+# ── Phase 2: load model once; fit PCA on a sample of titles ──────────────────
+_PCA_CACHE = CACHE / "pca_components.npz"
+
+if WIKI_PARQUET.exists():
+    print("wiki.parquet already cached — skipping Phase 2")
+else:
+    print("Phase 2: loading model...")
+    _t0 = time.perf_counter()
+    model = StaticModel.from_pretrained("minishlab/potion-multilingual-128M")
+    print(f"  Model loaded in {time.perf_counter() - _t0:.1f} s (dim={model.dim})")
+
+    if _PCA_CACHE.exists():
+        _npz = np.load(_PCA_CACHE)
+        _pca_mean, _pca_components = _npz["mean"], _npz["components"]
+        print(f"Loaded PCA cache: mean {_pca_mean.shape}, components {_pca_components.shape}")
+    else:
+        # Collect up to PCA_SAMPLE titles from the text parquets
+        _sample_titles: list[str] = []
+        for _lang, _shards in shards_by_lang.items():
+            for _fname, _ in _shards:
+                _stem = f"{_lang}_{_fname.replace(\'.parquet\', \'\')}"
+                _t = pq.read_table(CACHE_TEXT / f"{_stem}.parquet", columns=["title"])
+                _sample_titles.extend(_t["title"].to_pylist())
+                if len(_sample_titles) >= PCA_SAMPLE:
+                    break
+            if len(_sample_titles) >= PCA_SAMPLE:
+                break
+
+        _rng = np.random.default_rng(42)
+        _idx = _rng.choice(len(_sample_titles), min(PCA_SAMPLE, len(_sample_titles)), replace=False)
+        _sample = [_sample_titles[int(i)] for i in sorted(_idx)]
+        del _sample_titles
+
+        print(f"  Embedding {len(_sample):,} titles for PCA fitting...")
+        _t1 = time.perf_counter()
+        _sample_embs = _embed_batched(model, _sample)
+        _rate = len(_sample) / (time.perf_counter() - _t1)
+        print(f"  Embedded in {time.perf_counter() - _t1:.1f} s ({_rate:,.0f} titles/s)")
+
+        # Fit PCA via covariance eigendecomposition (p=256, so cov is small)
+        _pca_mean = _sample_embs.mean(axis=0)
+        _C = (_sample_embs - _pca_mean).astype(np.float32)
+        _cov = (_C.T @ _C) / (len(_C) - 1)
+        _evals, _evecs = np.linalg.eigh(_cov.astype(np.float64))
+        _order = np.argsort(_evals)[::-1]
+        _pca_components = _evecs[:, _order[:N_COMPONENTS]].T.astype(np.float32)
+        del _C, _cov, _evals, _evecs, _sample_embs
+
+        np.savez(_PCA_CACHE, mean=_pca_mean, components=_pca_components)
+        print(f"  PCA fitted and cached ({_pca_components.shape})")'''
+
+    cell_phase3 = '''\
+# ── Phase 3: embed every shard, apply PCA, save per-shard feature parquets ───
+if WIKI_PARQUET.exists():
+    print("wiki.parquet already cached — skipping Phase 3")
+else:
+    print("Phase 3: embedding and projecting all shards...")
+    _t0 = time.perf_counter()
+    _n_already = 0
+    _n_new = 0
+    _total_rows = 0
+
+    for _lang, _shards in shards_by_lang.items():
+        for _fname, _ in _shards:
+            _stem = f"{_lang}_{_fname.replace(\'.parquet\', \'\')}"
+            _feat_path = CACHE_FEAT / f"{_stem}.parquet"
+
+            if _feat_path.exists():
+                _total_rows += pq.read_metadata(_feat_path).num_rows
+                _n_already += 1
+                continue
+
+            _tbl    = pq.read_table(CACHE_TEXT / f"{_stem}.parquet")
+            _titles = _tbl["title"].to_pylist()
+
+            _t1   = time.perf_counter()
+            _embs = _embed_batched(model, _titles)
+            _proj = ((_embs - _pca_mean) @ _pca_components.T).astype(np.float32)
+            _rate = len(_titles) / (time.perf_counter() - _t1)
+
+            _meta = {col: _tbl[col].to_pylist() for col in ["title", "url", "language", "first_sentence"]}
+            _feat = {f"f{i}": _proj[:, i] for i in range(N_COMPONENTS)}
+            pq.write_table(pa.table({**_meta, **_feat}), _feat_path)
+
+            _total_rows += len(_titles)
+            _n_new += 1
+            _elapsed = time.perf_counter() - _t0
+            _done    = _n_already + _n_new
+            _eta     = (_elapsed / _n_new) * (total_shards - _done) if _n_new else 0
+            print(
+                f"  {_lang}/{_fname}: {len(_titles):,} rows at {_rate:,.0f}/s"
+                f" ({_done}/{total_shards}, ETA {_eta/60:.1f} min)"
+            )
+
+    if not WIKI_PARQUET.exists():
+        print(f"Phase 3 done — {_total_rows:,} rows across {total_shards} shards")'''
+
+    cell_phase4 = '''\
+# ── Phase 4: concatenate per-shard feature parquets into wiki.parquet ─────────
+if WIKI_PARQUET.exists():
+    print("wiki.parquet already cached — skipping Phase 4")
+else:
+    print("Phase 4: concatenating into wiki.parquet...")
+    _t0  = time.perf_counter()
+    _tmp = CACHE / "wiki.parquet.part"
+    _writer: pq.ParquetWriter | None = None
+
+    for _lang, _shards in shards_by_lang.items():
+        for _fname, _ in _shards:
+            _stem = f"{_lang}_{_fname.replace(\'.parquet\', \'\')}"
+            _tbl  = pq.read_table(CACHE_FEAT / f"{_stem}.parquet")
+            if _writer is None:
+                _writer = pq.ParquetWriter(str(_tmp), _tbl.schema)
+            _writer.write_table(_tbl)
+
+    if _writer:
+        _writer.close()
+    _tmp.rename(WIKI_PARQUET)
+    _size_gb = WIKI_PARQUET.stat().st_size / 1e9
+    print(f"Phase 4 done in {time.perf_counter() - _t0:.0f} s — {_size_gb:.2f} GB")'''
+
+    cell_load = '''\
+wiki = pl.read_parquet(WIKI_PARQUET)
+wiki.shape'''
+
+    return notebook([
+        md(WIKIPEDIA_INTRO),
+        code(cell_config),
+        code(cell_imports),
+        code(cell_shards),
+        code(cell_phase1),
+        code(cell_phase2),
+        code(cell_phase3),
+        code(cell_phase4),
+        code(cell_load),
+        md(HOW_TO_OPEN.format(var="wiki")),
+        md(f"## Things to try\n\n{WIKIPEDIA_THINGS}"),
+    ])
+
+
 README = """\
 # Example notebooks
 
-Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars**.
+Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars** (see exceptions below).
 
 | Notebook | Data | Rows × features | DataFrame |
 |---|---|---|---|
@@ -309,6 +620,7 @@ Real high-dimensional datasets to explore with Positron Atlas. Each notebook dow
 | [02-fashion-mnist.ipynb](02-fashion-mnist.ipynb) | Clothing images ([Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist)) | 70,000 × 784 | polars |
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 | [05-higgs.ipynb](05-higgs.ipynb) | Higgs boson search ([UCI HIGGS](https://archive.ics.uci.edu/dataset/280/higgs)) | 11,000,000 × 28 | polars |
+| [06-wikipedia-titles.ipynb](06-wikipedia-titles.ipynb) | Wikipedia titles en+de+fr ([wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia)) | 11.8 M × 64 | polars |
 
 ## Setup
 
@@ -316,8 +628,9 @@ This folder is a [uv](https://docs.astral.sh/uv/) project with everything the no
 
 ```sh
 cd examples
-uv sync                 # creates examples/.venv
-uv sync --group exact   # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
+uv sync                      # creates examples/.venv
+uv sync --group exact        # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
+uv sync --group wikipedia    # optional: also install model2vec and pyarrow for the Wikipedia notebook
 ```
 
 In Positron, open a notebook and select the `examples/.venv` interpreter (**Python 3.x (uv: positron-atlas-examples)**) from the interpreter picker in the top right.
@@ -353,6 +666,7 @@ def main() -> None:
         ),
         "03-covertype.ipynb": COVTYPE,
         "05-higgs.ipynb": HIGGS,
+        "06-wikipedia-titles.ipynb": wikipedia_titles(),
     }
     for name, nb in nbs.items():
         (OUT / name).write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")

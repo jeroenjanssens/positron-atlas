@@ -1,6 +1,6 @@
 # Example notebooks
 
-Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars**.
+Real high-dimensional datasets to explore with Positron Atlas. Each notebook downloads its data once, caches it in `~/.cache/positron-atlas/datasets`, and needs only **numpy** and **polars** (see exceptions below).
 
 | Notebook | Data | Rows × features | DataFrame |
 |---|---|---|---|
@@ -8,6 +8,7 @@ Real high-dimensional datasets to explore with Positron Atlas. Each notebook dow
 | [02-fashion-mnist.ipynb](02-fashion-mnist.ipynb) | Clothing images ([Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist)) | 70,000 × 784 | polars |
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 | [05-higgs.ipynb](05-higgs.ipynb) | Higgs boson search ([UCI HIGGS](https://archive.ics.uci.edu/dataset/280/higgs)) | 11,000,000 × 28 | polars |
+| [06-wikipedia-titles.ipynb](06-wikipedia-titles.ipynb) | Wikipedia titles en+de+fr ([wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia)) | 11.8 M × 64 | polars |
 
 ## Setup
 
@@ -15,8 +16,9 @@ This folder is a [uv](https://docs.astral.sh/uv/) project with everything the no
 
 ```sh
 cd examples
-uv sync                 # creates examples/.venv
-uv sync --group exact   # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
+uv sync                      # creates examples/.venv
+uv sync --group exact        # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
+uv sync --group wikipedia    # optional: also install model2vec and pyarrow for the Wikipedia notebook
 ```
 
 In Positron, open a notebook and select the `examples/.venv` interpreter (**Python 3.x (uv: positron-atlas-examples)**) from the interpreter picker in the top right.
