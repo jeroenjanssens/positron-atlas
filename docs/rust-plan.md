@@ -24,7 +24,31 @@ So the work is:
 1. **A Rust core for placing rows**, with numpy as the fallback, bundled in the extension so users
    still install nothing.
 2. **polars-umap as a second exact engine** next to umap-learn, when it is installed.
-3. **Measure before moving anything else** (PCA, standardizing).
+3. **A polars-native path** in the Python helper for polars DataFrames: Polars' own Rust engine,
+   with nothing to ship.
+4. **Measure before moving anything else** (PCA, standardizing).
+
+### Crates
+
+| Need | Crate | Decision |
+|---|---|---|
+| Parallelism | `rayon` | Use |
+| Python binding | `pyo3` (abi3), `numpy` (rust-numpy), `maturin` | Use |
+| Nearest anchors | our IVF index; `nndescent` from apple/embedding-atlas (PyNNDescent port with a `query` API); `hnsw_rs` | Benchmark in R1, keep the best at our recall target |
+| Distances | plain loops the compiler vectorizes; `pulp` or `simsimd` | Benchmark in R1 |
+| PCA and blocked distances | `faer` (pure Rust, no BLAS or LAPACK to link) | Use in R4 if R0 shows a gain |
+| Low-dimensional data | `kiddo` (k-d tree) | Only if R1 shows a gain at ≤ 20 dims |
+| Seeds | `rand_pcg` | Use |
+| Not used | `ndarray-linalg` (system LAPACK), `linfa` (too heavy), the `polars` crate (see below) | |
+
+**Reuse (spike, done):** polars-umap 0.1.0 depends on apple/embedding-atlas's Rust crates `umap`
+and `nndescent` as git dependencies (pinned revision). They build as native crates, and
+`nndescent::NNDescent` has `query(query_data, k, epsilon)`, so it can serve as the anchor index.
+It is the same code Atlas already runs as WASM in the webview.
+
+**Not the `polars` crate.** Embedding it would add tens of MB per VSIX, couple Atlas to the user's
+Python polars version through pyo3-polars, and still leave pandas on another path, for work that is
+not the bottleneck. Instead, the helper uses the user's own polars (phase P) for polars frames.
 
 What stays in Python: reading and writing the user's DataFrames, the job threads, status and files.
 Moving row placement to the webview (WASM) does not work: the browser would need every row's
@@ -139,6 +163,21 @@ float32 conversions at 10⁷ rows). Candidates, each behind the same fallback:
 **Done when:** each moved step is faster in the R0 benchmark by at least 2×, or the phase is
 dropped with the numbers recorded in `docs/benchmarks.md`.
 
+### Phase P: polars-native path in the Python helper — [ ]
+
+For polars DataFrames, do in polars expressions what is now done in numpy, so it runs on Polars'
+Rust engine (multithreaded) with nothing to ship. pandas frames keep the numpy path.
+
+- Reading features: select, cast to Float32 and handle missing values (drop or median) in one
+  polars query before `to_numpy()`.
+- Row sampling with `gather` on sorted positions (already the case), checked for speed.
+- Category codes for colors and labels: `value_counts` and a join or `replace` on the codes,
+  instead of Python-level `str()` over objects.
+- Selection comparison and cluster descriptions: `group_by` on a codes column, so they can use all
+  rows instead of a 50–100k row sample.
+- **Tests:** every existing pytest case for polars frames gives the same result as before;
+  benchmarks for 10⁶ and 10⁷ rows in `docs/benchmarks.md`.
+
 ### Phase R5: polars-umap as an exact engine — [ ]
 
 [polars-umap](https://polars-umap.jeroenjanssens.com) computes UMAP in Rust inside Polars. Atlas
@@ -151,10 +190,11 @@ already has an exact mode with umap-learn; this adds polars-umap as a second eng
 - **Implementation:** `_exact_impl(job, params, engine)`:
   - wrap the prepared features (`job.features`, possibly PCA'd, possibly a memmap) in a polars
     DataFrame without copying where possible;
-  - call `df.umap.fit_transform(...)` with the Atlas parameters mapped to polars-umap's names
-    (**verify the names and supported options** — neighbors, min distance, spread, metric, epochs,
-    seed, repulsion, negative sample rate, learning rate — against polars-umap's documentation;
-    parameters it lacks are listed in the UI as not used);
+  - call `pu.umap(...)` on the feature columns. polars-umap 0.1.0's parameters (checked) have the
+    same names as umap-learn's, so every Atlas parameter maps one to one: `n_neighbors`,
+    `min_dist`, `spread`, `metric` (euclidean, cosine and more), `n_epochs`, `learning_rate`,
+    `negative_sample_rate`, `repulsion_strength`, `random_state`. Wheels exist for macOS (arm64,
+    x64), Linux (x64, arm64, glibc and musl) and Windows x64;
   - write the coordinates in chunks, as umap-learn's path does. There is no progress and no
     cancellation inside the fit; like umap-learn, a superseded fit is orphaned and its result
     ignored.
@@ -198,7 +238,7 @@ These are goals to confirm in R0–R2, not promises:
 
 ## 5. Order and effort
 
-R0 → R1 → R2 can be done and measured locally, without packaging. R3 is the costly part and only
+Phase P and R5 need no Rust build. R0 → R1 → R2 can be done and measured locally, without packaging. R3 is the costly part and only
 starts once R2 shows a clear win. R5 does not depend on R1–R3 and can be done at any time. R4 is
 optional.
 
