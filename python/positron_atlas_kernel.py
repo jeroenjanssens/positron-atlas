@@ -147,8 +147,23 @@ def _is_polars_lazy(obj: Any) -> bool:
     return _module_name(obj) == "polars" and type(obj).__name__ == "LazyFrame"
 
 
+def _try_narwhals() -> Any:
+    """Return the narwhals module if importable in this Python session, else None."""
+    try:
+        import importlib
+
+        return importlib.import_module("narwhals")
+    except ImportError:
+        return None
+
+
 class _Frame:
-    """Uniform access to pandas and polars DataFrames, by column position."""
+    """Uniform access to pandas and polars DataFrames, by column position.
+
+    Use ``_make_frame()`` for other DataFrame types (pyarrow, Modin, cuDF,
+    lazy frames). The pandas and polars paths here are unchanged in behaviour
+    and speed; ``_NarwhalsFrame`` is used for everything else.
+    """
 
     def __init__(self, obj: Any):
         if _is_polars_lazy(obj):
@@ -160,6 +175,9 @@ class _Frame:
         else:
             raise TypeError(f"Unsupported type {type(obj).__module__}.{type(obj).__name__}; expected a pandas or polars DataFrame.")
         self.obj = obj
+        # Set by _make_frame when a lazy frame was collected before wrapping.
+        self.was_lazy: bool = False
+        self.collected_rows: int | None = None
 
     @property
     def n_rows(self) -> int:
@@ -273,6 +291,205 @@ class _Frame:
         return list(zip(names, [_fmt(v) for v in values]))
 
 
+class _NarwhalsFrame(_Frame):
+    """Frame backed by a narwhals DataFrame (pyarrow, Modin, cuDF, or collected lazy).
+
+    The narwhals path is for correctness, not raw speed; the pandas and polars
+    fast paths in ``_Frame`` are unchanged. Write-back (add_coordinates,
+    write_labels) adds columns to the native object and returns it; for types
+    that cannot be mutated (lazy sources turned into pyarrow Tables) the new
+    frame is stored back in the user namespace.
+    """
+
+    def __init__(self, nw_df: Any, native_obj: Any, *, was_lazy: bool = False, collected_rows: int | None = None) -> None:
+        # nw_df is a narwhals.DataFrame (always eager).
+        # native_obj is the original pre-narwhals object (kept for type-aware write-back).
+        # Do NOT call super().__init__: it would run the pandas/polars type check.
+        self.kind = "narwhals"
+        self.obj = nw_df          # narwhals.DataFrame
+        self._native = native_obj
+        self.was_lazy = was_lazy
+        self.collected_rows = collected_rows
+
+    @property
+    def n_rows(self) -> int:
+        return int(self.obj.shape[0])
+
+    @property
+    def n_cols(self) -> int:
+        return int(self.obj.shape[1])
+
+    def column_names(self) -> list[str]:
+        return list(self.obj.columns)
+
+    def column_kind(self, j: int) -> tuple[str, str]:
+        name = self.obj.columns[j]
+        dt = self.obj.schema[name]
+        s = str(dt)
+        if dt.is_boolean():
+            return s, "bool"
+        if dt.is_numeric():
+            return s, "numeric"
+        if dt.is_temporal():
+            return s, "datetime"
+        import narwhals as nw
+
+        if isinstance(dt, (nw.String, nw.Categorical, nw.Enum)):
+            return s, "categorical"
+        return s, "other"
+
+    def column(self, j: int, rows: np.ndarray | None = None) -> np.ndarray:
+        name = self.obj.columns[j]
+        series = self.obj.get_column(name)
+        if rows is not None:
+            series = series[rows.tolist()]
+        try:
+            return series.to_numpy()
+        except Exception:  # noqa: BLE001
+            return np.asarray(series.to_list(), dtype=object)
+
+    def block(self, cols: list[int], rows: np.ndarray | slice) -> np.ndarray:
+        import narwhals as nw
+
+        col_names = [self.obj.columns[c] for c in cols]
+        if isinstance(rows, slice):
+            start = rows.start or 0
+            stop = rows.stop if rows.stop is not None else self.n_rows
+            sub = self.obj[start:stop]
+        else:
+            sub = self.obj[rows.tolist()]
+        n = sub.shape[0]
+        out = np.empty((n, len(col_names)), dtype=np.float32)
+        for k, cname in enumerate(col_names):
+            try:
+                out[:, k] = sub.get_column(cname).cast(nw.Float32).to_numpy()
+            except Exception:  # noqa: BLE001
+                vals = sub.get_column(cname).to_list()
+                out[:, k] = [float("nan") if v is None else float(v) for v in vals]
+        return np.ascontiguousarray(out)
+
+    def declared_categories(self, j: int) -> list[str] | None:
+        try:
+            import narwhals as nw
+
+            name = self.obj.columns[j]
+            dt = self.obj.schema[name]
+            if isinstance(dt, nw.Enum):
+                return [str(c) for c in dt.categories]
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def row(self, i: int) -> list[tuple[str, str]]:
+        names = self.column_names()
+        values = self.obj.row(int(i))
+        return list(zip(names, [_fmt(v) for v in values]))
+
+    def add_column_writeback(self, col_name: str, values: np.ndarray) -> Any:
+        """Add a column to the underlying native object and update ``self.obj`` / ``self._native``.
+
+        ``values`` is a numpy array (float32 for coordinates, object for labels).
+        Returns the new native object. Raises ``TypeError`` for unsupported native types.
+        """
+        native = self.obj.to_native()
+        native_mod = type(native).__module__.split(".")[0]
+        try:
+            if native_mod == "pyarrow":
+                import pyarrow as pa
+
+                native = native.append_column(col_name, pa.array(values.tolist()))
+            elif native_mod == "pandas":
+                native = native.copy()
+                native[col_name] = values
+            elif native_mod == "polars":
+                import polars as pl
+
+                native = native.with_columns(pl.Series(col_name, values.tolist()))
+            else:
+                raise TypeError(
+                    f"Cannot add columns to native type '{native_mod}'. "
+                    "Convert the DataFrame to pandas or polars first."
+                )
+        except TypeError:
+            raise
+        except Exception as exc:
+            raise TypeError(f"Write-back failed for native type '{native_mod}': {exc}") from exc
+        import narwhals as nw
+
+        self.obj = nw.from_native(native)
+        self._native = native
+        return native
+
+
+def _make_frame(obj: Any, max_lazy_rows: int = 10_000_000) -> _Frame:
+    """Create the right ``_Frame`` subtype for ``obj``.
+
+    - pandas DataFrame / polars DataFrame → ``_Frame`` (native fast paths).
+    - polars LazyFrame → collected with ``max_lazy_rows`` → ``_Frame`` (polars).
+    - Any type narwhals can wrap → ``_NarwhalsFrame`` (pyarrow, Modin, cuDF,
+      DuckDB relation, Ibis table; lazy narwhals frames are collected first).
+    - Arrow PyCapsule (``__arrow_c_stream__``) without narwhals → converted via
+      polars or pyarrow, then returned as a ``_Frame`` (polars or pandas kind).
+    """
+    # 1. Eager pandas / polars → existing fast paths.
+    if _is_pandas(obj) or _is_polars(obj):
+        return _Frame(obj)
+
+    # 2. polars LazyFrame → collect with row limit (special-cased before narwhals
+    #    so the limit always applies even without narwhals installed).
+    if _is_polars_lazy(obj):
+        import polars as pl
+
+        collected = obj.limit(int(max_lazy_rows)).collect()
+        frame = _Frame(collected)
+        frame.was_lazy = True
+        frame.collected_rows = len(collected)
+        return frame
+
+    # 3. Try narwhals for all other types (pyarrow, Modin, cuDF, DuckDB, Ibis …).
+    nw = _try_narwhals()
+    if nw is not None:
+        try:
+            native_obj = obj
+            nw_frame = nw.from_native(obj)
+            was_lazy = False
+            collected_rows = None
+            if isinstance(nw_frame, nw.LazyFrame):
+                nw_frame = nw_frame.head(int(max_lazy_rows)).collect()
+                was_lazy = True
+                collected_rows = int(nw_frame.shape[0])
+            return _NarwhalsFrame(nw_frame, native_obj, was_lazy=was_lazy, collected_rows=collected_rows)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 4. Arrow PyCapsule without narwhals: __arrow_c_stream__ interface.
+    if hasattr(obj, "__arrow_c_stream__"):
+        # Try polars (RecordBatchReader gives a table → polars DataFrame).
+        try:
+            import pyarrow as pa
+            import polars as pl
+
+            table = pa.RecordBatchReader.from_stream(obj).read_all()
+            return _Frame(pl.from_arrow(table))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            import pyarrow as pa
+
+            table = pa.RecordBatchReader.from_stream(obj).read_all()
+            return _Frame(table.to_pandas())
+        except Exception:  # noqa: BLE001
+            pass
+
+    raise TypeError(
+        f"Unsupported type {type(obj).__module__}.{type(obj).__name__}. "
+        "Expected a pandas or polars DataFrame, a pyarrow Table, or any type "
+        "supported by narwhals (Modin, cuDF, DuckDB relation, etc.). "
+        "Lazy frames (polars LazyFrame, DuckDB relation) are collected automatically "
+        "up to positronAtlas.maxLazyRows rows."
+    )
+
+
 def _fmt(v: Any, limit: int = 120) -> str:
     if isinstance(v, float):
         if math.isnan(v):
@@ -313,9 +530,11 @@ def _optional_deps() -> dict[str, bool]:
 # --------------------------------------------------------------------------------------
 
 
-def describe(name: str) -> str:
+def describe(name: str, opts_json: str = "{}") -> str:
+    opts = json.loads(opts_json)
+    max_lazy_rows = int(opts.get("maxLazyRows", 10_000_000))
     try:
-        frame = _Frame(_resolve(name))
+        frame = _make_frame(_resolve(name), max_lazy_rows=max_lazy_rows)
     except Exception as e:  # noqa: BLE001
         return _json({"ok": False, "error": str(e)})
     n = frame.n_rows
@@ -341,18 +560,20 @@ def describe(name: str) -> str:
             info["null_frac"] = None
             info["n_unique_est"] = None
         cols.append(info)
-    return _json(
-        {
-            "ok": True,
-            "version": VERSION,
-            "frameKind": frame.kind,
-            "nRows": n,
-            "nCols": frame.n_cols,
-            "columns": cols,
-            "deps": _optional_deps(),
-            "native": _native_status(),
-        }
-    )
+    result: dict[str, Any] = {
+        "ok": True,
+        "version": VERSION,
+        "frameKind": frame.kind,
+        "nRows": n,
+        "nCols": frame.n_cols,
+        "columns": cols,
+        "deps": _optional_deps(),
+        "native": _native_status(),
+    }
+    if getattr(frame, "was_lazy", False):
+        result["wasLazy"] = True
+        result["collectedRows"] = frame.collected_rows
+    return _json(result)
 
 
 def _is_null(v: Any) -> bool:
@@ -500,9 +721,11 @@ class _Job:
             }
 
 
-def create_job(name: str, job_dir: str) -> str:
+def create_job(name: str, job_dir: str, opts_json: str = "{}") -> str:
+    opts = json.loads(opts_json)
+    max_lazy_rows = int(opts.get("maxLazyRows", 10_000_000))
     try:
-        frame = _Frame(_resolve(name))
+        frame = _make_frame(_resolve(name), max_lazy_rows=max_lazy_rows)
     except Exception as e:  # noqa: BLE001
         return _json({"ok": False, "error": str(e)})
     job = _Job(name, frame, job_dir)
@@ -510,7 +733,11 @@ def create_job(name: str, job_dir: str) -> str:
     # Lets the extension verify that it sees the files the kernel writes.
     with open(job.path(".probe"), "w") as f:
         f.write(job.id)
-    return _json({"ok": True, "jobId": job.id})
+    extra: dict[str, Any] = {}
+    if getattr(frame, "was_lazy", False):
+        extra["wasLazy"] = True
+        extra["collectedRows"] = frame.collected_rows
+    return _json({"ok": True, "jobId": job.id, **extra})
 
 
 def _get(job_id: str) -> _Job:
@@ -1143,6 +1370,8 @@ def _factorize(frame: _Frame, col: int, rows: np.ndarray) -> tuple[np.ndarray, l
             return codes, list(uniques)
         codes, uniques = pd.factorize(sub, use_na_sentinel=True)
         return np.asarray(codes, dtype=np.int64), list(uniques)
+    if frame.kind != "polars":
+        return None  # narwhals / capsule frames take the general (slow) path
     import polars as pl
 
     s = frame.obj.to_series(col)
@@ -1299,13 +1528,21 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
         target = job.name
         # Our own change (new columns), not the user's: keep the job current.
         job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
-    else:
+    elif job.frame.kind == "polars":
         import polars as pl
 
         new = job.frame.obj.with_columns(pl.Series(x_name, full[:, 0]), pl.Series(y_name, full[:, 1]))
         target = job.name if job.name.isidentifier() else "atlas_result"
         ns[target] = new
         job.frame = _Frame(new)
+        job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
+    else:
+        # narwhals generic path
+        assert isinstance(job.frame, _NarwhalsFrame)
+        native_x = job.frame.add_column_writeback(x_name, full[:, 0])
+        job.frame.add_column_writeback(y_name, full[:, 1])
+        target = job.name if job.name.isidentifier() else "atlas_result"
+        ns[target] = job.frame._native
         job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
     return _json({"ok": True, "variable": target, "columns": [x_name, y_name]})
 
@@ -1505,13 +1742,20 @@ def write_labels(job_id: str, codes_path: str, names: list[str], column: str, ke
 
         frame.obj[key] = pd.array(values, dtype="string")
         target = job.name
-    else:
+    elif frame.kind == "polars":
         import polars as pl
 
         new = frame.obj.with_columns(pl.Series(column, values.tolist(), dtype=pl.String))
         target = job.name if job.name.isidentifier() else "atlas_result"
         _user_ns()[target] = new
         job.frame = _Frame(new)
+    else:
+        # narwhals generic path: add via native object
+        assert isinstance(frame, _NarwhalsFrame)
+        str_vals = np.array([None if v is None else str(v) for v in values], dtype=object)
+        frame.add_column_writeback(column, str_vals)
+        target = job.name if job.name.isidentifier() else "atlas_result"
+        _user_ns()[target] = frame._native
     # The shape was unchanged before this call, so the only change is the column added here:
     # don't report it as a change by the user.
     job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
@@ -1543,8 +1787,54 @@ def selection_frame(job_id: str, mask_path: str, base_name: str = "") -> str:
     ns = _user_ns()
     name = _unique_name(base_name or (f"{job.name}_selection" if job.name.isidentifier() else "atlas_selection"), ns)
     obj = job.frame.obj
-    ns[name] = obj.iloc[rows].copy() if job.frame.kind == "pandas" else obj[rows]
+    if job.frame.kind == "pandas":
+        ns[name] = obj.iloc[rows].copy()
+    elif job.frame.kind == "polars":
+        ns[name] = obj[rows]
+    else:
+        # narwhals generic: slice native object
+        native = job.frame.obj.to_native()
+        native_mod = type(native).__module__.split(".")[0]
+        try:
+            if native_mod == "pyarrow":
+                import pyarrow as pa
+
+                ns[name] = native.take(rows.tolist())
+            elif native_mod == "polars":
+                import polars as pl
+
+                ns[name] = native[rows]
+            elif native_mod == "pandas":
+                ns[name] = native.iloc[rows].copy()
+            else:
+                # Generic: convert to list indexing
+                ns[name] = native[rows.tolist()]
+        except Exception:  # noqa: BLE001
+            ns[name] = obj[rows.tolist()].to_native()
     return _json({"ok": True, "variable": name, "rows": int(len(rows))})
+
+
+def _probe_generic(v: Any) -> dict[str, Any] | None:
+    """Return frame metadata for a non-pandas, non-polars object, or None if unrecognised."""
+    # Polars LazyFrame: list as lazy, shape unknown without collecting.
+    if _is_polars_lazy(v):
+        return {"kind": "polars-lazy", "shape": None, "lazy": True}
+    # Try narwhals (pyarrow, Modin, cuDF, DuckDB, Ibis, …).
+    nw = _try_narwhals()
+    if nw is not None:
+        try:
+            nw_frame = nw.from_native(v)
+            if isinstance(nw_frame, nw.LazyFrame):
+                schema = nw_frame.collect_schema()
+                return {"kind": "narwhals-lazy", "shape": [None, len(schema)], "lazy": True}
+            shape = [int(nw_frame.shape[0]), int(nw_frame.shape[1])]
+            return {"kind": "narwhals", "shape": shape, "lazy": False}
+        except Exception:  # noqa: BLE001
+            pass
+    # Arrow PyCapsule without narwhals.
+    if hasattr(v, "__arrow_c_stream__"):
+        return {"kind": "capsule", "shape": None, "lazy": False}
+    return None
 
 
 @_guard
@@ -1555,10 +1845,14 @@ def list_frames() -> str:
         if k.startswith("_"):
             continue
         try:
-            if _is_pandas(v) or _is_polars(v):
-                out.append({"name": k, "kind": "pandas" if _is_pandas(v) else "polars", "shape": [int(v.shape[0]), int(v.shape[1])]})
-            elif _is_polars_lazy(v):
-                out.append({"name": k, "kind": "polars-lazy", "shape": None})
+            if _is_pandas(v):
+                out.append({"name": k, "kind": "pandas", "shape": [int(v.shape[0]), int(v.shape[1])], "lazy": False})
+            elif _is_polars(v):
+                out.append({"name": k, "kind": "polars", "shape": [int(v.shape[0]), int(v.shape[1])], "lazy": False})
+            else:
+                meta = _probe_generic(v)
+                if meta is not None:
+                    out.append({"name": k, **meta})
         except Exception:  # noqa: BLE001
             continue
     return _json({"ok": True, "frames": out})

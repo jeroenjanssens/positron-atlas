@@ -70,8 +70,10 @@ def test_describe_errors(ns):
     ns["x"] = 3
     d = J(pak.describe("x"))
     assert not d["ok"] and "Unsupported" in d["error"]
-    ns["lz"] = pl.DataFrame({"a": [1]}).lazy()
-    assert "LazyFrame" in J(pak.describe("lz"))["error"]
+    # polars LazyFrame is now collected automatically instead of raising.
+    ns["lz"] = pl.DataFrame({"a": [1, 2]}).lazy()
+    d = J(pak.describe("lz"))
+    assert d["ok"] and d["wasLazy"] is True and d["nRows"] == 2
     assert not J(pak.describe("nope"))["ok"]
 
 
@@ -744,3 +746,205 @@ def test_native_core_loads_once_across_threads(monkeypatch):
         th.join()
     assert len({id(r) for r in results}) == 1  # every thread got the same answer (module or None)
     assert pak._NATIVE_INFO["available"] is (results[0] is not None)
+
+
+# --------------------------------------------------------------------------------------
+# D-1: narwhals hybrid – pyarrow, DuckDB, Arrow capsule, lazy polars
+# --------------------------------------------------------------------------------------
+
+
+def _make_pyarrow_df(n=3000, d=20, seed=0):
+    """Small pyarrow Table with numeric + categorical columns."""
+    import pyarrow as pa
+
+    rng = np.random.default_rng(seed)
+    x, labels = make_blobs(n, d, seed=seed)
+    cols = {f"f{i}": pa.array(x[:, i].tolist()) for i in range(d)}
+    cols["label"] = pa.array([f"c{v}" for v in labels])
+    cols["flag"] = pa.array((labels % 2 == 0).tolist())
+    return pa.table(cols)
+
+
+def _prepared_generic(ns, obj_name, obj, tmp_path, features=None, **opts):
+    ns[obj_name] = obj
+    jid = J(pak.create_job(obj_name, str(tmp_path)))["jobId"]
+    o = {"features": features if features is not None else list(range(20)), "seed": 1, **opts}
+    assert J(pak.prepare(jid, json.dumps(o)))["ok"]
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    return jid, st
+
+
+# --- pyarrow Table via narwhals ---
+
+def test_describe_pyarrow(ns):
+    pytest.importorskip("narwhals")
+    import pyarrow as pa
+
+    table = _make_pyarrow_df(500, 5)
+    ns["df"] = table
+    d = J(pak.describe("df"))
+    assert d["ok"] and d["nRows"] == 500 and d["nCols"] == 7
+    assert d["frameKind"] == "narwhals"
+    kinds = {c["name"]: c["kind"] for c in d["columns"]}
+    assert kinds["f0"] == "numeric"
+    assert kinds["label"] == "categorical"
+    assert kinds["flag"] == "bool"
+
+
+def test_prepare_colors_row_pyarrow(ns, tmp_path):
+    pytest.importorskip("narwhals")
+    table = _make_pyarrow_df()
+    jid, st = _prepared_generic(ns, "pa_df", table, tmp_path)
+    r = st["result"]
+    assert r["nKept"] == 3000 and r["dims"] == 20
+
+    # colors
+    c = J(pak.colors(jid, 0))
+    assert c["dtype"] == "f32" and c["length"] == 3000
+    c_cat = J(pak.colors(jid, 20))  # label
+    assert c_cat["dtype"] == "u16"
+    assert sorted(c_cat["meta"]["categories"]) == ["c0", "c1", "c2", "c3"]
+
+    # row
+    r = J(pak.row(jid, 0))
+    assert r["ok"] and len(r["values"]) == 22
+
+
+def test_add_coordinates_pyarrow(ns, tmp_path):
+    pytest.importorskip("narwhals")
+    import pyarrow as pa
+
+    table = _make_pyarrow_df(500, 5)
+    jid, _ = _prepared_generic(ns, "pa_df", table, tmp_path / "a", features=list(range(5)))
+    xy = np.random.default_rng(0).normal(size=(500, 2)).astype("<f4")
+    p = tmp_path / "xy.f32"
+    xy.tofile(p)
+    r = J(pak.add_coordinates(jid, str(p)))
+    assert r["ok"]
+    result = ns["pa_df"]
+    # Result should be a pyarrow Table with the new columns.
+    assert hasattr(result, "schema")
+    assert "umap_x" in result.schema.names and "umap_y" in result.schema.names
+
+
+# --- DuckDB relation via narwhals ---
+
+def test_describe_duckdb(ns):
+    pytest.importorskip("narwhals")
+    duckdb = pytest.importorskip("duckdb")
+    con = duckdb.connect()
+    rel = con.query("SELECT i AS f0, i*2.0 AS f1, 'c' || (i % 4)::VARCHAR AS label FROM range(500) t(i)")
+    ns["duck"] = rel
+    d = J(pak.describe("duck"))
+    assert d["ok"] and d["nRows"] == 500
+    assert d["frameKind"] == "narwhals"
+    assert d["wasLazy"] is True
+    kinds = {c["name"]: c["kind"] for c in d["columns"]}
+    assert kinds["f0"] == "numeric"
+    assert kinds["label"] == "categorical"
+
+
+def test_prepare_colors_duckdb(ns, tmp_path):
+    pytest.importorskip("narwhals")
+    duckdb = pytest.importorskip("duckdb")
+    con = duckdb.connect()
+    n = 3000
+    # Build a DuckDB relation with 20 numeric columns and a label column.
+    cols = ", ".join(f"(random() * 10)::FLOAT AS f{i}" for i in range(20))
+    rel = con.query(f"SELECT {cols}, (i % 4)::INT AS label FROM range({n}) t(i)")
+    ns["duck"] = rel
+    jid = J(pak.create_job("duck", str(tmp_path), json.dumps({"maxLazyRows": 5000})))["jobId"]
+    o = {"features": list(range(20)), "seed": 1}
+    assert J(pak.prepare(jid, json.dumps(o)))["ok"]
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    assert st["result"]["nKept"] == n
+
+    c = J(pak.colors(jid, 0))
+    assert c["dtype"] == "f32" and c["length"] == n
+
+
+# --- Arrow PyCapsule without narwhals ---
+
+class _ArrowCapsule:
+    """Minimal object implementing __arrow_c_stream__ for testing (wraps a pyarrow table)."""
+
+    def __init__(self, table) -> None:
+        self._table = table
+
+    def __arrow_c_stream__(self, requested_schema=None):
+        return self._table.__arrow_c_stream__(requested_schema)
+
+
+def test_arrow_capsule_no_narwhals(ns, tmp_path, monkeypatch):
+    """Arrow PyCapsule path works when narwhals is blocked."""
+    import pyarrow as pa
+
+    # Block narwhals import so the capsule path is exercised.
+    real_import = __import__
+
+    def block_narwhals(name, *a, **kw):
+        if name == "narwhals":
+            raise ImportError("narwhals blocked for test")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(pak, "_try_narwhals", lambda: None)
+
+    table = pa.table({f"f{i}": pa.array(np.random.default_rng(i).normal(size=200).tolist()) for i in range(5)})
+    table = table.append_column("label", pa.array([f"c{i % 3}" for i in range(200)]))
+
+    capsule = _ArrowCapsule(table)
+    ns["cap"] = capsule
+    d = J(pak.describe("cap"))
+    assert d["ok"] and d["nRows"] == 200 and d["nCols"] == 6
+    # With narwhals blocked, the frame should be polars kind (converted via pyarrow).
+    assert d["frameKind"] == "polars"
+
+
+# --- Lazy polars collected with limit ---
+
+def test_lazy_polars_collected_with_limit(ns, tmp_path):
+    ns["lz"] = pl.DataFrame({"x": list(range(1000)), "y": list(range(1000))}).lazy()
+    # Collect with a limit of 500 rows.
+    d = J(pak.describe("lz", json.dumps({"maxLazyRows": 500})))
+    assert d["ok"] and d["wasLazy"] is True
+    assert d["nRows"] == 500  # limited
+
+    # create_job also collects with limit
+    jid = J(pak.create_job("lz", str(tmp_path), json.dumps({"maxLazyRows": 100})))["jobId"]
+    assert J(pak.status(jid))["ok"]  # job created
+    job = pak._JOBS[jid]
+    assert job.frame.n_rows == 100
+
+
+# --- list_frames extended ---
+
+def test_list_frames_extended(ns):
+    pytest.importorskip("narwhals")
+    import pyarrow as pa
+
+    ns["pd_df"] = pd.DataFrame({"a": [1]})
+    ns["pl_df"] = pl.DataFrame({"a": [1, 2]})
+    ns["pl_lz"] = pl.DataFrame({"a": [1]}).lazy()
+    ns["pa_tbl"] = pa.table({"a": [1, 2, 3]})
+    ns["num"] = 42
+    r = J(pak.list_frames())
+    by_name = {f["name"]: f for f in r["frames"]}
+    assert "pd_df" in by_name and by_name["pd_df"]["kind"] == "pandas"
+    assert "pl_df" in by_name and by_name["pl_df"]["kind"] == "polars"
+    assert "pl_lz" in by_name and by_name["pl_lz"]["lazy"] is True
+    assert "pa_tbl" in by_name and by_name["pa_tbl"]["kind"] == "narwhals"
+    assert "num" not in by_name
+
+
+# --- Confirm pandas/polars paths unchanged ---
+
+def test_pandas_polars_describe_unchanged(ns, frame_kind):
+    """Existing pandas/polars describe still works after the _make_frame refactor."""
+    x, labels = make_blobs(500, 5)
+    ns["df"] = build_df(frame_kind, x, labels)
+    d = J(pak.describe("df"))
+    assert d["ok"] and d["nRows"] == 500
+    assert d["frameKind"] == frame_kind
+    assert not d.get("wasLazy", False)

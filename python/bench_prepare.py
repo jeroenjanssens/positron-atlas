@@ -29,6 +29,10 @@ def frame(n: int, d: int, kind: str, nan_frac: float = 0.0):
         import polars as pl
 
         return pl.from_numpy(x, schema=[f"f{i}" for i in range(d)])
+    if kind == "pyarrow":
+        import pyarrow as pa
+
+        return pa.table({f"f{i}": pa.array(x[:, i].tolist()) for i in range(d)})
     import pandas as pd
 
     return pd.DataFrame(x, columns=[f"f{i}" for i in range(d)], copy=False)
@@ -79,6 +83,8 @@ CONFIGS = [
     dict(n=1_000_000, d=200, pca=True, pca_dims=50),
     dict(n=10_000_000, d=20),
     dict(n=5_000_000, d=100, pca=True, pca_dims=20),
+    # narwhals via pyarrow (D-1): shows overhead versus native polars/pandas.
+    dict(n=1_000_000, d=50, kind="pyarrow"),
 ]
 
 if __name__ == "__main__":
