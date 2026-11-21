@@ -1,0 +1,16 @@
+[package]
+name = "atlas-core-py"
+description = "Python binding of atlas-core, loaded by the Positron Atlas kernel helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "_positron_atlas_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+atlas-core = { path = "../atlas-core" }
+pyo3 = { version = "0.30", features = ["abi3-py310", "extension-module"] }
+numpy = "0.30"

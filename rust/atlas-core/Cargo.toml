@@ -1,0 +1,11 @@
+[package]
+name = "atlas-core"
+description = "Positron Atlas: place rows on a 2D map from their nearest anchors (pure Rust)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+rayon = "1.12"
+gemm = "0.19"

@@ -19,3 +19,7 @@ snowflake.log
 examples/ggumap.html
 examples/ggumap_cache/
 examples/ggumap_files/
+
+# Rust core: build output (npm run build:native; CI builds release binaries)
+rust/target/
+native/

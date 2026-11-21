@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 import threading
 import time
 import traceback
@@ -26,6 +27,75 @@ VERSION = "0.1.0"
 _JOBS: dict[str, "_Job"] = {}
 _CHUNK_VALUES = 1 << 23  # ~32 MB of float32 per chunk
 _MAX_CATEGORIES = 20
+
+
+# --------------------------------------------------------------------------------------
+# Native core (Rust), loaded by path; numpy is the fallback
+# --------------------------------------------------------------------------------------
+
+_NATIVE: Any = None
+_NATIVE_INFO: dict[str, Any] = {}
+
+
+def _native_target() -> str:
+    """This machine as a VS Code platform name (darwin-arm64, linux-x64, win32-x64, ...)."""
+    import platform
+
+    machine = platform.machine().lower()
+    arch = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(machine, machine)
+    plat = "win32" if sys.platform.startswith("win") else sys.platform
+    return f"{plat}-{arch}"
+
+
+def _native_core() -> Any:
+    """The Rust core bundled with the extension (native/<platform>/_positron_atlas_core.*), or None.
+
+    It is loaded by path, like this helper: nothing is installed and nothing enters the user's
+    namespace. When it is missing, does not load, or has another version, the numpy code is used
+    and ``_NATIVE_INFO["reason"]`` says why. Set POSITRON_ATLAS_NO_NATIVE=1 to turn it off.
+    """
+    global _NATIVE
+    if _NATIVE is not None or _NATIVE_INFO:
+        return _NATIVE
+    _NATIVE_INFO["available"] = False
+    try:
+        import importlib.machinery
+        import importlib.util
+
+        if os.environ.get("POSITRON_ATLAS_NO_NATIVE"):
+            raise RuntimeError("turned off with POSITRON_ATLAS_NO_NATIVE")
+        if sys.implementation.name != "cpython" or sys.version_info < (3, 10):
+            raise RuntimeError(f"needs CPython 3.10 or newer, not {sys.implementation.name} {sys.version.split()[0]}")
+        target = _native_target()
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "native", target)
+        files = sorted(
+            f
+            for f in (os.listdir(base) if os.path.isdir(base) else [])
+            if f.startswith("_positron_atlas_core.") and any(f.endswith(sfx) for sfx in importlib.machinery.EXTENSION_SUFFIXES)
+        )
+        if not files:
+            raise RuntimeError(f"no native core for {target}")
+        path = os.path.normpath(os.path.join(base, files[0]))
+        name = "_positron_atlas_core"
+        mod = sys.modules.get(name)
+        if mod is None or os.path.normpath(getattr(mod, "__file__", "") or "") != path:
+            loader = importlib.machinery.ExtensionFileLoader(name, path)
+            spec = importlib.util.spec_from_file_location(name, path, loader=loader)
+            mod = importlib.util.module_from_spec(spec)
+            loader.exec_module(mod)
+            sys.modules[name] = mod
+        if getattr(mod, "VERSION", None) != VERSION:
+            raise RuntimeError(f"native core version {getattr(mod, 'VERSION', None)}, helper {VERSION}")
+        _NATIVE = mod
+        _NATIVE_INFO.update(available=True, version=mod.VERSION, path=path, target=target)
+    except Exception as e:  # noqa: BLE001 - any failure means: use numpy
+        _NATIVE_INFO["reason"] = f"{type(e).__name__}: {e}"
+    return _NATIVE
+
+
+def _native_status() -> dict[str, Any]:
+    _native_core()
+    return {k: v for k, v in _NATIVE_INFO.items() if k in ("available", "version", "target", "reason")}
 
 
 # --------------------------------------------------------------------------------------
@@ -270,6 +340,7 @@ def describe(name: str) -> str:
             "nCols": frame.n_cols,
             "columns": cols,
             "deps": _optional_deps(),
+            "native": _native_status(),
         }
     )
 
@@ -817,6 +888,9 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     cosine = opts.get("metric", "euclidean") == "cosine"
     chunk_rows = int(opts.get("chunkRows", 1_000_000))
     anchors = np.ascontiguousarray(x[job.anchor_pos], dtype=np.float32)
+    core = _native_core() if opts.get("native", True) else None
+    if core is not None:
+        return _project_native(job, core, anchors, anchor_xy, k, cosine, int(opts.get("seed", 0)), chunk_rows)
     if cosine:
         anchors = anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12)
     job.set("indexing", 0.0, f"Indexing {len(anchors):,} anchors")
@@ -850,7 +924,46 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
         n_files += 1
     job.set("finishing", 1.0)  # raises if this task was superseded
     job.xy = xy_all
-    return {"nRows": n, "files": n_files, "seconds": time.time() - t0}
+    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "numpy"}
+
+
+def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.ndarray, k: int, cosine: bool, seed: int, chunk_rows: int) -> dict[str, Any]:
+    """Place rows with the Rust core: the same algorithm, multithreaded, with the GIL released."""
+    x = job.features
+    n = len(x)
+    if not (x.dtype == np.float32 and x.flags.c_contiguous):
+        x = np.ascontiguousarray(x, dtype=np.float32)
+    job.set("indexing", 0.0, f"Indexing {len(anchors):,} anchors")
+    index = core.Index(anchors, seed=seed, cosine=cosine)
+    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
+    xy_all = np.empty((n, 2), dtype=np.float32)
+    xy_all[job.anchor_pos] = anchor_xy
+    is_anchor = np.zeros(n, dtype=bool)
+    is_anchor[job.anchor_pos] = True
+    t0 = time.time()
+    n_files = 0
+    for fstart in range(0, n, chunk_rows):
+        fstop = min(n, fstart + chunk_rows)
+        rows = (np.flatnonzero(~is_anchor[fstart:fstop]) + fstart).astype(np.int64)
+
+        def progress(done: int, fstart: int = fstart, fstop: int = fstop, total: int = len(rows)) -> None:
+            e = fstart + (fstop - fstart) * done / max(total, 1)
+            el = time.time() - t0
+            eta = el / (e / n) * (1 - e / n) if e > 0 else 0
+            # Raises _Cancelled when the job is cancelled or superseded; the core stops there.
+            job.set("projecting", e / n, f"Placed {int(e):,}/{n:,} rows (≈{eta:.0f}s left)")
+
+        if len(rows):
+            core_ok = index.place(x, rows, anchor_xy, xy_all, k, progress=progress, block_rows=65_536)
+            if not core_ok:
+                raise _Cancelled()
+        fname = f"xy_{n_files:04d}.f32"
+        _write(job, fname, xy_all[fstart:fstop])
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
+        n_files += 1
+    job.set("finishing", 1.0)
+    job.xy = xy_all
+    return {"nRows": n, "files": n_files, "seconds": time.time() - t0, "backend": "rust"}
 
 
 @_guard
@@ -910,7 +1023,7 @@ def exact_umap(job_id: str, params_json: str = "{}") -> str:
 
 
 @_guard
-def estimate_projection(job_id: str) -> str:
+def estimate_projection(job_id: str, native: bool = True) -> str:
     """Rough cost estimate (flops) for projecting; the extension turns it into seconds."""
     job = _get(job_id)
     if job.features is None or job.anchor_pos is None:
@@ -919,7 +1032,8 @@ def estimate_projection(job_id: str) -> str:
     a = len(job.anchor_pos)
     cells = 1 if a <= 4096 else min(1024, max(16, round(math.sqrt(a))))
     per_query = (cells + 4 * a / cells) * d if a > 4096 else a * d
-    return _json({"ok": True, "flops": float(2 * (n - a) * per_query), "rows": int(n - a)})
+    backend = "rust" if native and _native_core() is not None else "numpy"
+    return _json({"ok": True, "flops": float(2 * (n - a) * per_query), "rows": int(n - a), "backend": backend})
 
 
 # --------------------------------------------------------------------------------------

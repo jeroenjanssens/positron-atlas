@@ -174,7 +174,10 @@ def test_anchor_index_exact_small():
     assert np.array_equal(ii, truth)
 
 
-def test_project_places_points_near_their_cluster(ns, frame_kind, tmp_path):
+@pytest.mark.parametrize("native", [True, False])
+def test_project_places_points_near_their_cluster(ns, frame_kind, tmp_path, native):
+    if native and pak._native_core() is None:
+        pytest.skip(f"native core not available: {pak._NATIVE_INFO.get('reason')}")
     jid, st, _, labels = prepared(ns, frame_kind, tmp_path, maxAnchors=400)
     job = pak._JOBS[jid]
     # Fake anchor layout: put each cluster's anchors at a distinct 2D location.
@@ -183,9 +186,10 @@ def test_project_places_points_near_their_cluster(ns, frame_kind, tmp_path):
     axy = centers[anchor_labels] + np.random.default_rng(0).normal(0, 1, (400, 2)).astype(np.float32)
     path = tmp_path / "axy.f32"
     axy.astype("<f4").tofile(path)
-    pak.project(jid, str(path), json.dumps({"k": 10, "chunkRows": 1000}))
+    pak.project(jid, str(path), json.dumps({"k": 10, "chunkRows": 1000, "native": native}))
     st = wait(jid)
     assert st["stage"] == "done", st
+    assert st["result"]["backend"] == ("rust" if native else "numpy")
     files = [o for o in st["outputs"] if o["kind"] == "xy"]
     assert len(files) == 3 and files[1]["offset"] == 1000
     xy = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 2) for f in files])
