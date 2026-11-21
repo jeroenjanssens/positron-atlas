@@ -15,16 +15,67 @@ jobs:
           node-version: 22
           cache: npm
       - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - name: Python tests
+      - name: Rust tests
+        run: npm run test:rust
+      - name: Build the Rust core (manylinux2014)
+        run: npm run build:native -- --release
+      - name: Python tests (Rust core)
         run: uv run --project python pytest python/tests -q
+      - name: Python tests (numpy fallback)
+        run: uv run --project python pytest python/tests -q
+        env:
+          POSITRON_ATLAS_NO_NATIVE: "1"
       - name: Type check
         run: npm run check
       - name: Unit tests
         run: npm test
-      - name: Package
+      - name: Package (universal, numpy only)
         run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: vsix
+          name: vsix-universal
+          path: '*.vsix'
+
+  # One VSIX per platform with the Rust core for that platform. Targets without a native runner
+  # here are cross-compiled and not tested (they are tested by the same code on the other targets).
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, os: ubuntu-latest, test: true }
+          - { target: linux-arm64, os: ubuntu-latest, rust-target: aarch64-unknown-linux-gnu, test: false }
+          - { target: darwin-arm64, os: macos-14, test: true }
+          - { target: darwin-x64, os: macos-14, rust-target: x86_64-apple-darwin, test: false }
+          - { target: win32-x64, os: windows-latest, test: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Build the Rust core
+        shell: bash
+        run: |
+          args=(--release --target "${{ matrix.target }}")
+          if [ -n "${{ matrix.rust-target }}" ]; then args+=(--rust-target "${{ matrix.rust-target }}"); fi
+          uv run --project python python scripts/build_native.py "${args[@]}"
+      - name: Python tests (Rust core)
+        if: matrix.test
+        run: uv run --project python pytest python/tests -q
+      - name: Package
+        run: node scripts/package.mjs --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
           path: '*.vsix'

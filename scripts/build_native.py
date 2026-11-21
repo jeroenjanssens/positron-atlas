@@ -1,6 +1,6 @@
 """Build the Rust core and put it where the kernel helper looks for it.
 
-    uv run --project python python scripts/build_native.py [--release] [--wheel PATH] [--target darwin-arm64]
+    uv run --project python python scripts/build_native.py [--release] [--rust-target TRIPLE] [--wheel PATH] [--target darwin-arm64]
 
 Builds rust/atlas-core-py with maturin (stable ABI, CPython >= 3.10) unless --wheel is given, and
 copies the extension module out of the wheel into native/<target>/, where <target> is a VS Code
@@ -44,7 +44,7 @@ def check_versions() -> str:
     return pkg
 
 
-def build_wheel(release: bool) -> Path:
+def build_wheel(release: bool, rust_target: str | None) -> Path:
     out = ROOT / "rust" / "target" / "wheels"
     for old in out.glob("positron_atlas_core-*.whl"):
         old.unlink()
@@ -52,6 +52,8 @@ def build_wheel(release: bool) -> Path:
     portable = release and sys.platform.startswith("linux")
     if portable:
         cmd += ["--zig", "--compatibility", "manylinux2014"]
+    if rust_target:
+        cmd += ["--target", rust_target]
     if shutil.which("maturin") is None:
         cmd = ["uvx", *(["--with", "ziglang"] if portable else []), *cmd]
     subprocess.run(cmd, check=True)
@@ -66,9 +68,10 @@ def main() -> None:
     ap.add_argument("--wheel", type=Path, help="use this wheel instead of building one")
     ap.add_argument("--target", default=host_target(), help="VS Code platform name (default: this machine)")
     ap.add_argument("--release", action="store_true", help="portable build (manylinux2014 on Linux, via Zig)")
+    ap.add_argument("--rust-target", help="cross-compile for this Rust target (e.g. aarch64-unknown-linux-gnu, x86_64-apple-darwin)")
     args = ap.parse_args()
     version = check_versions()
-    wheel = args.wheel or build_wheel(args.release)
+    wheel = args.wheel or build_wheel(args.release, args.rust_target)
     dest = ROOT / "native" / args.target
     if dest.exists():
         shutil.rmtree(dest)

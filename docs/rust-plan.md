@@ -130,7 +130,14 @@ A pure Rust library, no Python, so it is testable with `cargo test` alone.
 - **Done when:** the harness scenarios pass with the native core loaded, and `python/bench.py`
   shows the speed-up end to end.
 
-### Phase R3: packaging and CI — [ ]
+### Phase R3: packaging and CI — [x] (macOS, Windows and remote checks still to do on real machines)
+
+Done: `scripts/build_native.py` (`--release`: manylinux2014 via Zig, verified glibc ≤ 2.17;
+`--rust-target` for cross builds, verified for linux-arm64), `scripts/package.mjs` (universal VSIX
+without a binary; `--target T` with native/T only), and a CI matrix for all five targets
+(darwin-x64 and linux-arm64 cross-compiled, not tested). Loading the core from an unpacked VSIX was
+verified on linux-x64. Not verifiable in this container: the macOS, Windows and Remote-SSH checks
+listed below.
 
 - **Build:** `npm run build:native` runs `maturin build --release` (abi3) and copies the module into
   `native/<platform>-<arch>/`. Development builds use the local toolchain.

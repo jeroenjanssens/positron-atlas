@@ -8,7 +8,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 
 - **Live UMAP in the browser.** UMAP runs in a web worker using the Rust/WASM port from [apple/embedding-atlas](https://github.com/apple/embedding-atlas), on the GPU (WebGPU) when available. You watch the layout converge.
 - **Live parameters.** `min_dist`, `spread`, repulsion strength, negative sample rate and learning rate change the running layout. `n_neighbors`, metric, epochs and seed rebuild the neighbor graph.
-- **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, with numpy only and streamed in chunks.
+- **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, streamed in chunks. Platform builds include a small Rust core that does this 8–13× faster (10⁷ rows in about 15 s on 4 cores); elsewhere, or with `positronAtlas.nativeCore` off, the same algorithm runs in numpy.
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
 - **Labels on the map.** Label the map by a categorical column, or by **automatic clusters** of the layout (density clustering from embedding-atlas, with outlines). Each label is written at the densest spot of its points, sized by group size, and labels that would overlap are hidden (larger groups win). Clusters can be named by number, by their most distinguishing columns ("↑ income ↓ age", computed in the kernel) or by the most common value of a column.
 - **Color by any column.** Numeric and datetime columns get continuous colormaps (viridis, cividis, magma, …). Text, categorical, boolean and low-cardinality integer columns get categorical colors, with a legend. By default the categorical palette follows the map: groups that are close together get related hues and outlying groups are more saturated (after DataMapPlot).
@@ -105,6 +105,7 @@ _positron_atlas helper  <-JSON-  KernelBridge (evaluateCode)    Svelte UI
 | `positronAtlas.defaultSamplePct` | 100 | Default sample percentage |
 | `positronAtlas.pcaEnabled` | false | Apply PCA by default |
 | `positronAtlas.pcaDims` | 50 | Default PCA components |
+| `positronAtlas.nativeCore` | true | Place rows with the bundled Rust core when this platform has one (numpy otherwise) |
 
 ## Performance
 
@@ -128,6 +129,18 @@ just test                # type checks, vitest, pytest
 just e2e                 # end-to-end tests in an isolated Positron
 just package             # build the .vsix
 ```
+
+The Rust core for placing rows lives in `rust/` (see `docs/rust-plan.md`). It needs a Rust
+toolchain to build; without it, Atlas uses the numpy code:
+
+```sh
+npm run build:native                          # native/<this platform>/ (use --release for a portable Linux build)
+npm run test:rust                             # cargo tests
+npm run package                               # universal .vsix (numpy only)
+npm run package:target -- linux-x64           # platform .vsix with that platform's Rust core
+```
+
+CI builds the platform VSIX files for darwin-arm64, darwin-x64, linux-x64, linux-arm64 and win32-x64.
 
 Or with npm directly:
 
