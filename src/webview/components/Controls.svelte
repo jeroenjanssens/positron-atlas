@@ -3,6 +3,7 @@
   import MapTab from './MapTab.svelte';
   import ExploreTab from './ExploreTab.svelte';
   import AnnotateTab from './AnnotateTab.svelte';
+  import ExportTab from './ExportTab.svelte';
   import { formatCount } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
@@ -10,7 +11,8 @@
   const tabs: { id: SidebarTab; label: string; hint: string }[] = [
     { id: 'map', label: 'Map', hint: 'How the map is computed: data, UMAP and placing all rows' },
     { id: 'explore', label: 'Explore', hint: 'What is in the map: colors, display and selection' },
-    { id: 'annotate', label: 'Annotate', hint: 'What the map means: labels, tags and sharing' },
+    { id: 'annotate', label: 'Annotate', hint: 'What the map means: labels and tags' },
+    { id: 'export', label: 'Export', hint: 'Take the map out of Atlas: PNG, columns and DataFrames, code' },
   ];
 
   function onKey(e: KeyboardEvent) {
@@ -50,5 +52,8 @@
   </div>
   <div id="panel-annotate" class="tab-panel" role="tabpanel" aria-labelledby="tab-annotate" hidden={atlas.ui.tab !== 'annotate'}>
     <AnnotateTab {atlas} />
+  </div>
+  <div id="panel-export" class="tab-panel" role="tabpanel" aria-labelledby="tab-export" hidden={atlas.ui.tab !== 'export'}>
+    <ExportTab {atlas} />
   </div>
 </div>

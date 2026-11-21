@@ -28,26 +28,28 @@ Non-goals (for now):
 - Standalone HTML output, offline mode, logos and fonts. These matter for publishing, not inside an IDE.
 - Edge bundling (needs datashader and dask).
 
-## 2. Interface: three groups
+## 2. Interface: four groups
 
-The sidebar currently has five sections: Data, UMAP, Color, Display, Actions. New features would
-make it a long scroll. The sidebar becomes three tabs, each answering one question:
+The sidebar had five sections: Data, UMAP, Color, Display, Actions. New features would make it a
+long scroll. The sidebar becomes four tabs, each answering one question:
 
 | Tab | Question | Sections |
 |---|---|---|
-| **Map** | How is the map computed? | Data · UMAP · Result (place all rows, add coordinates to the DataFrame, copy as Python) |
+| **Map** | How is the map computed? | Data · UMAP · Result (place all rows) |
 | **Explore** | What is in the map? | Color · Display · Selection |
-| **Annotate** | What does it mean? | Labels · Tags · Share (copy as DataMapPlot code) |
+| **Annotate** | What does it mean? | Labels · Tags |
+| **Export** | How do I take it out of Atlas? | Image (PNG) · To the DataFrame (coordinates, a DataFrame of the selection) · Code (umap-learn, DataMapPlot) |
 
-The tabs keep the sections collapsible, as today. Actions that apply to the canvas itself move
-to a small **toolbar on the plot** (top left, next to the collapse button):
+The Export tab was added after phase G: everything that leaves Atlas (a file, new columns or a new
+DataFrame, code) is in one place. Writing tags and cluster names stays on Annotate, since that is
+annotating. The tabs keep the sections collapsible. Tools that act on the canvas itself are on a
+small **toolbar on the plot** (top left, next to the collapse button):
 
 | Tool | Effect |
 |---|---|
 | Pan (default) | Drag to pan, scroll to zoom, hover for tooltips |
 | Lasso | Drag to select points; Shift adds, Alt removes |
-| Fit to view | Same as today |
-| Export PNG | Same as today, now includes labels |
+| Fit to view | Same as before |
 
 Rules for the interface:
 
@@ -178,7 +180,7 @@ When there is no label column:
   `atlas_cluster` (rows in no cluster: missing). Tags and clusters share one kernel function,
   `write_labels`; afterwards the panel re-reads the columns so the new column can be used for
   colors and labels without a reload.
-- **Annotate → Share → Copy as DataMapPlot code**: Python that builds the same picture with
+- **Copy as DataMapPlot code** (now Export → Code): Python that builds the same picture with
   `datamapplot.create_interactive_plot`, using the coordinate columns and the label column (pandas
   or polars). It reminds the user to add the coordinates first. The harness runs the snippet
   against the real DataFrame with a stub `datamapplot` that checks the arguments.

@@ -59,7 +59,7 @@ The **Anchors** slider in the Data section changes it per tab, within the last t
 
 ### Controls
 
-The sidebar has three tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Fit to view** and **Export PNG**.
+The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select** and **Fit to view**.
 
 | Tab | Section | Control | Effect |
 |---|---|---|---|
@@ -67,13 +67,15 @@ The sidebar has three tabs. The plot has its own toolbar (top left): **Pan and z
 | Map | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
 | Map | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
 | Map | UMAP | Pause, +1 / +10 epochs, resume, done; restart paused | Step through the optimization epoch by epoch |
-| Map | Result | Place all rows, add coordinates to the DataFrame, copy as Python | |
+| Map | Result | Place all rows (when UMAP ran on anchors) | Kernel |
 | Explore | Color | Color by, treat as categories, palette (follows the map or Tableau 20), colormap, range | Recolors |
 | Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
-| Explore | Selection | Selected rows, clear, invert, compare with all rows, new DataFrame | Comparison and new DataFrame run in the kernel |
-| Annotate | Tags | Tag the selected rows (writes a string column, `atlas_tag` by default) | Writes to the DataFrame after a confirmation |
-| Annotate | Share | Copy as DataMapPlot code | Python for `datamapplot.create_interactive_plot` |
+| Explore | Selection | Selected rows, clear, invert, compare with all rows | The comparison runs in the kernel |
 | Annotate | Labels | Label by a column or by automatic clusters (detail, name by number, distinguishing columns or the most common value of a column, outlines), smallest and largest label size, color labels like the points | Rendering; clusters are found when the layout settles |
+| Annotate | Tags | Tag the selected rows (writes a string column, `atlas_tag` by default) | Writes to the DataFrame after a confirmation |
+| Export | Image | Export PNG (with labels and outlines) | |
+| Export | To the DataFrame | Add coordinates (`umap_x`, `umap_y`), new DataFrame from the selection | Kernel; asks before modifying the DataFrame |
+| Export | Code | Copy as Python (umap-learn), copy as DataMapPlot code | Clipboard |
 
 The active tab and collapsed sections are remembered per tab.
 

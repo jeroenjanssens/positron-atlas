@@ -15,7 +15,7 @@
         "(() => { const e = document.querySelector('[data-section=result]'); return !!e && e.offsetParent !== null; })()",
         "!(() => { const e = document.querySelector('[data-section=color]'); return !!e && e.offsetParent !== null; })()",
         "document.querySelector('#tab-map').getAttribute('aria-selected') === 'true'",
-        "[...document.querySelectorAll('.controls .tab')].map(t => t.textContent.trim()).join(',') === 'Map,Explore,Annotate'",
+        "[...document.querySelectorAll('.controls .tab')].map(t => t.textContent.trim()).join(',') === 'Map,Explore,Annotate,Export'",
         "document.querySelector('.controls .buttons button').textContent.includes('Restart')"
       ]
     },
@@ -60,13 +60,55 @@
       "name": "fit to view from toolbar",
       "eval": "a.renderer.viewState.zoom -= 2; a.fitView()",
       "assert": [
-        "document.querySelectorAll('.plot-toolbar .tool').length === 4"
+        "document.querySelectorAll('.plot-toolbar .tool').length === 3"
       ]
     },
     {
-      "name": "export png from toolbar",
-      "click": ".plot-toolbar [aria-label='Export PNG']",
+      "name": "export tab",
+      "until": "a.ui.tab === 'export'",
+      "click": "#tab-export",
+      "assert": [
+        "(() => { const e = document.querySelector('[data-section=export-image]'); return !!e && e.offsetParent !== null; })()",
+        "(() => { const e = document.querySelector('[data-section=export-frame]'); return !!e && e.offsetParent !== null; })()",
+        "(() => { const e = document.querySelector('[data-section=export-code]'); return !!e && e.offsetParent !== null; })()",
+        "!(() => { const e = document.querySelector('[data-section=result]'); return !!e && e.offsetParent !== null; })()",
+        "!document.querySelector('.plot-toolbar [aria-label=\"Export PNG\"]')"
+      ],
+      "screenshot": "ui-export.png"
+    },
+    {
+      "name": "export png",
+      "eval": "[...document.querySelectorAll('[data-section=export-image] button')].find(b => b.textContent.includes('Export PNG')).click()",
       "until": "h.png.startsWith('data:image/png')"
+    },
+    {
+      "name": "add coordinates",
+      "eval": "[...document.querySelectorAll('[data-section=export-frame] button')].find(b => b.textContent.includes('Add coordinates')).click()",
+      "until": "a.toast && a.toast.includes('umap_x')"
+    },
+    {
+      "name": "new DataFrame needs a selection",
+      "assert": [
+        "[...document.querySelectorAll('[data-section=export-frame] button')].find(b => b.textContent.includes('New DataFrame')).disabled"
+      ]
+    },
+    {
+      "name": "new DataFrame from the selection",
+      "eval": "const m = new Uint8Array(a.nKept); m.fill(1, 0, 10); a.setSelection(m); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('[data-section=export-frame] button')].find(b => b.textContent.includes('New DataFrame')).click()",
+      "until": "h.log.some(l => l.includes('Created df_selection with 10 selected rows'))",
+      "assert": [
+        "[...document.querySelectorAll('[data-section=export-frame] button')].find(b => b.textContent.includes('New DataFrame')).textContent.includes('10 selected rows')"
+      ]
+    },
+    {
+      "name": "copy as Python",
+      "eval": "a.clearSelection(); [...document.querySelectorAll('[data-section=export-code] button')].find(b => b.textContent.includes('umap-learn')).click()",
+      "until": "h.clipboard.includes('umap.UMAP(')"
+    },
+    {
+      "name": "copy as DataMapPlot code",
+      "eval": "[...document.querySelectorAll('[data-section=export-code] button')].find(b => b.textContent.includes('DataMapPlot')).click()",
+      "until": "h.clipboard.includes('datamapplot.create_interactive_plot')"
     },
     {
       "name": "restore ui from saved state",

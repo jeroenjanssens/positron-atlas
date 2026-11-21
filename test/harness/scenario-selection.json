@@ -105,7 +105,7 @@
     },
     {
       "name": "new DataFrame from the selection",
-      "eval": "[...document.querySelectorAll('[data-section=selection] button')].find(b => b.textContent.includes('New DataFrame')).click()",
+      "eval": "[...document.querySelectorAll('[data-section=export-frame] button')].find(b => b.textContent.includes('New DataFrame')).click()",
       "until": "h.log.some(l => l.includes('Created mnist_selection'))",
       "assert": [
         "h.log.some(l => l.includes('Created mnist_selection with ' + a.selectedCount + ' selected rows'))"

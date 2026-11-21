@@ -180,14 +180,13 @@
     {/if}
 </Section>
 
-<Section {atlas} id="result" title="Result">
-    {#if atlas.prepared?.needsProjection}
+{#if atlas.prepared?.needsProjection}
+  <Section {atlas} id="result" title="Result">
       <button class="primary" disabled={atlas.phase !== 'ready' || atlas.projection === 'running' || atlas.projection === 'done'} onclick={() => atlas.project()}>
         {atlas.projection === 'done' ? 'All rows placed' : `Place all ${formatCount(atlas.nKept)} rows`}
         {#if atlas.estimate && atlas.projection === 'stale'} (≈ {formatSeconds(atlas.estimate.seconds)}){/if}
       </button>
       {#if atlas.projection === 'running'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
-    {/if}
-    <button disabled={atlas.phase !== 'ready'} onclick={() => atlas.addCoordinates()}>Add coordinates to DataFrame</button>
-    <button onclick={() => atlas.copyPython()}>Copy as Python (umap-learn)</button>
-</Section>
+      <div class="hint muted">UMAP runs on the anchors; this places every other row next to its nearest anchors.</div>
+  </Section>
+{/if}

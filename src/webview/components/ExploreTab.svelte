@@ -128,8 +128,8 @@
         title="How the selected rows differ from all rows: column means and over-represented values">
         {atlas.comparing ? 'Comparing…' : 'Compare with all rows'}
       </button>
-      <button onclick={() => atlas.selectionToFrame()} title="Create a new DataFrame in the session with the selected rows">New DataFrame</button>
     </div>
+    <div class="hint muted">To make a DataFrame of these rows, see Export → To the DataFrame.</div>
     {#if atlas.comparison}
       {@const c = atlas.comparison}
       <div class="compare" aria-label="Comparison of the selection with all rows">

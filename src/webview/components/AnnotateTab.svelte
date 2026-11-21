@@ -125,11 +125,3 @@
     {#if !atlas.selection}Select points first, with the lasso tool or Shift-drag.{:else}Writes the tag into {tagColumn.trim() || 'the column'} of {atlas.variable}; you can then color or label by it.{/if}
   </div>
 </Section>
-
-<Section {atlas} id="share" title="Share">
-  <button onclick={() => atlas.copyDataMapPlot()} title="Python that draws this map with DataMapPlot, from the coordinates and the label column in the DataFrame">Copy as DataMapPlot code</button>
-  <div class="hint muted">
-    Uses umap_x and umap_y: add them first (Map → Result → Add coordinates to DataFrame).
-    {#if atlas.labels.clusters}Labels come from atlas_cluster (Add clusters to DataFrame).{/if}
-  </div>
-</Section>

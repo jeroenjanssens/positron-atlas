@@ -49,7 +49,7 @@ export interface ViewOptions {
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
 
-export type SidebarTab = 'map' | 'explore' | 'annotate';
+export type SidebarTab = 'map' | 'explore' | 'annotate' | 'export';
 
 export interface UiState {
   tab: SidebarTab;
@@ -340,7 +340,7 @@ export class Atlas {
     if (state?.ui) {
       const tab = state.ui.tab;
       this.ui = {
-        tab: tab === 'map' || tab === 'explore' || tab === 'annotate' ? tab : 'map',
+        tab: tab === 'map' || tab === 'explore' || tab === 'annotate' || tab === 'export' ? tab : 'map',
         closed: Array.isArray(state.ui.closed) ? state.ui.closed.filter((x) => typeof x === 'string') : [],
       };
     }

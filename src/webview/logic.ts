@@ -201,7 +201,7 @@ export function formatPercent(p: number): string {
 export function dataMapPlotSnippet(variable: string, frameKind: 'pandas' | 'polars', labelColumn: string | null): string {
   const col = (name: string) => JSON.stringify(name);
   const lines = [
-    '# Atlas: Map → Result → "Add coordinates to DataFrame" adds umap_x and umap_y.',
+    '# Atlas: Export → To the DataFrame → "Add coordinates" adds umap_x and umap_y.',
     '# pip install datamapplot',
     'import datamapplot',
   ];

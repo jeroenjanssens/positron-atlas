@@ -174,7 +174,7 @@ export interface PanelState {
   };
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */
-  ui?: { tab?: 'map' | 'explore' | 'annotate'; closed?: string[] };
+  ui?: { tab?: 'map' | 'explore' | 'annotate' | 'export'; closed?: string[] };
 }
 
 export type ToWebview =
