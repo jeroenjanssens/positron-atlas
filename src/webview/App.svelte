@@ -3,6 +3,7 @@
   import { Atlas } from './atlas.svelte';
   import Controls from './components/Controls.svelte';
   import Legend from './components/Legend.svelte';
+  import PlotToolbar from './components/PlotToolbar.svelte';
   import PixelImage from './components/PixelImage.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
 
@@ -30,7 +31,7 @@
   // Persist settings (debounced) so the tab can be restored.
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn]);
+    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui]);
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => atlas.variable && atlas.persist(), 400);
   });
@@ -85,6 +86,7 @@
   </aside>
   <main bind:clientWidth={mainW} bind:clientHeight={mainH}>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
+    <PlotToolbar {atlas} />
     <div class="plot" bind:this={plot} style:background={atlas.view.background || null}></div>
     <Legend {atlas} />
     {#if atlas.tooltip}

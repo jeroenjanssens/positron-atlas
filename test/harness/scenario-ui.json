@@ -1,0 +1,82 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": "ui-map.png",
+  "steps": [
+    {
+      "name": "map tab is default",
+      "assert": [
+        "a.ui.tab === 'map'",
+        "(() => { const e = document.querySelector('[data-section=data]'); return !!e && e.offsetParent !== null; })()",
+        "(() => { const e = document.querySelector('[data-section=umap]'); return !!e && e.offsetParent !== null; })()",
+        "(() => { const e = document.querySelector('[data-section=result]'); return !!e && e.offsetParent !== null; })()",
+        "!(() => { const e = document.querySelector('[data-section=color]'); return !!e && e.offsetParent !== null; })()",
+        "document.querySelector('#tab-map').getAttribute('aria-selected') === 'true'",
+        "[...document.querySelectorAll('.controls .tab')].map(t => t.textContent.trim()).join(',') === 'Map,Explore'",
+        "document.querySelector('.controls .buttons button').textContent.includes('Restart')"
+      ]
+    },
+    {
+      "name": "explore tab",
+      "click": "#tab-explore",
+      "until": "a.ui.tab === 'explore'",
+      "assert": [
+        "(() => { const e = document.querySelector('[data-section=color]'); return !!e && e.offsetParent !== null; })()",
+        "(() => { const e = document.querySelector('[data-section=display]'); return !!e && e.offsetParent !== null; })()",
+        "!(() => { const e = document.querySelector('[data-section=data]'); return !!e && e.offsetParent !== null; })()",
+        "document.querySelector('#tab-explore').getAttribute('aria-selected') === 'true'"
+      ],
+      "screenshot": "ui-explore.png"
+    },
+    {
+      "name": "keyboard: ArrowLeft goes back to Map",
+      "eval": "document.querySelector('#tab-explore').focus(); document.querySelector('#tab-explore').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))",
+      "until": "a.ui.tab === 'map'",
+      "assert": [
+        "document.activeElement && document.activeElement.id === 'tab-map'"
+      ]
+    },
+    {
+      "name": "collapse a section",
+      "click": "[data-section=umap] > summary",
+      "until": "a.ui.closed.includes('umap')",
+      "assert": [
+        "!document.querySelector('[data-section=umap]').open"
+      ]
+    },
+    {
+      "name": "state persists",
+      "until": "h.state && h.state.ui && h.state.ui.closed.includes('umap') && h.state.ui.tab === 'map'"
+    },
+    {
+      "name": "reopen section",
+      "click": "[data-section=umap] > summary",
+      "until": "!a.ui.closed.includes('umap')"
+    },
+    {
+      "name": "fit to view from toolbar",
+      "eval": "a.renderer.viewState.zoom -= 2; a.fitView()",
+      "assert": [
+        "document.querySelectorAll('.plot-toolbar .tool').length === 2"
+      ]
+    },
+    {
+      "name": "export png from toolbar",
+      "click": ".plot-toolbar [aria-label='Export PNG']",
+      "until": "h.png.startsWith('data:image/png')"
+    },
+    {
+      "name": "restore ui from saved state",
+      "eval": "a['onInit'](a.describe, a.settings, a.variable, { ...h.state, ui: { tab: 'explore', closed: ['display', 42] } })",
+      "until": "a.ui.tab === 'explore'",
+      "assert": [
+        "a.ui.closed.length === 1 && a.ui.closed[0] === 'display'",
+        "!document.querySelector('[data-section=display]').open"
+      ],
+      "timeout": 60000
+    }
+  ]
+}

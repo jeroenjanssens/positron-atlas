@@ -131,6 +131,8 @@ export interface PanelState {
   umap?: UmapParams;
   colorColumn?: number | null;
   view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number; imageInvert?: boolean };
+  /** Sidebar tab and the ids of collapsed sections. */
+  ui?: { tab?: 'map' | 'explore' | 'annotate'; closed?: string[] };
 }
 
 export type ToWebview =

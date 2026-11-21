@@ -76,13 +76,14 @@ bundle in Chromium against the real kernel helper:
   `steps` (`eval`, `until`, `report`, `screenshot`) and fails on webview errors.
 - `npm run test:harness` runs the harness scenarios. `test/e2e` stays the check in real Positron.
 
-### Phase B: grouped interface — [ ]
+### Phase B: grouped interface — [x]
 
 - Split `Controls.svelte` into `MapTab`, `ExploreTab` and `AnnotateTab` plus a shared `Section`
   component. No behavior changes.
 - Add `PlotToolbar.svelte` (pan/lasso, fit, PNG).
 - Persist `ui: { tab, closed: string[] }` in `PanelState`.
-- Harness scenario that clicks every tab and checks the expected sections.
+- Harness scenario that clicks every tab and checks the expected sections (`test/harness/scenario-ui.json`).
+- The Annotate tab appears with its first section (labels, phase C), so it is never empty.
 
 ### Phase C: labels from a column — [ ]
 

@@ -39,6 +39,14 @@ export interface ViewOptions {
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
 
+export type SidebarTab = 'map' | 'explore' | 'annotate';
+
+export interface UiState {
+  tab: SidebarTab;
+  /** Ids of collapsed sidebar sections. */
+  closed: string[];
+}
+
 /** Auto-place all rows after UMAP when the estimate is below this many seconds. */
 const AUTO_PROJECT_SECONDS = 20;
 
@@ -62,6 +70,7 @@ export class Atlas {
   applied = $state.raw<PrepareOptions | null>(null);
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
   view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false });
+  ui = $state<UiState>({ tab: 'map', closed: [] });
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
@@ -251,6 +260,13 @@ export class Atlas {
     this.useGpu = this.useGpuFor(settings);
     if (state?.umap) {
       this.umap = { ...DEFAULT_UMAP, ...state.umap };
+    }
+    if (state?.ui) {
+      const tab = state.ui.tab;
+      this.ui = {
+        tab: tab === 'map' || tab === 'explore' || tab === 'annotate' ? tab : 'map',
+        closed: Array.isArray(state.ui.closed) ? state.ui.closed.filter((x) => typeof x === 'string') : [],
+      };
     }
     if (state?.view) {
       this.view = { ...this.view, ...state.view };
@@ -659,6 +675,20 @@ export class Atlas {
     }, 120);
   }
 
+  // ---- sidebar -----------------------------------------------------------------------
+  setTab(tab: SidebarTab): void {
+    this.ui.tab = tab;
+  }
+
+  setSectionOpen(id: string, open: boolean): void {
+    const closed = this.ui.closed.includes(id);
+    if (open && closed) {
+      this.ui.closed = this.ui.closed.filter((x) => x !== id);
+    } else if (!open && !closed) {
+      this.ui.closed = [...this.ui.closed, id];
+    }
+  }
+
   // ---- actions -----------------------------------------------------------------------
   addCoordinates(): void {
     if (!this.prepared || !this.anchorXY) {
@@ -706,6 +736,7 @@ export class Atlas {
       umap: $state.snapshot(this.umap) as UmapParams,
       colorColumn: this.colorColumn,
       view: $state.snapshot(this.view) as ViewOptions,
+      ui: $state.snapshot(this.ui) as UiState,
     };
     vscode.setState(state);
     vscode.post({ type: 'state', state });

@@ -56,15 +56,19 @@ The **Anchors** slider in the Data section changes it per tab, within the last t
 
 ### Controls
 
-| Section | Control | Effect |
-|---|---|---|
-| Data | Features, sample %, standardize, PCA, anchors, missing values, seed | Click **Apply** to re-prepare in the kernel |
-| UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
-| UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
-| UMAP | Pause, +1 / +10 epochs, resume, done; restart paused | Step through the optimization epoch by epoch |
-| Color | Color by, treat as categories, colormap, range | Recolors |
-| Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors), fit to view | Rendering only |
-| Actions | Place all rows, add coordinates, export PNG, copy as Python | |
+The sidebar has three tabs. The plot has its own toolbar (top left) for **Fit to view** and **Export PNG**.
+
+| Tab | Section | Control | Effect |
+|---|---|---|---|
+| Map | Data | Features, sample %, standardize, PCA, anchors, missing values, seed | Click **Apply** to re-prepare in the kernel |
+| Map | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
+| Map | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |
+| Map | UMAP | Pause, +1 / +10 epochs, resume, done; restart paused | Step through the optimization epoch by epoch |
+| Map | Result | Place all rows, add coordinates to the DataFrame, copy as Python | |
+| Explore | Color | Color by, treat as categories, colormap, range | Recolors |
+| Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
+
+The active tab and collapsed sections are remembered per tab.
 
 ## How it works
 
