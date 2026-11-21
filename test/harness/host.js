@@ -188,6 +188,24 @@
         post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length });
         break;
       }
+      case 'compareSelection':
+      case 'selectionFrame': {
+        const name = `selection_${Date.now()}.bits`;
+        const maskPath = await writeJobFile(name, base64ToBytes(m.mask));
+        try {
+          if (m.type === 'compareSelection') {
+            const result = await call('compare_selection', jobId, maskPath);
+            post({ type: 'comparison', result });
+          } else {
+            const r = await call('selection_frame', jobId, maskPath);
+            harness.log.push(`info: Created ${r.variable} with ${r.rows} selected rows.`);
+            post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
+          }
+        } finally {
+          await rmJobFile(name);
+        }
+        break;
+      }
       case 'row': {
         const r = await call('row', jobId, m.i, m.imageColumns ?? null);
         post({ type: 'row', i: m.i, row: r.row, values: r.values, image: r.image });

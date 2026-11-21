@@ -5,6 +5,7 @@ import type {
   FileRef,
   JobStatus,
   LabelOptions,
+  SelectionComparison,
   PanelState,
   PrepareOptions,
   PrepareResult,
@@ -12,7 +13,7 @@ import type {
   ToWebview,
   UmapParams,
 } from '../shared/protocol';
-import { fetchTyped, float32ToBase64, vscode } from './vscode';
+import { bytesToBase64, fetchTyped, float32ToBase64, vscode } from './vscode';
 import UmapWorker from './workers/umap.worker.ts?worker&inline';
 import type { WorkerIn, WorkerOut } from './workers/umap.worker';
 import { ScatterRenderer, type MapLabel, type PointSet } from './render/renderer';
@@ -21,7 +22,8 @@ import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
 import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
 import { mapPalette } from './color/mapPalette';
-import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
+import { combineSelection, countSelected, fadeUnselected, invertSelection, packBits, pointsInPolygon, type SelectMode } from './select/lasso';
+import { formatCount, pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
 export { DEFAULT_UMAP };
@@ -88,6 +90,15 @@ export class Atlas {
   labelMeta = $state.raw<CategoricalColorMeta | null>(null);
   /** Number of labels on the map (before overlapping ones are hidden). */
   labelCount = $state(0);
+  /** Plot tool: pan (drag pans, Shift/Alt-drag selects) or lasso (drag selects). */
+  tool = $state<'pan' | 'lasso'>('pan');
+  /** Selected prepared rows (1 = selected), or null. */
+  selection = $state.raw<Uint8Array | null>(null);
+  selectedCount = $state(0);
+  /** The selection was made on the anchors (before all rows were placed). */
+  selectionOnAnchors = $state(false);
+  comparison = $state.raw<SelectionComparison | null>(null);
+  comparing = $state(false);
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
@@ -243,6 +254,16 @@ export class Atlas {
       case 'labelCodes':
         await this.onLabelCodes(msg.column, msg.file, msg.meta);
         break;
+      case 'comparison':
+        this.comparing = false;
+        // Ignore a result for a selection that has changed since.
+        if (this.selection && msg.result.selected === this.selectedCount) {
+          this.comparison = msg.result;
+        }
+        break;
+      case 'selectionFrame':
+        this.flash(`Created ${msg.variable} with ${formatCount(msg.rows)} rows`);
+        break;
       case 'row':
         if (this.pendingHover) {
           this.tooltip = { ...this.pendingHover, row: msg.row, values: msg.values, image: msg.image };
@@ -250,6 +271,7 @@ export class Atlas {
         break;
       case 'error':
         this.error = { message: msg.message, detail: msg.detail, fatal: msg.fatal };
+        this.comparing = false;
         if (msg.fatal) {
           this.phase = 'error';
         } else if (this.phase === 'preparing' || (this.phase === 'embedding' && this.computeMode === 'kernel')) {
@@ -339,6 +361,7 @@ export class Atlas {
   // ---- prepare -----------------------------------------------------------------------
   runPrepare(): void {
     this.applied = $state.snapshot(this.prepare) as PrepareOptions;
+    this.setSelection(null); // the prepared rows change
     this.phase = 'preparing';
     this.error = null;
     this.projection = 'none';
@@ -628,6 +651,9 @@ export class Atlas {
     } else {
       this.colorsAll = encodeCategorical(this.colorValues as Uint16Array, meta.categories.length, this.colorsAll ?? undefined, (i) => this.categoryColor(i));
     }
+    if (this.selection && this.selection.length === n) {
+      fadeUnselected(this.colorsAll, this.selection, hexToRgb(toHex(this.plotBackground())));
+    }
     this.colorsAnchors = this.prepared.needsProjection ? gatherRgba(this.colorsAll, this.anchorPos) : this.colorsAll;
     this.render();
   }
@@ -867,6 +893,69 @@ export class Atlas {
         vscode.post({ type: 'row', i: kept, imageColumns: image });
       }
     }, 120);
+  }
+
+  // ---- selection ---------------------------------------------------------------------
+  /**
+   * Select the points inside a lasso drawn on the plot (CSS pixels relative to the plot).
+   * Before all rows are placed, only the anchors on screen can be selected.
+   */
+  applyLasso(screen: [number, number][], mode: SelectMode): void {
+    if (!this.renderer || !this.prepared || !this.anchorXY || !this.anchorPos || screen.length < 3) {
+      return;
+    }
+    const poly = new Float64Array(screen.length * 2);
+    screen.forEach(([x, y], i) => {
+      const [wx, wy] = this.renderer!.unproject(x, y);
+      poly[2 * i] = wx;
+      poly[2 * i + 1] = wy;
+    });
+    const n = this.nKept;
+    let hits: Uint32Array;
+    const onAnchors = !!this.prepared.needsProjection && !(this.projection === 'done' && this.allXY);
+    if (!onAnchors) {
+      hits = pointsInPolygon(this.prepared.needsProjection ? this.allXY! : this.anchorXY, n, poly);
+    } else {
+      const local = pointsInPolygon(this.anchorXY, this.prepared.nAnchors, poly);
+      hits = new Uint32Array(local.length);
+      for (let i = 0; i < local.length; i++) hits[i] = this.anchorPos[local[i]];
+    }
+    const next = combineSelection(this.selection, hits, n, mode);
+    this.selectionOnAnchors = next ? (mode === 'replace' || !this.selection ? onAnchors : this.selectionOnAnchors || onAnchors) : false;
+    this.setSelection(next);
+  }
+
+  setSelection(mask: Uint8Array | null): void {
+    this.selection = mask;
+    this.selectedCount = mask ? countSelected(mask) : 0;
+    if (!mask) {
+      this.selectionOnAnchors = false;
+    }
+    this.comparison = null;
+    this.comparing = false;
+    this.recolor();
+  }
+
+  clearSelection(): void {
+    if (this.selection) this.setSelection(null);
+  }
+
+  invertSelection(): void {
+    if (!this.prepared || !this.anchorPos) return;
+    const scope = this.selectionOnAnchors ? this.anchorPos : undefined;
+    this.setSelection(invertSelection(this.selection, this.nKept, scope));
+  }
+
+  compareSelection(): void {
+    if (!this.selection) return;
+    this.comparing = true;
+    this.comparison = null;
+    vscode.post({ type: 'compareSelection', mask: bytesToBase64(packBits(this.selection)) });
+  }
+
+  selectionToFrame(): void {
+    if (!this.selection) return;
+    vscode.post({ type: 'selectionFrame', mask: bytesToBase64(packBits(this.selection)) });
   }
 
   // ---- sidebar -----------------------------------------------------------------------

@@ -1052,6 +1052,132 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
     return _json({"ok": True, "variable": target, "columns": [x_name, y_name]})
 
 
+# --------------------------------------------------------------------------------------
+# selections (lasso): comparison with all rows, new DataFrame
+# --------------------------------------------------------------------------------------
+
+
+def _read_mask(job: _Job, mask_path: str) -> np.ndarray:
+    """Boolean mask over the prepared rows from a file of packed bits (little bit order)."""
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    n = len(job.kept_idx)
+    packed = np.fromfile(mask_path, dtype=np.uint8)
+    if len(packed) != (n + 7) // 8:
+        raise ValueError(f"The selection has {len(packed) * 8} bits for {n} prepared rows.")
+    return np.unpackbits(packed, bitorder="little")[:n].astype(bool)
+
+
+def _subsample(idx: np.ndarray, limit: int, seed: int = 0) -> np.ndarray:
+    if len(idx) <= limit:
+        return idx
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(idx, size=limit, replace=False))
+
+
+@_guard
+def compare_selection(job_id: str, mask_path: str, max_rows: int = 50_000, top: int = 8) -> str:
+    """How the selected rows differ from all prepared rows.
+
+    Numeric, boolean and datetime columns: the standardized mean difference
+    (mean of the selection - overall mean) / overall std. Categorical columns: the values whose
+    share is most over-represented in the selection. Large selections are subsampled
+    (``max_rows`` rows each for the selection and for all rows).
+    """
+    job = _get(job_id)
+    mask = _read_mask(job, mask_path)
+    n_sel = int(mask.sum())
+    if n_sel == 0:
+        raise ValueError("Nothing is selected.")
+    frame = job.frame
+    kept = job.kept_idx
+    rows_all = kept[_subsample(np.arange(len(kept)), max_rows, 1)]
+    rows_sel = kept[_subsample(np.flatnonzero(mask), max_rows, 2)]
+    numeric: list[dict[str, Any]] = []
+    categorical: list[dict[str, Any]] = []
+    names = frame.column_names()
+    for j, name in enumerate(names):
+        _, kind = frame.column_kind(j)
+        try:
+            if kind in ("numeric", "bool", "datetime"):
+                a = _to_float(frame.column(j, rows_all), kind)
+                b = _to_float(frame.column(j, rows_sel), kind)
+                a = a[np.isfinite(a)]
+                b = b[np.isfinite(b)]
+                if a.size < 2 or b.size == 0:
+                    continue
+                sd = float(a.std())
+                if not np.isfinite(sd) or sd <= 0:
+                    continue
+                mean_all = float(a.mean())
+                mean_sel = float(b.mean())
+                numeric.append(
+                    {
+                        "column": name,
+                        "isDatetime": kind == "datetime",
+                        "meanSelected": mean_sel,
+                        "meanAll": mean_all,
+                        "effect": (mean_sel - mean_all) / sd,
+                    }
+                )
+            elif kind == "categorical":
+                a = np.array([("" if _is_null(v) else str(v)) for v in frame.column(j, rows_all)], dtype=object)
+                b = np.array([("" if _is_null(v) else str(v)) for v in frame.column(j, rows_sel)], dtype=object)
+                ua, ca = np.unique(a, return_counts=True)
+                if len(ua) > 1000 or len(ua) < 2:
+                    continue  # identifiers and constants say little
+                share_all = dict(zip(ua.tolist(), (ca / len(a)).tolist()))
+                ub, cb = np.unique(b, return_counts=True)
+                for v, c in zip(ub.tolist(), cb.tolist()):
+                    p_sel = c / len(b)
+                    p_all = share_all.get(v, 0.0)
+                    # Over-represented: at least 5 % of the selection, 2 points and 25 % above overall.
+                    if p_sel >= 0.05 and p_sel - p_all >= 0.02 and p_sel >= 1.25 * p_all:
+                        categorical.append({"column": name, "value": v, "shareSelected": p_sel, "shareAll": p_all, "effect": p_sel - p_all})
+        except Exception:  # noqa: BLE001 - skip columns that cannot be summarized
+            continue
+    numeric.sort(key=lambda r: -abs(r["effect"]))
+    categorical.sort(key=lambda r: -r["effect"])
+    return _json(
+        {
+            "ok": True,
+            "selected": n_sel,
+            "total": int(len(kept)),
+            "sampled": bool(n_sel > max_rows or len(kept) > max_rows),
+            "numeric": numeric[:top],
+            "categorical": categorical[:top],
+        }
+    )
+
+
+def _unique_name(base: str, ns: dict) -> str:
+    import keyword
+
+    if not base.isidentifier() or keyword.iskeyword(base):
+        base = "atlas_selection"
+    name = base
+    k = 2
+    while name in ns:
+        name = f"{base}_{k}"
+        k += 1
+    return name
+
+
+@_guard
+def selection_frame(job_id: str, mask_path: str, base_name: str = "") -> str:
+    """Assign the selected rows (in their original order) to a new variable; never overwrites."""
+    job = _get(job_id)
+    mask = _read_mask(job, mask_path)
+    rows = np.sort(job.kept_idx[mask])
+    if len(rows) == 0:
+        raise ValueError("Nothing is selected.")
+    ns = _user_ns()
+    name = _unique_name(base_name or (f"{job.name}_selection" if job.name.isidentifier() else "atlas_selection"), ns)
+    obj = job.frame.obj
+    ns[name] = obj.iloc[rows].copy() if job.frame.kind == "pandas" else obj[rows]
+    return _json({"ok": True, "variable": name, "rows": int(len(rows))})
+
+
 @_guard
 def list_frames() -> str:
     """List DataFrame-like variables in the user namespace."""

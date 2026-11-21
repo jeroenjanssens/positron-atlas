@@ -402,3 +402,57 @@ def test_row_with_image(ns, tmp_path, kind):
     assert [k for k, _ in r["values"]] == ["label"]  # pixel columns are not repeated in the table
     plain = J(pak.row(jid, 1))
     assert "image" not in plain and len(plain["values"]) == 17
+
+
+def write_mask(path, mask):
+    np.packbits(np.asarray(mask, dtype=bool), bitorder="little").tofile(path)
+    return str(path)
+
+
+def test_compare_selection(ns, frame_kind, tmp_path):
+    jid, _, x, labels = prepared(ns, frame_kind, tmp_path, samplePct=50)
+    job = pak._JOBS[jid]
+    kept_labels = labels[job.kept_idx]
+    mask = kept_labels == 2
+    r = J(pak.compare_selection(jid, write_mask(tmp_path / "m.bin", mask)))
+    assert r["selected"] == int(mask.sum()) and r["total"] == len(job.kept_idx) and not r["sampled"]
+    # The selected cluster's label is the most over-represented value, at 100 %.
+    top = r["categorical"][0]
+    assert (top["column"], top["value"], top["shareSelected"]) == ("label", "c2", 1.0)
+    assert top["shareAll"] == pytest.approx(mask.mean())
+    # Values that are not over-represented are left out (flag is ~50 % both inside and outside).
+    assert all(c["shareSelected"] - c["shareAll"] >= 0.02 and c["shareSelected"] >= 1.25 * c["shareAll"] for c in r["categorical"])
+    # Numeric effects: the largest standardized differences, with the right sign and size.
+    assert len(r["numeric"]) == 8
+    first = r["numeric"][0]
+    col = x[job.kept_idx][:, int(first["column"][1:])] if first["column"].startswith("f") else None
+    assert col is not None
+    assert first["meanSelected"] == pytest.approx(col[mask].mean(), rel=1e-4)
+    assert first["effect"] == pytest.approx((col[mask].mean() - col.mean()) / col.std(), rel=1e-3)
+    assert abs(first["effect"]) >= abs(r["numeric"][-1]["effect"])
+
+
+def test_compare_selection_errors(ns, tmp_path):
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    n = len(pak._JOBS[jid].kept_idx)
+    assert "Nothing is selected" in J(pak.compare_selection(jid, write_mask(tmp_path / "z.bin", np.zeros(n))))["error"]
+    assert "bits" in J(pak.compare_selection(jid, write_mask(tmp_path / "s.bin", np.ones(n + 9))))["error"]
+
+
+def test_selection_frame(ns, frame_kind, tmp_path):
+    jid, _, x, labels = prepared(ns, frame_kind, tmp_path, samplePct=50)
+    job = pak._JOBS[jid]
+    mask = np.zeros(len(job.kept_idx), dtype=bool)
+    mask[[0, 5, 7, len(mask) - 1]] = True
+    path = write_mask(tmp_path / "m.bin", mask)
+    r = J(pak.selection_frame(jid, path))
+    assert r == {"ok": True, "variable": "df_selection", "rows": 4}
+    sel = ns["df_selection"]
+    rows = np.sort(job.kept_idx[mask])
+    np.testing.assert_allclose(np.asarray(sel["f0"]), x[rows, 0])
+    # Never overwrites: the next one gets a suffix.
+    assert J(pak.selection_frame(jid, path))["variable"] == "df_selection_2"
+    assert J(pak.selection_frame(jid, path, "class"))["variable"] == "atlas_selection"
+    if frame_kind == "pandas":
+        sel.iloc[0, 0] = -1.0  # a copy: the original is untouched
+        assert ns["df"].iloc[rows[0], 0] == x[rows[0], 0]

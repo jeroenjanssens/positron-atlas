@@ -15,7 +15,10 @@ export const vscode = {
 };
 
 export function float32ToBase64(arr: Float32Array): string {
-  const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+  return bytesToBase64(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
   let s = '';
   const step = 0x8000;
   for (let i = 0; i < bytes.length; i += step) {

@@ -10,6 +10,7 @@ import type {
   FileRef,
   JobStatus,
   KernelOutput,
+  SelectionComparison,
   PanelState,
   PrepareResult,
   Settings,
@@ -293,6 +294,17 @@ export class AtlasPanel {
         });
         break;
       }
+      case 'compareSelection': {
+        const result = await this.withMask(m.mask, (p) => this.bridge.call<SelectionComparison & { ok: true }>('compare_selection', this.requireJob(), p));
+        this.post({ type: 'comparison', result });
+        break;
+      }
+      case 'selectionFrame': {
+        const r = await this.withMask(m.mask, (p) => this.bridge.call<{ variable: string; rows: number }>('selection_frame', this.requireJob(), p));
+        this.post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
+        void vscode.window.showInformationMessage(`Created ${r.variable} with ${r.rows.toLocaleString('en-US')} selected rows.`);
+        break;
+      }
       case 'row': {
         const r = await this.bridge.call<{ row: number; values: [string, string][]; image?: (number | null)[] }>(
           'row',
@@ -355,6 +367,17 @@ export class AtlasPanel {
       case 'log':
         this.ctx.log[m.level](`[webview ${this.state.variable}] ${m.message}`);
         break;
+    }
+  }
+
+  /** Write a selection mask (base64 packed bits) into the job directory for one kernel call. */
+  private async withMask<T>(mask: string, fn: (path: string) => Promise<T>): Promise<T> {
+    const maskPath = path.join(this.jobDir.fsPath, `selection_${Date.now()}.bits`);
+    await fs.writeFile(maskPath, Buffer.from(mask, 'base64'));
+    try {
+      return await fn(maskPath);
+    } finally {
+      await fs.rm(maskPath, { force: true });
     }
   }
 

@@ -3,6 +3,7 @@
   import Section from './Section.svelte';
   import Slider from './Slider.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
+  import { formatCount, formatPercent, formatStat } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -102,4 +103,63 @@
       </label>
       <div class="hint muted">{atlas.imageColumns.indices.length.toLocaleString()} pixel columns ({atlas.imageColumns.first} … {atlas.imageColumns.last}). Hover a point to see its image.</div>
     {/if}
+</Section>
+
+<Section {atlas} id="selection" title="Selection">
+  {#if !atlas.selection}
+    <div class="hint muted">
+      Select points with the lasso tool on the plot toolbar, or hold Shift and drag. Shift adds to the selection, Alt removes from it,
+      Escape clears it.
+    </div>
+  {:else}
+    <div>
+      <span class="sel-count">{formatCount(atlas.selectedCount)} rows selected</span>
+      <span class="muted-text">({formatPercent(atlas.selectedCount / Math.max(1, atlas.nKept))})</span>
+    </div>
+    {#if atlas.selectionOnAnchors}
+      <div class="hint muted">Selected before all rows were placed: only the anchors are included.</div>
+    {/if}
+    <div class="buttons">
+      <button onclick={() => atlas.clearSelection()} title="Clear the selection (Escape)">Clear</button>
+      <button onclick={() => atlas.invertSelection()} title="Select the other rows instead">Invert</button>
+    </div>
+    <div class="buttons">
+      <button class="primary" disabled={atlas.comparing} onclick={() => atlas.compareSelection()}
+        title="How the selected rows differ from all rows: column means and over-represented values">
+        {atlas.comparing ? 'Comparing…' : 'Compare with all rows'}
+      </button>
+      <button onclick={() => atlas.selectionToFrame()} title="Create a new DataFrame in the session with the selected rows">New DataFrame</button>
+    </div>
+    {#if atlas.comparison}
+      {@const c = atlas.comparison}
+      <div class="compare" aria-label="Comparison of the selection with all rows">
+        {#if c.categorical.length}
+          <h3>Over-represented values</h3>
+          {#each c.categorical as r (r.column + '\u0000' + r.value)}
+            <div class="row" title="{r.column} = {r.value}: {formatPercent(r.shareSelected)} of the selection, {formatPercent(r.shareAll)} of all rows">
+              <span class="name">{r.column} = {r.value === '' ? '(missing)' : r.value}</span>
+              <span class="val">{formatPercent(r.shareSelected)} vs {formatPercent(r.shareAll)}</span>
+              <div class="bar"><span style="left:0; width:{Math.round(r.shareSelected * 100)}%"></span></div>
+            </div>
+          {/each}
+        {/if}
+        {#if c.numeric.length}
+          <h3>Largest differences in means</h3>
+          {#each c.numeric as r (r.column)}
+            <div class="row" title="{r.column}: mean {formatStat(r.meanSelected, r.isDatetime)} in the selection, {formatStat(r.meanAll, r.isDatetime)} overall ({r.effect >= 0 ? '+' : ''}{r.effect.toFixed(2)} standard deviations)">
+              <span class="name">{r.effect >= 0 ? '↑' : '↓'} {r.column}</span>
+              <span class="val">{formatStat(r.meanSelected, r.isDatetime)} vs {formatStat(r.meanAll, r.isDatetime)}</span>
+              <div class="bar"><span class:neg={r.effect < 0} style="left:0; width:{Math.round(Math.min(1, Math.abs(r.effect) / 3) * 100)}%"></span></div>
+            </div>
+          {/each}
+        {/if}
+        {#if !c.categorical.length && !c.numeric.length}
+          <div class="hint muted">No column differs noticeably.</div>
+        {/if}
+        <div class="hint muted">
+          {`Means of the selection vs. all rows; bars: difference in standard deviations (full at 3).${c.sampled ? ' Based on a random sample of up to 50,000 rows.' : ''}`}
+        </div>
+      </div>
+    {/if}
+  {/if}
 </Section>

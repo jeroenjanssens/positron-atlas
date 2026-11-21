@@ -1,0 +1,138 @@
+{
+  "variable": "mnist",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\n\ndef download(url: str, name: str) -> Path:\n    \"\"\"Download a file once and cache it.\"\"\"\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        print(f\"Downloading {url} ...\")\n        tmp = path.with_suffix(path.suffix + \".part\")\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\n\ndef read_idx(path: Path) -> np.ndarray:\n    \"\"\"Read an IDX file (the MNIST format): images as (n, 784) uint8, labels as (n,).\"\"\"\n    with gzip.open(path, \"rb\") as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], \"big\") for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nBASE = \"https://ossci-datasets.s3.amazonaws.com/mnist/\"\nLABELS = [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"]\n\nfiles = {\n    name: download(BASE + name, \"mnist-\" + name)\n    for name in [\n        \"train-images-idx3-ubyte.gz\",\n        \"train-labels-idx1-ubyte.gz\",\n        \"t10k-images-idx3-ubyte.gz\",\n        \"t10k-labels-idx1-ubyte.gz\",\n    ]\n}\ntrain_x = read_idx(files[\"train-images-idx3-ubyte.gz\"])\ntest_x = read_idx(files[\"t10k-images-idx3-ubyte.gz\"])\ntrain_y = read_idx(files[\"train-labels-idx1-ubyte.gz\"])\ntest_y = read_idx(files[\"t10k-labels-idx1-ubyte.gz\"])\nn_train = len(train_y)\n\npixels = np.concatenate([train_x, test_x])  # (70000, 784) uint8\nlabels = np.concatenate([train_y, test_y])\npixels.shape, labels.shape\n\nimport polars as pl\n\nmnist = pl.from_numpy(pixels, schema=[f\"px{i}\" for i in range(pixels.shape[1])]).with_columns(\n    pl.Series(\"label\", [LABELS[v] for v in labels], dtype=pl.Enum(LABELS)),\n    pl.Series(\"split\", np.where(np.arange(len(labels)) < n_train, \"train\", \"test\")),\n    pl.Series(\"ink\", pixels.mean(axis=1)),  # average pixel intensity: a numeric column to color by\n)\nmnist.shape",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 50,
+    "maxAnchorsCpu": 20000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "labels for reference",
+      "eval": "a.setLabelColumn(a.colorColumn); a.setTab('explore')",
+      "until": "a.labelCount === 10 && a.labelCodesAnchors"
+    },
+    {
+      "name": "lasso tool",
+      "click": ".plot-toolbar [aria-label='Lasso select']",
+      "until": "a.tool === 'lasso' && document.querySelector('.lasso-layer')"
+    },
+    {
+      "name": "lasso around the 1s",
+      "drag": "(() => {\n  // Page-coordinate lasso around a digit's main blob: the convex hull of its anchors near their median.\n  const codes = a.labelCodesAnchors, xy = a.anchorXY, g = a.labelMeta.categories.indexOf('1');\n  const vp = a.renderer.deck.getViewports()[0], r = document.querySelector('.plot').getBoundingClientRect();\n  let pts = [];\n  for (let i = 0; i < codes.length; i++) if (codes[i] === g) pts.push(vp.project([xy[2 * i], xy[2 * i + 1]]));\n  const med = k => pts.map(p => p[k]).sort((u, v) => u - v)[pts.length >> 1];\n  const cx = med(0), cy = med(1);\n  const d = pts.map(p => Math.hypot(p[0] - cx, p[1] - cy));\n  const dm = [...d].sort((u, v) => u - v)[d.length >> 1];\n  pts = pts.filter((p, i) => d[i] < 2.5 * dm).sort((p, q) => p[0] - q[0] || p[1] - q[1]);\n  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);\n  const lower = [], upper = [];\n  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }\n  for (const p of [...pts].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }\n  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));\n  return hull.map(([x, y]) => { const k = Math.hypot(x - cx, y - cy) || 1; return [r.left + x + 6 * (x - cx) / k, r.top + y + 6 * (y - cy) / k]; });\n})()",
+      "until": "a.selectedCount > 0",
+      "assert": [
+        "a.selectedCount > 0.85 * (() => { const c = a.labelCodes, g = a.labelMeta.categories.indexOf('1'); let n = 0; for (let i = 0; i < c.length; i++) n += c[i] === g; return n; })()",
+        "a.selectedCount < 1.15 * (() => { const c = a.labelCodes, g = a.labelMeta.categories.indexOf('1'); let n = 0; for (let i = 0; i < c.length; i++) n += c[i] === g; return n; })()",
+        "!a.selectionOnAnchors",
+        "document.querySelector('.sel-count').textContent.includes('rows selected')"
+      ],
+      "report": "{ selected: a.selectedCount, ones: (() => { const c = a.labelCodes, g = a.labelMeta.categories.indexOf('1'); let n = 0; for (let i = 0; i < c.length; i++) n += c[i] === g; return n; })() }",
+      "screenshot": "select-ones.png"
+    },
+    {
+      "name": "compare with all rows",
+      "eval": "[...document.querySelectorAll('[data-section=selection] button')].find(b => b.textContent.includes('Compare')).click()",
+      "until": "a.comparison",
+      "timeout": 60000,
+      "assert": [
+        "a.comparison.categorical[0].column === 'label' && a.comparison.categorical[0].value === '1' && a.comparison.categorical[0].shareSelected > 0.9",
+        "a.comparison.numeric.length === 8",
+        "document.querySelectorAll('.compare .row').length >= 9",
+        "a.comparison.categorical.every(c => c.column !== 'split')",
+        "document.querySelector('.compare > .hint:last-child').textContent.includes('(full at 3). Based on a random sample')"
+      ],
+      "report": "{ cat: a.comparison.categorical.slice(0, 3), num: a.comparison.numeric.slice(0, 3).map(r => [r.column, r.effect.toFixed(2)]) }",
+      "screenshot": "select-compare.png"
+    },
+    {
+      "name": "pan tool, Shift-drag adds the 0s",
+      "click": ".plot-toolbar [aria-label='Pan and zoom']",
+      "drag": "(() => {\n  // Page-coordinate lasso around a digit's main blob: the convex hull of its anchors near their median.\n  const codes = a.labelCodesAnchors, xy = a.anchorXY, g = a.labelMeta.categories.indexOf('0');\n  const vp = a.renderer.deck.getViewports()[0], r = document.querySelector('.plot').getBoundingClientRect();\n  let pts = [];\n  for (let i = 0; i < codes.length; i++) if (codes[i] === g) pts.push(vp.project([xy[2 * i], xy[2 * i + 1]]));\n  const med = k => pts.map(p => p[k]).sort((u, v) => u - v)[pts.length >> 1];\n  const cx = med(0), cy = med(1);\n  const d = pts.map(p => Math.hypot(p[0] - cx, p[1] - cy));\n  const dm = [...d].sort((u, v) => u - v)[d.length >> 1];\n  pts = pts.filter((p, i) => d[i] < 2.5 * dm).sort((p, q) => p[0] - q[0] || p[1] - q[1]);\n  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);\n  const lower = [], upper = [];\n  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }\n  for (const p of [...pts].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }\n  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));\n  return hull.map(([x, y]) => { const k = Math.hypot(x - cx, y - cy) || 1; return [r.left + x + 6 * (x - cx) / k, r.top + y + 6 * (y - cy) / k]; });\n})()",
+      "modifiers": [
+        "Shift"
+      ],
+      "until": "a.selectedCount > window.__n1",
+      "timeout": 5000,
+      "eval": "window.__n1 = a.selectedCount"
+    },
+    {
+      "name": "added",
+      "assert": [
+        "a.tool === 'pan'",
+        "a.selectedCount > window.__n1 + 0.8 * (() => { const c = a.labelCodes, g = a.labelMeta.categories.indexOf('0'); let n = 0; for (let i = 0; i < c.length; i++) n += c[i] === g; return n; })()",
+        "a.comparison === null"
+      ],
+      "report": "{ selected: a.selectedCount }",
+      "screenshot": "select-add.png"
+    },
+    {
+      "name": "Alt-drag removes the 0s",
+      "drag": "(() => {\n  // Page-coordinate lasso around a digit's main blob: the convex hull of its anchors near their median.\n  const codes = a.labelCodesAnchors, xy = a.anchorXY, g = a.labelMeta.categories.indexOf('0');\n  const vp = a.renderer.deck.getViewports()[0], r = document.querySelector('.plot').getBoundingClientRect();\n  let pts = [];\n  for (let i = 0; i < codes.length; i++) if (codes[i] === g) pts.push(vp.project([xy[2 * i], xy[2 * i + 1]]));\n  const med = k => pts.map(p => p[k]).sort((u, v) => u - v)[pts.length >> 1];\n  const cx = med(0), cy = med(1);\n  const d = pts.map(p => Math.hypot(p[0] - cx, p[1] - cy));\n  const dm = [...d].sort((u, v) => u - v)[d.length >> 1];\n  pts = pts.filter((p, i) => d[i] < 2.5 * dm).sort((p, q) => p[0] - q[0] || p[1] - q[1]);\n  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);\n  const lower = [], upper = [];\n  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }\n  for (const p of [...pts].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }\n  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));\n  return hull.map(([x, y]) => { const k = Math.hypot(x - cx, y - cy) || 1; return [r.left + x + 12 * (x - cx) / k, r.top + y + 12 * (y - cy) / k]; });\n})()",
+      "modifiers": [
+        "Alt"
+      ],
+      "until": "a.selectedCount <= window.__n1 + 50",
+      "report": "{ selected: a.selectedCount }"
+    },
+    {
+      "name": "invert",
+      "eval": "window.__n = a.selectedCount; a.invertSelection()",
+      "until": "a.selectedCount === a.nKept - window.__n"
+    },
+    {
+      "name": "invert back",
+      "eval": "a.invertSelection()",
+      "until": "a.selectedCount === window.__n"
+    },
+    {
+      "name": "new DataFrame from the selection",
+      "eval": "[...document.querySelectorAll('[data-section=selection] button')].find(b => b.textContent.includes('New DataFrame')).click()",
+      "until": "h.log.some(l => l.includes('Created mnist_selection'))",
+      "assert": [
+        "h.log.some(l => l.includes('Created mnist_selection with ' + a.selectedCount + ' selected rows'))"
+      ]
+    },
+    {
+      "name": "kernel has the new frame",
+      "eval": "window.__frames = (await (await fetch('/call', { method: 'POST', body: JSON.stringify({ fn: 'list_frames', args: [] }) })).json()).frames",
+      "until": "window.__frames",
+      "assert": [
+        "window.__frames.some(f => f.name === 'mnist_selection' && f.shape[0] === a.selectedCount)"
+      ]
+    },
+    {
+      "name": "selection survives a new layout",
+      "eval": "window.__n = a.selectedCount; a.umap.nNeighbors = 20; a.umapChanged()",
+      "until": "a.phase === 'ready' && a.projection === 'done' && a.umapProgress === null && a.timings.umap",
+      "timeout": 180000,
+      "assert": [
+        "a.selectedCount === window.__n"
+      ],
+      "screenshot": "select-relayout.png"
+    },
+    {
+      "name": "Escape clears",
+      "eval": "document.body.focus()",
+      "press": "Escape",
+      "until": "a.selection === null && a.selectedCount === 0"
+    },
+    {
+      "name": "prepare clears the selection",
+      "drag": "(() => {\n  // Page-coordinate lasso around a digit's main blob: the convex hull of its anchors near their median.\n  const codes = a.labelCodesAnchors, xy = a.anchorXY, g = a.labelMeta.categories.indexOf('1');\n  const vp = a.renderer.deck.getViewports()[0], r = document.querySelector('.plot').getBoundingClientRect();\n  let pts = [];\n  for (let i = 0; i < codes.length; i++) if (codes[i] === g) pts.push(vp.project([xy[2 * i], xy[2 * i + 1]]));\n  const med = k => pts.map(p => p[k]).sort((u, v) => u - v)[pts.length >> 1];\n  const cx = med(0), cy = med(1);\n  const d = pts.map(p => Math.hypot(p[0] - cx, p[1] - cy));\n  const dm = [...d].sort((u, v) => u - v)[d.length >> 1];\n  pts = pts.filter((p, i) => d[i] < 2.5 * dm).sort((p, q) => p[0] - q[0] || p[1] - q[1]);\n  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);\n  const lower = [], upper = [];\n  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }\n  for (const p of [...pts].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }\n  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));\n  return hull.map(([x, y]) => { const k = Math.hypot(x - cx, y - cy) || 1; return [r.left + x + 6 * (x - cx) / k, r.top + y + 6 * (y - cy) / k]; });\n})()",
+      "modifiers": [
+        "Shift"
+      ],
+      "until": "a.selectedCount > 0"
+    },
+    {
+      "name": "apply",
+      "eval": "a.prepare.seed = 7; a.runPrepare()",
+      "until": "a.selection === null",
+      "assert": [
+        "a.selectedCount === 0"
+      ]
+    }
+  ]
+}

@@ -122,6 +122,18 @@ export interface Settings {
   pcaDims: number;
 }
 
+/** How selected rows differ from all prepared rows (kernel compare_selection). */
+export interface SelectionComparison {
+  selected: number;
+  total: number;
+  /** True when the statistics come from a subsample. */
+  sampled: boolean;
+  /** Largest standardized mean differences, (mean selected − mean all) / std all. */
+  numeric: { column: string; isDatetime: boolean; meanSelected: number; meanAll: number; effect: number }[];
+  /** Most over-represented categorical values (share in the selection vs. in all rows). */
+  categorical: { column: string; value: string; shareSelected: number; shareAll: number; effect: number }[];
+}
+
 /** Text labels on the map (Annotate → Labels). */
 export interface LabelOptions {
   /** Column whose values label the map, or null for no labels. */
@@ -165,6 +177,8 @@ export type ToWebview =
   | { type: 'projected'; seconds: number; exact?: boolean }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number }
+  | { type: 'comparison'; result: SelectionComparison }
+  | { type: 'selectionFrame'; variable: string; rows: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
   | { type: 'coordsAdded'; variable: string; columns: string[] }
@@ -178,6 +192,8 @@ export type ToHost =
   | { type: 'exact'; params: UmapParams }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number }
+  | { type: 'compareSelection'; mask: string /* base64 packed bits, least significant first */ }
+  | { type: 'selectionFrame'; mask: string /* base64 packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'cancel' }
   | { type: 'addCoordinates'; anchorXY: string | null /* base64 float32 */; useProjection: boolean }

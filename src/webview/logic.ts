@@ -180,3 +180,16 @@ export function placeTooltip(at: number, size: number, container: number, gap = 
   if (before >= 0) return before;
   return Math.max(0, Math.min(container - size, at + gap));
 }
+
+/** Compact number for statistics; datetimes (nanoseconds since the epoch) as dates. */
+export function formatStat(v: number | null | undefined, isDatetime = false): string {
+  if (v === undefined || v === null || !Number.isFinite(v)) return '–';
+  if (isDatetime) return new Date(v / 1e6).toISOString().slice(0, 10);
+  const a = Math.abs(v);
+  return a !== 0 && (a < 1e-3 || a >= 1e5) ? v.toExponential(2) : Number(v.toPrecision(3)).toString();
+}
+
+export function formatPercent(p: number): string {
+  const v = p * 100;
+  return `${v >= 10 || v === 0 ? Math.round(v) : v.toFixed(1)}%`;
+}

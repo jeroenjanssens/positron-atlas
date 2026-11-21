@@ -1,8 +1,8 @@
 // Run a scenario in the browser harness and take screenshots:
 //   node test/harness/shot.mjs SCENARIO.json [--theme light] [--keep] [--out DIR] [--size 1400x860]
 // Starts test/harness/server.py (the real kernel helper), opens the built webview in Chromium,
-// waits for the layout and runs the scenario's steps ({ name, eval, until, timeout, report,
-// screenshot, assert }). `a` is the webview's Atlas object and `h` the harness host
+// waits for the layout and runs the scenario's steps ({ name, eval, click, drag, modifiers, press,
+// until, timeout, report, screenshot, assert }). `a` is the webview's Atlas object and `h` the harness host
 // (window.__harness). Fails on webview errors, page errors and failed asserts.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -96,6 +96,17 @@ try {
     const ts = Date.now();
     if (step.eval) await evalIn(step.eval);
     if (step.click) await page.click(step.click);
+    if (step.drag) {
+      // A real mouse drag through page coordinates [[x, y], ...] computed in the page.
+      const pts = await page.evaluate(`(() => { const a = window.__atlas; const h = window.__harness; return (${step.drag}); })()`);
+      for (const k of step.modifiers ?? []) await page.keyboard.down(k);
+      await page.mouse.move(pts[0][0], pts[0][1]);
+      await page.mouse.down();
+      for (const [x, y] of pts.slice(1)) await page.mouse.move(x, y, { steps: 4 });
+      await page.mouse.up();
+      for (const k of step.modifiers ?? []) await page.keyboard.up(k);
+    }
+    if (step.press) await page.keyboard.press(step.press);
     if (step.until) {
       while (!(await check(step.until))) {
         await failIfError(`step ${step.name}`);

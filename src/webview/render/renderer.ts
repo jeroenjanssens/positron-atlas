@@ -90,6 +90,21 @@ export class ScatterRenderer {
     this.pointerListeners.push(cb);
   }
 
+  /** World coordinates of a point in CSS pixels relative to the plot. */
+  unproject(x: number, y: number): [number, number] {
+    const vp = (this.deck as any).getViewports?.()[0];
+    if (vp) {
+      const [wx, wy] = vp.unproject([x, y]);
+      return [wx, wy];
+    }
+    // Fallback: the orthographic view centered on target (y up, flipY false).
+    const scale = Math.pow(2, this.viewState.zoom as number);
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    const t = this.viewState.target as number[];
+    return [t[0] + (x - w / 2) / scale, t[1] - (y - h / 2) / scale];
+  }
+
   /** World units per screen pixel at the current zoom. */
   worldPerPixel(): number {
     return Math.pow(2, -(this.viewState.zoom as number));

@@ -4,6 +4,7 @@
   import Controls from './components/Controls.svelte';
   import Legend from './components/Legend.svelte';
   import PlotToolbar from './components/PlotToolbar.svelte';
+  import LassoLayer from './components/LassoLayer.svelte';
   import PixelImage from './components/PixelImage.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
 
@@ -87,7 +88,9 @@
   <main bind:clientWidth={mainW} bind:clientHeight={mainH}>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
     <PlotToolbar {atlas} />
-    <div class="plot" bind:this={plot} style:background={atlas.view.background || null}></div>
+    <div class="plot" class:lasso={atlas.tool === 'lasso'} bind:this={plot} style:background={atlas.view.background || null}>
+      <LassoLayer {atlas} />
+    </div>
     <Legend {atlas} />
     {#if atlas.tooltip}
       <div class="tooltip" bind:clientWidth={ttW} bind:clientHeight={ttH} style="left:{ttPos.left}px; top:{ttPos.top}px">

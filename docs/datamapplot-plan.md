@@ -127,10 +127,11 @@ hues, and outlying categories are more saturated.
   The palette is recomputed when a run finishes, not on every animation frame, so colors stay stable
   while the layout converges.
 
-### Phase E: lasso selection — [ ]
+### Phase E: lasso selection — [x]
 
 - Lasso tool on the plot toolbar. Drag to draw; Shift adds to the selection, Alt removes from it.
-  Escape clears it.
+  With the pan tool, holding Shift or Alt and dragging also draws a lasso. Escape clears it.
+- The selection is kept when the layout changes (rows keep their identity) and cleared by Apply.
 - Selection is a mask over the prepared rows. Before all rows are placed, the lasso selects the
   anchors that are shown; after placement it selects all rows.
 - Selected points keep their color; the others fade (alpha and a gray mix), as DataMapPlot does
@@ -139,7 +140,8 @@ hues, and outlying categories are more saturated.
   - Count and share ("1,234 rows selected, 4.1 %"), Clear, Invert.
   - **Compare with all rows** (kernel `compare_selection`): for numeric columns, the selection's
     mean versus the overall mean as a standardized difference; for categorical columns, the
-    categories that are most over-represented. The top differences are listed, largest first.
+    values that are most over-represented (at least 5 % of the selection, 2 points and 25 % above
+    their overall share). The top differences are listed, largest first.
   - **New DataFrame from selection** (kernel `selection_frame`): assigns the selected rows (in
     original order) to a new variable, `<name>_selection` by default (never overwrites an existing
     name without asking).

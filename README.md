@@ -12,6 +12,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
 - **Labels on the map.** Label the map by a categorical column: each value is written at the densest spot of its points, sized by group size, and labels that would overlap are hidden (larger groups win).
 - **Color by any column.** Numeric and datetime columns get continuous colormaps (viridis, cividis, magma, …). Text, categorical, boolean and low-cardinality integer columns get categorical colors, with a legend. By default the categorical palette follows the map: groups that are close together get related hues and outlying groups are more saturated (after DataMapPlot).
+- **Lasso selection.** Draw around points with the lasso tool, or hold Shift (add) or Alt (remove) and drag. The other points fade. **Compare with all rows** lists the most over-represented values and the largest differences in column means; **New DataFrame** puts the selected rows in a new variable (`<name>_selection`). The selection is kept when the layout changes.
 - **Hover tooltips** with the row's values, fetched from the kernel on demand.
 - **Points are images.** For image data with one pixel per column (such as `px0` … `px783`), the tooltip shows the row as a picture.
 - **Points or additive density mode**, a background color picker, pan and zoom, PNG export.
@@ -57,7 +58,7 @@ The **Anchors** slider in the Data section changes it per tab, within the last t
 
 ### Controls
 
-The sidebar has three tabs. The plot has its own toolbar (top left) for **Fit to view** and **Export PNG**.
+The sidebar has three tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Fit to view** and **Export PNG**.
 
 | Tab | Section | Control | Effect |
 |---|---|---|---|
@@ -68,6 +69,7 @@ The sidebar has three tabs. The plot has its own toolbar (top left) for **Fit to
 | Map | Result | Place all rows, add coordinates to the DataFrame, copy as Python | |
 | Explore | Color | Color by, treat as categories, palette (follows the map or Tableau 20), colormap, range | Recolors |
 | Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
+| Explore | Selection | Selected rows, clear, invert, compare with all rows, new DataFrame | Comparison and new DataFrame run in the kernel |
 | Annotate | Labels | Label by a column, smallest and largest label size, color labels like the points | Rendering only (the codes come from the kernel once) |
 
 The active tab and collapsed sections are remembered per tab.
@@ -146,7 +148,8 @@ Screenshots land in `/tmp/positron-atlas-e2e/`.
 Without Positron, the **browser harness** runs the built webview in Chromium against the real kernel helper (a small Python server stands in for Positron). It is quicker and also produces screenshots:
 
 ```sh
-npm run build && npm run test:harness                   # test/harness/scenario-small.json
+npm run build && npm run test:harness                   # synthetic data: scenario-small, scenario-ui
+npm run test:harness:mnist                               # MNIST (downloaded once): labels, palette, selection
 npm run harness -- test/harness/scenario-mnist.json      # any scenario; --theme light for the light theme
 ```
 
