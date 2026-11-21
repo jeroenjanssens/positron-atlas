@@ -159,3 +159,18 @@ visible change in the result, so they keep the sample.
 | 100,000 × 50 | 12.4 s | 43.0 s |
 
 Atlas offers polars-umap first when both are installed.
+
+## Re-placing rows with cached neighbours (2026-11-21)
+
+`python/bench_project.py`, on this repository's development Mac (Apple Silicon), synthetic blobs, 10 nearest anchors per row. "Place" is the first placement (index build and neighbour search included); "re-place" reuses the cached neighbours, which is what happens after a live UMAP change (`min_dist`, `spread`, …) or a new UMAP seed.
+
+| Backend | Rows × dims | Anchors | Place | Re-place | Speed-up |
+|---|---|---:|---:|---:|---:|
+| numpy | 10⁵ × 50 | 20,000 | 0.72 s | 0.017 s | 43× |
+| numpy | 10⁶ × 20 | 100,000 | 15.5 s | 0.225 s | 69× |
+| Rust | 10⁵ × 50 | 20,000 | 0.027 s | 0.001 s | 27× |
+| Rust | 10⁶ × 20 | 100,000 | 0.44 s | 0.004 s | 110× |
+
+- The neighbour search runs in its own thread right after `prepare`, while the browser computes the anchor layout, so the first placement usually only waits for the weighted mean too.
+- The cache costs 8 bytes per row and neighbour (u32 index + f32 squared distance): 80 MB for 10⁶ rows at k = 10. It is skipped above `positronAtlas.neighborCacheMB` (default 1,024 MB).
+- The cache holds euclidean neighbours. With the cosine metric, placement searches again (and doesn't cache).

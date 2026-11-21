@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">830812c</span> (2026-11-21).</p>
+     Checked against commit <span class="mono">58e58cf</span> (2026-11-21).</p>
   <nav>
     <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -131,7 +131,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="36" y="164" width="328" height="72" rx="8" style="stroke:var(--web)"/>
     <text class="t" x="50" y="188">Atlas state</text><text class="m" x="134" y="188">atlas.svelte.ts</text>
     <text class="s" x="50" y="207">anchors · anchorXY · allXY · colours · selection</text>
-    <text class="s" x="50" y="224">handles every message from the host</text>
+    <text class="s" x="50" y="224">logic per area in atlas/*.ts (hover, colours, labels, …)</text>
 
     <rect class="box" x="36" y="262" width="160" height="96" rx="8"/>
     <text class="t" x="50" y="286">UMAP worker</text>
@@ -179,13 +179,13 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="s" x="500" y="207">routes ToHost ↔ ToWebview messages</text>
     <text class="s" x="500" y="224">turns kernel outputs into webview URIs</text>
     <text class="s" x="500" y="241">modal confirms · save dialog · clipboard</text>
-    <text class="s" x="500" y="258">writes inputs (base64 → file)</text>
+    <text class="s" x="500" y="258">writes inputs · fonts (Google Fonts cache)</text>
 
     <rect class="box" x="486" y="294" width="248" height="90" rx="8"/>
     <text class="t" x="500" y="318">KernelBridge</text>
     <text class="s" x="500" y="337">loads the helper by path (once per session)</text>
     <text class="s" x="500" y="354">call(fn, args) → Python expression</text>
-    <text class="s" x="500" y="371">waitForJob: polls status 50 → 500 ms</text>
+    <text class="s" x="500" y="371">waitForJob: polls status 50 → 150 ms</text>
 
     <rect class="box" x="486" y="404" width="248" height="72" rx="8"/>
     <text class="t" x="500" y="428">Positron API</text>
@@ -205,7 +205,7 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="856" y="86" width="308" height="72" rx="8"/>
     <text class="t" x="870" y="110">Your namespace</text>
-    <text class="s" x="870" y="129">pandas or polars DataFrame (read in place)</text>
+    <text class="s" x="870" y="129">pandas, polars, or any narwhals frame</text>
     <text class="s" x="870" y="146">write-back adds columns or new frames</text>
 
     <rect class="box" x="856" y="178" width="308" height="96" rx="8" style="stroke:var(--py)"/>
@@ -216,8 +216,8 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="856" y="294" width="308" height="96" rx="8"/>
     <text class="t" x="870" y="318">Job thread</text><text class="m" x="950" y="318">_Job, daemon thread</text>
-    <text class="s" x="870" y="337">prepare · project · exact_umap</text>
-    <text class="s" x="870" y="354">keeps features (rows × dims, f32) and xy</text>
+    <text class="s" x="870" y="337">prepare · project · exact_umap · neighbours</text>
+    <text class="s" x="870" y="354">keeps features, xy and cached neighbours</text>
     <text class="s" x="870" y="371">cancel / supersede between blocks</text>
 
     <rect class="box" x="856" y="410" width="96" height="92" rx="8"/>
@@ -311,7 +311,8 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
   <tbody>
     <tr><td><span class="pill py">kernel</span></td><td><code>job.features</code>: sampled, cleaned, standardized (and PCA'd) rows; kept for placement, exact UMAP and comparisons</td><td class="mono">n × d × 4 B</td><td class="num">200 MB</td></tr>
     <tr><td><span class="pill py">kernel</span></td><td><code>job.xy</code> (layout of all rows) and <code>kept_idx</code> (DataFrame row of each kept row, int64)</td><td class="mono">n × 8 B + n × 8 B</td><td class="num">16 MB</td></tr>
-    <tr><td><span class="pill py">kernel</span></td><td>Temporary while placing: the index (a copy of the anchors) and neighbour blocks</td><td class="mono">a × d × 4 B + blocks</td><td class="num">≈ 25 MB</td></tr>
+    <tr><td><span class="pill py">kernel</span></td><td>Neighbour cache: the 10 nearest anchors of every row (u32 + f32), kept until the next prepare; skipped above <code>neighborCacheMB</code></td><td class="mono">n × k × 8 B</td><td class="num">80 MB</td></tr>
+    <tr><td><span class="pill py">kernel</span></td><td>Temporary while searching: the index (a copy of the anchors) and query blocks</td><td class="mono">a × d × 4 B + blocks</td><td class="num">≈ 25 MB</td></tr>
     <tr><td><span class="pill disk">disk</span></td><td><code>anchors.f32</code>, <code>anchor_pos.u32</code></td><td class="mono">a × d × 4 B + a × 4 B</td><td class="num">20 MB</td></tr>
     <tr><td><span class="pill disk">disk</span></td><td><code>xy_*.f32</code> (1,000,000 rows per file) and colour values</td><td class="mono">n × 8 B + n × 2–4 B</td><td class="num">12 MB</td></tr>
     <tr><td><span class="pill disk">disk</span></td><td><code>raw.npy</code> / <code>features.npy</code>: only when the features exceed 1 GiB (memory-mapped to bound RAM)</td><td class="mono">n × d × 4 B</td><td class="num">—</td></tr>
@@ -344,12 +345,12 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
       <td>WebGPU in the webview (falls back to the CPU)</td>
       <td>Vite 8, @sveltejs/vite-plugin-svelte, svelte-check</td></tr>
     <tr><td><span class="pill host">extension host</span></td>
-      <td>Positron (<code>@posit-dev/positron</code> API), VS Code API ≥ 1.100 · Node built-ins only</td>
+      <td>Positron (<code>@posit-dev/positron</code> API), VS Code API ≥ 1.100 · Node built-ins only · bundled OFL fonts and a Google Fonts catalogue in <code>media/fonts/</code></td>
       <td>—</td>
       <td>esbuild, TypeScript 5.9, vitest, @vscode/vsce, playwright-core (harness and e2e)</td></tr>
     <tr><td><span class="pill py">kernel</span></td>
       <td>Python ≥ 3.10 · <b>numpy</b> · pandas <i>or</i> polars (whichever your DataFrame is)</td>
-      <td><b>Rust core</b> (shipped, CPython ≥ 3.10) · <b>polars-umap</b> or <b>umap-learn</b> for exact UMAP</td>
+      <td><b>Rust core</b> (shipped, CPython ≥ 3.10) · <b>polars-umap</b> or <b>umap-learn</b> for exact UMAP · <b>narwhals</b> (other frame types: pyarrow, DuckDB, Ibis, Modin, cuDF; lazy frames collected up to <code>maxLazyRows</code>)</td>
       <td>uv, pytest, pyarrow, scikit-learn (tests); <code>python/bench*.py</code></td></tr>
     <tr><td><span class="pill py">Rust core</span></td>
       <td><b>rayon</b> (threads) · <b>gemm</b> (SIMD matrix products) · <b>pyo3</b> 0.30 + <b>numpy</b> crate (abi3 binding)</td>
@@ -369,7 +370,7 @@ Most of the heavy work is already well optimized (Rust placement at 11–13× nu
 <em>repeated</em> work and the <em>slow paths</em>.</p>
 <div class="opts">
   <div class="opt hi">
-    <h3>1 · Keep the nearest anchors of each row between placements <span class="tags">impact: high · effort: medium</span></h3>
+    <h3>1 · Keep the nearest anchors of each row between placements <span class="tags">done · measured 27–110× faster re-placement (docs/benchmarks.md)</span></h3>
     <p>Every placement builds the anchor index again and searches the 10 nearest anchors of every row again
     (<code>_project_impl</code> and <code>_project_native</code> in <code>python/positron_atlas_kernel.py</code>, <code>place_rows</code> in <code>rust/atlas-core/src/place.rs</code>).
     But those neighbours depend only on the prepared features, the anchors and the metric, not on the UMAP layout. A live <code>min_dist</code> change,
@@ -381,7 +382,7 @@ Most of the heavy work is already well optimized (Rust placement at 11–13× nu
     <p class="ev">Evidence: e2e benchmark "Live <code>min_dist</code> change, then automatic re-placement: 4.0 s" (300,000 rows), most of it the repeated search.</p>
   </div>
   <div class="opt hi">
-    <h3>2 · Search the neighbours while the browser runs UMAP <span class="tags">impact: high · effort: low, after #1</span></h3>
+    <h3>2 · Search the neighbours while the browser runs UMAP <span class="tags">done · own thread after prepare</span></h3>
     <p>After <code>prepare</code>, the kernel is idle while the webview computes the anchor layout (1–10 s on WebGPU, much longer on the CPU). The neighbour
     search does not need the layout, so start it as a job right after <code>prepare</code>. When UMAP finishes, placement is only the weighted mean, and
     "Place all rows" could happen automatically for much larger frames than today's 20 s estimate threshold allows. With the CPU UMAP (WASM, one thread) the two
@@ -404,14 +405,14 @@ Most of the heavy work is already well optimized (Rust placement at 11–13× nu
     The anchor layout for each placement (≈ 1 MB) benefits too.</p>
   </div>
   <div class="opt lo">
-    <h3>5 · Shorter waits on job status <span class="tags">impact: low–medium · effort: low</span></h3>
+    <h3>5 · Shorter waits on job status <span class="tags">done · 150 ms cap, chunks from 10⁵ rows</span></h3>
     <p>The host polls <code>status()</code> with a backoff up to 500 ms, and each poll is a kernel execution. Short tasks (prepare on small frames, the last chunk of a
     placement) can wait up to half a second after they finish, and placement chunks are 10⁶ rows, so on large frames the first points appear late.
     Cap the backoff lower (≈ 150 ms) while a task runs, and make the first placement chunk small (e.g. 10⁵ rows) so the map fills in sooner.</p>
     <p class="ev">Evidence: <code>waitForJob</code> in <code>src/extension/kernelBridge.ts</code>; <code>chunkRows</code> default in <code>_project_impl</code>.</p>
   </div>
   <div class="opt lo">
-    <h3>6 · Small copies <span class="tags">impact: low · effort: trivial</span></h3>
+    <h3>6 · Small copies <span class="tags">first item done (anchors reused)</span></h3>
     <ul class="tight">
       <li><code>_project_impl</code> gathers <code>x[job.anchor_pos]</code> again on every call although the anchors were already gathered in <code>prepare</code> (20 MB in the example). Moot with #1.</li>
       <li>The webview keeps its own copy of the anchors after sending one to the worker (<code>this.anchors.slice()</code> in <code>startUmap</code>), 20 MB in the example. It is needed to restart UMAP; it could be fetched again from <code>anchors.f32</code> instead.</li>
@@ -453,7 +454,8 @@ const STEPS = [
   { from: 'H', to: 'K', text: 'prepare(job, options)', sub: 'returns at once; a job thread does the work' },
   { note: 'K', text: ['Sample rows · read the feature columns as float32 blocks', 'drop or impute NaN · standardize (Rust) · PCA (numpy)', 'pick anchors: a random subset, at most maxAnchors'] },
   { from: 'K', to: 'D', file: true, text: 'anchors.f32 · anchor_pos.u32' },
-  { from: 'H', to: 'K', ret: true, text: 'status(job), polled every 50 → 500 ms', sub: 'stage, progress, outputs' },
+  { note: 'K', text: ['Neighbour thread (starts after prepare, overlaps with UMAP):', '10 nearest anchors per row, cached for every later placement'] },
+  { from: 'H', to: 'K', ret: true, text: 'status(job), polled every 50 → 150 ms', sub: 'stage, progress, outputs' },
   { from: 'H', to: 'W', text: 'prepared', sub: 'file URIs for the anchors' },
   { from: 'D', to: 'W', file: true, text: 'fetch() → Float32Array' },
 
@@ -464,8 +466,8 @@ const STEPS = [
   { from: 'W', to: 'H', text: 'project(anchor layout as base64)', sub: 'automatic when the estimate is under 20 s' },
   { from: 'H', to: 'D', file: true, text: 'anchor_xy_*.f32' },
   { from: 'H', to: 'K', text: 'project(job, path)' },
-  { note: 'K', text: ['IVF index on the anchors (k-means cells)', '10 nearest anchors per row, 4 cells probed', 'position = weighted mean of their xy (Rust or numpy)'] },
-  { from: 'K', to: 'D', file: true, text: 'xy_0000.f32, xy_0001.f32, …', sub: '1,000,000 rows per file' },
+  { note: 'K', text: ['Wait for the cached neighbours (or search: IVF index, 4 cells probed)', 'position = weighted mean of the 10 anchors\' xy (Rust or numpy)', 're-placing after a live change: weighted mean only'] },
+  { from: 'K', to: 'D', file: true, text: 'xy_0000.f32, xy_0001.f32, …', sub: 'chunks of 10⁵, 2·10⁵, 4·10⁵, then 10⁶ rows' },
   { from: 'H', to: 'W', text: 'xyChunk (one per new file seen while polling)' },
   { from: 'D', to: 'W', file: true, text: 'fetch() → draw the rows placed so far' },
 
