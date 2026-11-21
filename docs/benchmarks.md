@@ -64,3 +64,49 @@ How to read these results:
 | 10 % sample, PCA to 20 dims, UMAP on all 30,000 rows | 2.5 s |
 | Switch color column (300k values) | 0.3 s |
 | Hover tooltip (row fetched from the kernel) | 0.3 s |
+
+## Placing rows: Rust core vs numpy (2026-11-21)
+
+Measured with `python/bench_project.py` on a 4-core Intel Xeon (2.3 GHz, AVX-512), 15 GB RAM, Linux,
+Python 3.13, numpy 2.x. Synthetic data: 50 overlapping Gaussian blobs. Anchors laid out by their
+first two principal components; 10 nearest anchors per row. Accuracy is measured on 20,000 rows
+against exact (brute force) neighbors: recall@10, and the mean placement error relative to the
+layout's spread (RMS distance of the anchors to their mean).
+
+| Rows | Dims | Anchors | numpy | Rust | Speed-up | recall@10 numpy / Rust | placement error numpy / Rust |
+|---:|---:|---:|---:|---:|---:|---|---|
+| 100,000 | 50 | 20,000 | 1.00 s | 0.08 s | 12× | 0.987 / 0.989 | 0.11 % / 0.10 % |
+| 1,000,000 | 20 | 100,000 | 15.8 s | 1.37 s | 11.6× | 0.904 / 0.909 | 0.80 % / 0.74 % |
+| 1,000,000 | 50 | 100,000 | 16.2 s | 1.89 s | 8.6× | 0.840 / 0.846 | 1.21 % / 1.13 % |
+| 100,000 | 1,000 | 10,000 | 1.76 s | 0.77 s | 2.3× | 0.9995 / 0.9998 | 0.002 % / 0.001 % |
+| 10,000,000 | 20 | 100,000 | 197 s | 15.4 s | 12.8× | 0.905 / 0.909 | 0.79 % / 0.74 % |
+
+Times are for placing the rows (index build: numpy 0.7–3 s, Rust 0.15–0.5 s, not included).
+
+- The Rust core uses the same index (k-means cells, 4 probed cells) and the same weights as the
+  numpy code. It groups the queries by cell and computes distances as matrix products with the
+  `gemm` crate (SIMD kernels chosen at runtime), on all cores, with the GIL released.
+- A first version that compared rows one at a time was only 3× faster at 20–50 dims and 4× slower
+  at 1,000 dims than numpy (whose BLAS uses AVX-512 on all cores); batching fixed both.
+- The time estimate for the Rust core is `1.2e-6 × rows + 6e-12 × flops` seconds
+  (`src/shared/estimate.ts`), within 15 % of the measurements above.
+
+### Choice of index (`rust/bench-ann`)
+
+`cargo run --release -p bench-ann -- <anchors> <dims> <queries>`, same machine, k = 10:
+
+| Anchors × dims, queries | Index | Build | Query | recall@10 |
+|---|---|---:|---:|---:|
+| 100k × 20, 200k | atlas-core IVF | 0.28 s | 0.32 s | 0.903 |
+| | nndescent (embedding-atlas, `query`) | 2.37 s | 2.47 s | 0.910 |
+| | hnsw_rs, ef 32 / 64 | 13.2 s | 10.6 / 13.9 s | 0.915 / 0.944 |
+| 100k × 50, 200k | atlas-core IVF | 0.41 s | 0.41 s | 0.836 |
+| | nndescent | 2.79 s | 5.46 s | 0.868 |
+| | hnsw_rs, ef 32 / 64 | 15.9 s | 17.8 / 22.0 s | 0.759 / 0.856 |
+| 10k × 1000, 20k | atlas-core IVF | 0.52 s | 0.20 s | 0.999 |
+| | nndescent | 1.72 s | 1.68 s | 0.944 |
+| | hnsw_rs, ef 32 / 64 | 3.27 s | 1.91 / 2.27 s | 0.990 / 0.999 |
+
+The IVF index is 8–40× faster at similar recall, so Atlas keeps it. The SIMD crates (`pulp`,
+`simsimd`) and `kiddo` are not needed: `gemm` already picks the SIMD kernels at runtime, and the
+IVF index is fast at low dimensions.

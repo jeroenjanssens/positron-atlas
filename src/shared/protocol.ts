@@ -20,6 +20,8 @@ export interface DescribeResult {
   nCols: number;
   columns: ColumnInfo[];
   deps: Record<string, boolean>;
+  /** The Rust core: loaded, or why not (numpy is used then). */
+  native?: { available: boolean; version?: string; target?: string; reason?: string };
 }
 
 export interface PrepareOptions {
@@ -120,6 +122,8 @@ export interface Settings {
   defaultSamplePct: number;
   pcaEnabled: boolean;
   pcaDims: number;
+  /** Use the Rust core for placing rows when available. */
+  nativeCore: boolean;
 }
 
 /** How selected rows differ from all prepared rows (kernel compare_selection). */
@@ -182,7 +186,7 @@ export type ToWebview =
   | { type: 'status'; task: string; status: JobStatus }
   | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
   | { type: 'xyChunk'; file: FileRef; total: number }
-  | { type: 'projected'; seconds: number; exact?: boolean }
+  | { type: 'projected'; seconds: number; exact?: boolean; backend?: 'rust' | 'numpy' }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
   | { type: 'groupNames'; seq: number; names: string[] }

@@ -107,6 +107,11 @@
           "default": false,
           "description": "Apply PCA before UMAP by default."
         },
+        "positronAtlas.nativeCore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Place rows with the bundled Rust core (much faster). Turn off to use the numpy code; Atlas also falls back to numpy when this platform has no Rust core."
+        },
         "positronAtlas.pcaDims": {
           "type": "number",
           "default": 50,
@@ -124,6 +129,8 @@
     "check": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig ./tsconfig.webview.json",
     "test": "vitest run",
     "test:py": "uv run --project python pytest python/tests -q",
+    "build:native": "uv run --project python python scripts/build_native.py",
+    "test:rust": "cargo test --release --manifest-path rust/Cargo.toml",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
     "test:e2e": "node test/e2e/run.mjs test/e2e/scenario-small.json && node test/e2e/run.mjs test/e2e/scenario-explorer.json && node test/e2e/run.mjs test/e2e/scenario-polars-projection.json && node test/e2e/run.mjs test/e2e/scenario-background.json && node test/e2e/run.mjs test/e2e/scenario-step.json && node test/e2e/restore.mjs",

@@ -2,6 +2,7 @@
 !dist/extension.js
 !dist/webview/**
 !python/positron_atlas_kernel.py
+!native/**
 !package.json
 !README.md
 !CHANGELOG.md

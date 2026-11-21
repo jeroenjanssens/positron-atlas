@@ -56,7 +56,7 @@ features, up to 40 GB, which is exactly what the anchor design avoids.
 
 ## 2. Phases
 
-### Phase R0: baseline and profile — [ ]
+### Phase R0: baseline and profile — [x]
 
 - Extend `python/bench.py` to time each part of placing rows separately: k-means for the index,
   nearest cells per query, candidate distances, top-k selection (`argpartition`), weighting. Run it
@@ -68,7 +68,7 @@ features, up to 40 GB, which is exactly what the anchor design avoids.
   writing) to decide phase R4.
 - **Done when:** `docs/benchmarks.md` has the breakdown and the accuracy reference.
 
-### Phase R1: the Rust crate (`rust/atlas-core`) — [ ]
+### Phase R1: the Rust crate (`rust/atlas-core`) — [x]
 
 A pure Rust library, no Python, so it is testable with `cargo test` alone.
 
@@ -100,7 +100,7 @@ A pure Rust library, no Python, so it is testable with `cargo test` alone.
 - **Done when:** `cargo test` passes and a Rust benchmark (`cargo bench` or a small binary) shows
   the speed-up on R0's sizes.
 
-### Phase R2: Python binding, loaded by path — [ ]
+### Phase R2: Python binding, loaded by path — [x]
 
 - A PyO3 module `_positron_atlas_core` built with maturin against the **stable ABI (`abi3-py310`)**,
   so one build per platform works for CPython 3.10 and newer. `rust-numpy` for zero-copy arrays.

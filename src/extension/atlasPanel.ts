@@ -17,6 +17,7 @@ import type {
   ToHost,
   ToWebview,
 } from '../shared/protocol';
+import { estimateSeconds } from '../shared/estimate';
 
 export const VIEW_TYPE = 'positronAtlas.view';
 
@@ -43,6 +44,7 @@ export function readSettings(): Settings {
     defaultSamplePct: c.get('defaultSamplePct', 100),
     pcaEnabled: c.get('pcaEnabled', false),
     pcaDims: c.get('pcaDims', 50),
+    nativeCore: c.get('nativeCore', true),
   };
 }
 
@@ -187,6 +189,10 @@ export class AtlasPanel {
       return;
     }
     this.jobId = job.jobId;
+    const nat = describe.native;
+    this.ctx.log.info(
+      `[${this.state.variable}] row placement: ${nat?.available ? `Rust core ${nat.version} (${nat.target})` : `numpy${nat?.reason ? ` (${nat.reason})` : ''}`}`,
+    );
     this.post({
       type: 'init',
       variable: this.state.variable,
@@ -239,9 +245,9 @@ export class AtlasPanel {
         break;
       }
       case 'estimate': {
-        const r = await this.bridge.call<{ flops: number; rows: number }>('estimate_projection', this.requireJob());
-        // Fitted to python/bench.py on an M4 Pro (numpy only): per-row top-k cost dominates.
-        this.post({ type: 'estimate', seconds: 1.2e-5 * r.rows + 2.2e-11 * r.flops, rows: r.rows });
+        const native = readSettings().nativeCore;
+        const r = await this.bridge.call<{ flops: number; rows: number; backend: 'rust' | 'numpy' }>('estimate_projection', this.requireJob(), native);
+        this.post({ type: 'estimate', seconds: estimateSeconds(r), rows: r.rows });
         break;
       }
       case 'project': {
@@ -249,7 +255,8 @@ export class AtlasPanel {
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
         await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
         try {
-          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed })), false);
+          const native = readSettings().nativeCore;
+          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native })), false);
         } finally {
           await fs.rm(xyPath, { force: true });
         }
@@ -444,7 +451,7 @@ export class AtlasPanel {
     );
     if (s.stage === 'done') {
       this.projectionCurrent = true;
-      this.post({ type: 'projected', seconds: s.result?.seconds ?? 0, exact });
+      this.post({ type: 'projected', seconds: s.result?.seconds ?? 0, exact, backend: s.result?.backend });
     } else if (s.stage === 'error') {
       throw new KernelError(s.error ?? `${task} failed`, s.result?.traceback);
     }

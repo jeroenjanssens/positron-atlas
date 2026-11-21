@@ -100,7 +100,7 @@
     );
     if (s.stage === 'done') {
       projectionCurrent = true;
-      post({ type: 'projected', seconds: (s.result && s.result.seconds) || 0, exact });
+      post({ type: 'projected', seconds: (s.result && s.result.seconds) || 0, exact, backend: s.result && s.result.backend });
     } else if (s.stage === 'error') {
       const err = new Error(s.error || `${task} failed`);
       err.detail = s.result && s.result.traceback;
@@ -118,6 +118,7 @@
       defaultSamplePct: s.defaultSamplePct ?? 100,
       pcaEnabled: s.pcaEnabled ?? false,
       pcaDims: s.pcaDims ?? 50,
+      nativeCore: s.nativeCore ?? true,
     };
   }
 
@@ -161,15 +162,17 @@
         break;
       }
       case 'estimate': {
-        const r = await call('estimate_projection', jobId);
-        post({ type: 'estimate', seconds: 1.2e-5 * r.rows + 2.2e-11 * r.flops, rows: r.rows });
+        const r = await call('estimate_projection', jobId, settings().nativeCore);
+        // Same formulas as estimateSeconds in atlasPanel.ts.
+        const seconds = r.backend === 'rust' ? 1.2e-6 * r.rows + 6e-12 * r.flops : 1.2e-5 * r.rows + 2.2e-11 * r.flops;
+        post({ type: 'estimate', seconds, rows: r.rows });
         break;
       }
       case 'project': {
         const name = `anchor_xy_${Date.now()}.f32`;
         const xyPath = await writeJobFile(name, base64ToBytes(m.anchorXY));
         try {
-          await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed })), false);
+          await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore })), false);
         } finally {
           await rmJobFile(name);
         }

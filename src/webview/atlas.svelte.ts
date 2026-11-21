@@ -126,6 +126,8 @@ export class Atlas {
   useGpu = $state(false);
   /** The browser UMAP is paused mid-schedule (step through epochs). */
   paused = $state(false);
+  /** What placed the rows last: the Rust core or numpy. */
+  placementBackend = $state<'rust' | 'numpy' | null>(null);
   /** Set by probing navigator.gpu.requestAdapter() at startup. */
   gpuAvailable = $state(false);
   /** 'browser': live WASM UMAP; 'kernel': exact umap-learn in the kernel (if installed). */
@@ -264,6 +266,7 @@ export class Atlas {
         await this.onXYChunk(msg.file);
         break;
       case 'projected':
+        this.placementBackend = msg.backend ?? null;
         this.onProjected(msg.seconds, !!msg.exact);
         break;
       case 'colors':

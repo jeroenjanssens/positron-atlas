@@ -89,3 +89,14 @@ describe('isPlainName', () => {
     expect(isPlainName('1abc')).toBe(false);
   });
 });
+
+describe('estimateSeconds', async () => {
+  const { estimateSeconds } = await import('../src/shared/estimate');
+  it('uses the numpy fit by default and the Rust fit for the Rust core', () => {
+    // 10^6 rows x 20 dims, 100k anchors: ~5.7e10 flops for 9e5 rows (docs/benchmarks.md).
+    const r = { rows: 9e5, flops: 5.69e10 };
+    expect(estimateSeconds(r)).toBeCloseTo(12.05, 1);
+    expect(estimateSeconds({ ...r, backend: 'numpy' })).toBeCloseTo(12.05, 1);
+    expect(estimateSeconds({ ...r, backend: 'rust' })).toBeCloseTo(1.42, 1);
+  });
+});

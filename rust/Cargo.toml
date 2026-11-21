@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["atlas-core", "atlas-core-py"]
+members = ["atlas-core", "atlas-core-py", "bench-ann"]
+# bench-ann (index comparison, not shipped) only builds when asked: cargo run -p bench-ann
+default-members = ["atlas-core", "atlas-core-py"]
 
 [workspace.package]
 version = "0.1.0"
