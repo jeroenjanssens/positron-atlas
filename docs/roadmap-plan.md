@@ -57,6 +57,20 @@ Effort is given as S (≤ 1 day), M (a few days) or L (a week or more). Numbers 
 | Full screen | Not implemented. VS Code webviews run in an iframe; whether the Fullscreen API is allowed there needs a test in Positron (expected: no). | — |
 | DataMapPlot | 9 gallery images and the `create_plot` / `create_interactive_plot` options inventoried (section 9.1). None of its examples has ≥ 10M points (largest ≈ 517k). | research notes, 2026-11-21 |
 
+### 0.1 Wave-0 spike results (2026-11-21)
+
+Details in [`spikes/positron.md`](spikes/positron.md) and [`spikes/offline.md`](spikes/offline.md).
+
+| Spike | Result | Effect on the plan |
+|---|---|---|
+| H1 hover | Round trip **6 ms median, 9 ms p95** (300k × 50 polars frame; `evaluateCode` 3 ms). | The 120 ms debounce is the delay. **No side channel** (D2 alternative dropped). H2–H4 remain for instant content and caching. |
+| F1 full screen | `requestFullscreen()` is **blocked** in Positron webviews ("Disallowed by permissions policy"). | D8 as recommended: `workbench.action.maximizeEditorHideSidebar` plus focus mode in Positron; the Fullscreen API only in a browser. |
+| P4 binary messages | `ArrayBuffer`s pass through `postMessage` intact both ways: 1 MB in 2.2 ms, 30 MB in 68 ms. Base64 encoding alone costs 96 ms for 30 MB. | Do P4. |
+| N1 theme variables | 1,090 `--vscode-*` variables reach the webview, **152 Positron ones** (action bar, data grid, dialogs, tooltips, checkbox, drop-down). **No size variables** (`positronActionBar-height` is not passed). | D7 as recommended; sizes are constants copied from Positron's CSS (28 / 24 / 20 px). Light and high-contrast dumps are still to do (in N1). |
+| T1 3D | `outputDim = 3` works on **WebGPU and CPU** in Positron with no measurable extra time (10k × 50: GPU 0.59 s, CPU 7.74 s, same as 2D). | 3D is feasible; T2–T6 unchanged. |
+| P7 kNN from the kernel | kNN is only **3–4 %** of browser CPU UMAP time. The Rust IVF graph is 17× faster than NNDescent at 100k, with identical trustworthiness (0.9913). | **P7 dropped** as a speed item. P3 (kernel layout on CPU-only machines) stays. |
+| E2 Wikipedia | en + de + fr = **11.8M** articles (22 GB of Parquet with full text). `potion-multilingual-128M`: 256 dims, ~361k titles/s (≈ 33 s for 11.8M), 512 MB model. First run ≈ 40 min (mostly download), later runs ≈ 25 min; result ≈ 4 GB. | Do E2 with en + de + fr. |
+
 ---
 
 ## 1. Decisions for you
