@@ -183,6 +183,11 @@
         post({ type: 'colors', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length });
         break;
       }
+      case 'labelCodes': {
+        const r = await call('colors', jobId, m.column, true, m.maxCategories);
+        post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length });
+        break;
+      }
       case 'row': {
         const r = await call('row', jobId, m.i, m.imageColumns ?? null);
         post({ type: 'row', i: m.i, row: r.row, values: r.values, image: r.image });

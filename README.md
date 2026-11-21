@@ -10,6 +10,7 @@ Open a pandas or polars DataFrame with many numeric columns and Atlas shows a tw
 - **Live parameters.** `min_dist`, `spread`, repulsion strength, negative sample rate and learning rate change the running layout. `n_neighbors`, metric, epochs and seed rebuild the neighbor graph.
 - **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, with numpy only and streamed in chunks.
 - **Sampling, standardization, optional PCA** (off by default) and a missing-value policy.
+- **Labels on the map.** Label the map by a categorical column: each value is written at the densest spot of its points, sized by group size, and labels that would overlap are hidden (larger groups win).
 - **Color by any column.** Numeric and datetime columns get continuous colormaps (viridis, cividis, magma, …). Text, categorical, boolean and low-cardinality integer columns get categorical colors, with a legend.
 - **Hover tooltips** with the row's values, fetched from the kernel on demand.
 - **Points are images.** For image data with one pixel per column (such as `px0` … `px783`), the tooltip shows the row as a picture.
@@ -67,6 +68,7 @@ The sidebar has three tabs. The plot has its own toolbar (top left) for **Fit to
 | Map | Result | Place all rows, add coordinates to the DataFrame, copy as Python | |
 | Explore | Color | Color by, treat as categories, colormap, range | Recolors |
 | Explore | Display | Point size, opacity, points/density, background color (or follow the theme), points are images (image width, invert colors) | Rendering only |
+| Annotate | Labels | Label by a column, smallest and largest label size, color labels like the points | Rendering only (the codes come from the kernel once) |
 
 The active tab and collapsed sections are remembered per tab.
 

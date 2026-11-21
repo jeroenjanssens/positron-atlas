@@ -85,7 +85,7 @@ bundle in Chromium against the real kernel helper:
 - Harness scenario that clicks every tab and checks the expected sections (`test/harness/scenario-ui.json`).
 - The Annotate tab appears with its first section (labels, phase C), so it is never empty.
 
-### Phase C: labels from a column — [ ]
+### Phase C: labels from a column — [x]
 
 The quickest high-value feature: a categorical column is enough to label the map.
 
@@ -98,14 +98,17 @@ The quickest high-value feature: a categorical column is enough to label the map
   fall between two blobs or outside a curved cluster; the density peak always sits on the points.
 - Rendering: deck.gl `TextLayer` with `CollisionFilterExtension`, sizes in pixels, `characterSet:
   'auto'`, and an outline in the plot background color.
-  - Font size grows with the square root of the category's row count (area-proportional), between
-    a minimum and a maximum (`Font size` range control).
+  - Font size grows with the square root of the category's row count relative to the largest
+    category (area-proportional), from a minimum to a maximum (`Smallest label`, `Largest label`).
+    Unlike a min–max rescaling, groups of nearly equal size get nearly equal labels.
   - Collision priority: the row count, so larger groups win. When levels are added (phase F), use
     DataMapPlot's `compute_collision_priority` scheme: the level dominates, spread over ±900, so
     deck.gl's 16-bit collision depth cannot reorder labels
     (TutteInstitute/datamapplot#192, visgl/deck.gl#10346).
-  - Text color: the category's point color when labels and colors use the same column, otherwise
-    the theme's foreground color.
+  - Text color: the category's point color, mixed 40 % toward the plain text color, when labels
+    and colors use the same column (DataMapPlot's "deep" label palette); otherwise light text on dark
+    backgrounds and dark text on light ones. Categories are matched by name, since label codes (200)
+    and color codes (20) can order categories differently.
 - Labels follow the layout while UMAP animates (positions are recomputed per frame, throttled).
 - Labels are included in the PNG export.
 

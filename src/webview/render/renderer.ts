@@ -1,5 +1,6 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
-import { ScatterplotLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { CollisionFilterExtension } from '@deck.gl/extensions';
 
 export interface PointSet {
   id: string;
@@ -8,6 +9,22 @@ export interface PointSet {
   /** RGBA per point. */
   colors: Uint8Array;
   length: number;
+}
+
+/** A text label on the map (world coordinates, size in pixels). */
+export interface MapLabel {
+  text: string;
+  position: [number, number];
+  size: number;
+  color: [number, number, number, number];
+  /** Higher wins when labels overlap (CollisionFilterExtension). */
+  priority: number;
+}
+
+export interface LabelStyle {
+  /** Outline (halo) color, usually the plot background, as RGBA. */
+  outline: [number, number, number, number];
+  fontFamily: string;
 }
 
 export interface RenderStyle {
@@ -37,6 +54,9 @@ export class ScatterRenderer {
   private version = 0;
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
   private userMoved = false;
+  private labels: MapLabel[] = [];
+  private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
+  private readonly collision = new CollisionFilterExtension();
 
   constructor(private readonly container: HTMLElement) {
     this.deck = new Deck({
@@ -86,6 +106,15 @@ export class ScatterRenderer {
     this.render();
   }
 
+  /** Replace the text labels (an empty list removes them). */
+  setLabels(labels: MapLabel[], style?: Partial<LabelStyle>): void {
+    this.labels = labels;
+    if (style) {
+      this.labelStyle = { ...this.labelStyle, ...style };
+    }
+    this.render();
+  }
+
   /** Fit the view to the given bounds unless the user has panned/zoomed (force overrides). */
   fit(b: [number, number, number, number], force = false, padRight = 0): void {
     if (this.userMoved && !force) {
@@ -111,7 +140,7 @@ export class ScatterRenderer {
   private render(): void {
     const { pointSize, opacity, mode } = this.style;
     const density = mode === 'density';
-    const layers = this.sets
+    const layers: (ScatterplotLayer | TextLayer<MapLabel>)[] = this.sets
       .filter((s) => s.length > 0)
       .map(
         (s) =>
@@ -136,6 +165,41 @@ export class ScatterRenderer {
             updateTriggers: { getPosition: this.version, getFillColor: this.version },
           }),
       );
+    if (this.labels.length) {
+      const { outline, fontFamily } = this.labelStyle;
+      layers.push(
+        new TextLayer<MapLabel>({
+          id: 'labels',
+          data: this.labels,
+          getText: (d: MapLabel) => d.text,
+          getPosition: (d: MapLabel) => d.position,
+          getSize: (d: MapLabel) => d.size,
+          getColor: (d: MapLabel) => d.color,
+          sizeUnits: 'pixels',
+          fontFamily,
+          fontWeight: 600,
+          characterSet: 'auto',
+          // deck.gl divides outlineWidth by the SDF radius: 10/16 gives a halo of about 15% of
+          // the font size, enough to read colored text on top of points of the same color.
+          fontSettings: { sdf: true, fontSize: 64, buffer: 16, radius: 16 },
+          outlineWidth: 10,
+          outlineColor: outline,
+          lineHeight: 0.95,
+          maxWidth: 9,
+          wordBreak: 'break-word',
+          getTextAnchor: 'middle',
+          getAlignmentBaseline: 'center',
+          pickable: false,
+          // Hide labels that would overlap a label with a higher priority (bigger group).
+          extensions: [this.collision],
+          collisionEnabled: true,
+          getCollisionPriority: (d: MapLabel) => d.priority,
+          // Test collisions on slightly enlarged labels, so kept labels keep some space.
+          collisionTestProps: { sizeScale: 1.4 },
+          parameters: NORMAL as any,
+        } as any),
+      );
+    }
     this.deck.setProps({ layers });
   }
 

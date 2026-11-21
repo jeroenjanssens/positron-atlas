@@ -1,8 +1,10 @@
 import type {
+  CategoricalColorMeta,
   ColorMeta,
   DescribeResult,
   FileRef,
   JobStatus,
+  LabelOptions,
   PanelState,
   PrepareOptions,
   PrepareResult,
@@ -13,10 +15,11 @@ import type {
 import { fetchTyped, float32ToBase64, vscode } from './vscode';
 import UmapWorker from './workers/umap.worker.ts?worker&inline';
 import type { WorkerIn, WorkerOut } from './workers/umap.worker';
-import { ScatterRenderer, type PointSet } from './render/renderer';
+import { ScatterRenderer, type MapLabel, type PointSet } from './render/renderer';
+import { collisionPriorities, labelSizes, placeGroupLabels } from './labels/place';
 import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
-import { DEFAULT_POINT_COLOR } from './color/colormaps';
+import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
 import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
@@ -50,6 +53,12 @@ export interface UiState {
 /** Auto-place all rows after UMAP when the estimate is below this many seconds. */
 const AUTO_PROJECT_SECONDS = 20;
 
+/** Most categories of a label column that get a label (the rest are not labeled). */
+export const MAX_LABELS = 200;
+
+/** Recompute label positions at most this often while the layout animates (ms). */
+const LABEL_INTERVAL_MS = 250;
+
 export class Atlas {
   // ---- reactive UI state -------------------------------------------------------------
   phase = $state<Phase>('loading');
@@ -71,6 +80,11 @@ export class Atlas {
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
   view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false });
   ui = $state<UiState>({ tab: 'map', closed: [] });
+  labels = $state<LabelOptions>({ column: null, minSize: 12, maxSize: 26, colorText: true });
+  /** Categories of the label column (null until loaded). */
+  labelMeta = $state.raw<CategoricalColorMeta | null>(null);
+  /** Number of labels on the map (before overlapping ones are hidden). */
+  labelCount = $state(0);
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
@@ -106,6 +120,11 @@ export class Atlas {
   private colorValues: Float32Array | Uint16Array | null = null;
   private colorsAll: Uint8Array | null = null;
   private colorsAnchors: Uint8Array | null = null;
+  /** Label category codes per prepared row, and gathered at the anchors. */
+  private labelCodes: Uint16Array | null = null;
+  private labelCodesAnchors: Uint16Array | null = null;
+  private labelTimer: ReturnType<typeof setTimeout> | undefined;
+  private labelAt = 0;
   private hit: { index: HitIndex; map: (i: number) => number } | null = null;
   private hoverTimer: ReturnType<typeof setTimeout> | undefined;
   private hoverSeq = 0;
@@ -153,6 +172,7 @@ export class Atlas {
   }
 
   destroy(): void {
+    clearTimeout(this.labelTimer);
     this.worker?.terminate();
     this.renderer?.destroy();
   }
@@ -215,6 +235,9 @@ export class Atlas {
       case 'colors':
         await this.onColors(msg.column, msg.file, msg.meta);
         break;
+      case 'labelCodes':
+        await this.onLabelCodes(msg.column, msg.file, msg.meta);
+        break;
       case 'row':
         if (this.pendingHover) {
           this.tooltip = { ...this.pendingHover, row: msg.row, values: msg.values, image: msg.image };
@@ -267,6 +290,13 @@ export class Atlas {
         tab: tab === 'map' || tab === 'explore' || tab === 'annotate' ? tab : 'map',
         closed: Array.isArray(state.ui.closed) ? state.ui.closed.filter((x) => typeof x === 'string') : [],
       };
+    }
+    if (state?.labels) {
+      const l = state.labels;
+      const col = l.column !== null && l.column !== undefined && valid.has(l.column) ? l.column : null;
+      const minSize = Number.isFinite(l.minSize) ? Math.min(48, Math.max(6, l.minSize)) : 12;
+      const maxSize = Number.isFinite(l.maxSize) ? Math.min(64, Math.max(minSize, l.maxSize)) : Math.max(minSize, 26);
+      this.labels = { column: col, minSize, maxSize, colorText: l.colorText !== false };
     }
     if (state?.view) {
       this.view = { ...this.view, ...state.view };
@@ -325,9 +355,14 @@ export class Atlas {
     this.colorValues = null;
     this.timings = { load: (performance.now() - t0) / 1000 };
     this.autoFit = true;
+    this.labelCodes = null;
+    this.labelCodesAnchors = null;
     this.recolor();
     if (this.colorColumn !== null) {
       this.requestColors();
+    }
+    if (this.labels.column !== null) {
+      this.requestLabelCodes();
     }
     this.startUmap();
   }
@@ -585,6 +620,109 @@ export class Atlas {
     this.render();
   }
 
+  // ---- labels ------------------------------------------------------------------------
+  setLabelColumn(c: number | null): void {
+    this.labels.column = c;
+    this.labelMeta = null;
+    this.labelCodes = null;
+    this.labelCodesAnchors = null;
+    if (c === null) {
+      this.updateLabels();
+    } else {
+      this.requestLabelCodes();
+    }
+  }
+
+  setLabelOptions(o: Partial<LabelOptions>): void {
+    this.labels = { ...this.labels, ...o };
+    this.updateLabels();
+  }
+
+  private requestLabelCodes(): void {
+    if (this.labels.column !== null && this.prepared) {
+      vscode.post({ type: 'labelCodes', column: this.labels.column, maxCategories: MAX_LABELS });
+    }
+  }
+
+  private async onLabelCodes(column: number, file: FileRef, meta: ColorMeta): Promise<void> {
+    if (column !== this.labels.column || meta.kind !== 'categorical') {
+      return;
+    }
+    const codes = (await fetchTyped(file.uri, 'u16')) as Uint16Array;
+    if (codes.length !== this.nKept || !this.anchorPos || column !== this.labels.column) {
+      return; // stale (from a previous prepare or column)
+    }
+    this.labelCodes = codes;
+    this.labelCodesAnchors = this.prepared?.needsProjection ? gatherU16(codes, this.anchorPos) : codes;
+    this.labelMeta = meta;
+    this.updateLabels();
+  }
+
+  /** Recompute labels now, or soon (throttled) while the layout animates. */
+  private scheduleLabels(): void {
+    if (this.labels.column === null && this.labelCount === 0) {
+      return;
+    }
+    const wait = this.labelAt + LABEL_INTERVAL_MS - performance.now();
+    if (this.phase !== 'embedding' || wait <= 0) {
+      this.updateLabels();
+    } else if (this.labelTimer === undefined) {
+      this.labelTimer = setTimeout(() => this.updateLabels(), wait);
+    }
+  }
+
+  /** Place the labels on the points currently shown and hand them to the renderer. */
+  updateLabels(): void {
+    clearTimeout(this.labelTimer);
+    this.labelTimer = undefined;
+    this.labelAt = performance.now();
+    const meta = this.labelMeta;
+    if (!this.renderer || this.labels.column === null || !meta || !this.prepared || !this.anchorXY) {
+      if (this.labelCount !== 0 || this.labels.column === null) {
+        this.labelCount = 0;
+        this.renderer?.setLabels([]);
+      }
+      return;
+    }
+    let placed;
+    if (this.projection === 'done' && this.allXY && this.labelCodes) {
+      placed = placeGroupLabels(this.allXY, this.labelCodes, this.nKept, meta.categories);
+    } else if (this.labelCodesAnchors) {
+      placed = placeGroupLabels(this.anchorXY, this.labelCodesAnchors, this.prepared.nAnchors, meta.categories);
+    } else {
+      return;
+    }
+    const counts = placed.map((l) => l.count);
+    const sizes = labelSizes(counts, this.labels.minSize, this.labels.maxSize);
+    const priorities = collisionPriorities(counts);
+    const background = this.plotBackground();
+    const plain = contrastText(background);
+    // Colored text when labels and points use the same column. The two code lists can order
+    // and cut categories differently (20 colors, 200 labels), so match categories by name.
+    const cm = this.colorMeta;
+    const colorIndex =
+      this.labels.colorText && this.labels.column === this.colorColumn && cm?.kind === 'categorical'
+        ? new Map(cm.categories.map((c, i) => [c, i]))
+        : null;
+    const out: MapLabel[] = placed.map((l, i) => {
+      const ci = colorIndex?.get(l.text);
+      return {
+        text: l.text === '' ? '(empty)' : l.text,
+        position: [l.x, l.y],
+        size: sizes[i],
+        color: ci !== undefined ? labelTextColor(hexToRgb(this.categoryColor(ci)), plain) : plain,
+        priority: priorities[i],
+      };
+    });
+    this.labelCount = out.length;
+    this.renderer.setLabels(out, { outline: [...hexToRgb(toHex(background)), 220], fontFamily: fontFamily() });
+  }
+
+  /** Point color of category i of the color column. */
+  categoryColor(i: number): string {
+    return CATEGORICAL[i % CATEGORICAL.length];
+  }
+
   // ---- rendering ---------------------------------------------------------------------
   setView(v: Partial<ViewOptions>): void {
     const cmapChanged = v.colormap !== undefined && v.colormap !== this.view.colormap;
@@ -595,6 +733,9 @@ export class Atlas {
     this.renderer?.setStyle(this.view);
     if (cmapChanged) {
       this.recolor();
+    }
+    if (v.background !== undefined) {
+      this.updateLabels();
     }
   }
 
@@ -620,6 +761,7 @@ export class Atlas {
       sets = [{ id: 'anchors', positions: this.anchorXY, colors: this.colorsAnchors, length: nA }];
     }
     this.renderer.setPointSets(sets);
+    this.scheduleLabels();
     if (this.autoFit) {
       this.renderer.fit(bounds(this.anchorXY, nA), false, this.legendWidth());
     }
@@ -737,6 +879,7 @@ export class Atlas {
       colorColumn: this.colorColumn,
       view: $state.snapshot(this.view) as ViewOptions,
       ui: $state.snapshot(this.ui) as UiState,
+      labels: $state.snapshot(this.labels) as LabelOptions,
     };
     vscode.setState(state);
     vscode.post({ type: 'state', state });
@@ -776,4 +919,32 @@ async function probeWebGpu(): Promise<boolean> {
 export function themeBackground(): string {
   const raw = getComputedStyle(document.body).getPropertyValue('--vscode-editor-background').trim() || '#1e1e1e';
   return toHex(raw);
+}
+
+/** Gather uint16 values at the given indices. */
+function gatherU16(values: Uint16Array, idx: Uint32Array): Uint16Array {
+  const out = new Uint16Array(idx.length);
+  for (let i = 0; i < idx.length; i++) out[i] = values[idx[i]];
+  return out;
+}
+
+/** Near-white text on dark backgrounds, near-black on light ones. */
+export function contrastText(background: string): [number, number, number, number] {
+  const [r, g, b] = hexToRgb(toHex(background));
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return lum < 0.5 ? [235, 235, 235, 255] : [25, 25, 25, 255];
+}
+
+/**
+ * Text color for a label in its group's color: mixed 40% toward the plain text color (lighter on
+ * dark backgrounds, darker on light ones), so it stands out from points of the same color.
+ * DataMapPlot does the same with its "deep" label palette.
+ */
+export function labelTextColor(rgb: [number, number, number], plain: [number, number, number, number], t = 0.4): [number, number, number, number] {
+  return [0, 1, 2].map((i) => Math.round(rgb[i] * (1 - t) + plain[i] * t)).concat(255) as [number, number, number, number];
+}
+
+/** The editor's font family (for map labels). */
+function fontFamily(): string {
+  return getComputedStyle(document.body).fontFamily || 'sans-serif';
 }

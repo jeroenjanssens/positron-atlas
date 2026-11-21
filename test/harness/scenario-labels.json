@@ -1,0 +1,75 @@
+{
+  "variable": "mnist",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\n\ndef download(url: str, name: str) -> Path:\n    \"\"\"Download a file once and cache it.\"\"\"\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        print(f\"Downloading {url} ...\")\n        tmp = path.with_suffix(path.suffix + \".part\")\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\n\ndef read_idx(path: Path) -> np.ndarray:\n    \"\"\"Read an IDX file (the MNIST format): images as (n, 784) uint8, labels as (n,).\"\"\"\n    with gzip.open(path, \"rb\") as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], \"big\") for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nBASE = \"https://ossci-datasets.s3.amazonaws.com/mnist/\"\nLABELS = [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"]\n\nfiles = {\n    name: download(BASE + name, \"mnist-\" + name)\n    for name in [\n        \"train-images-idx3-ubyte.gz\",\n        \"train-labels-idx1-ubyte.gz\",\n        \"t10k-images-idx3-ubyte.gz\",\n        \"t10k-labels-idx1-ubyte.gz\",\n    ]\n}\ntrain_x = read_idx(files[\"train-images-idx3-ubyte.gz\"])\ntest_x = read_idx(files[\"t10k-images-idx3-ubyte.gz\"])\ntrain_y = read_idx(files[\"train-labels-idx1-ubyte.gz\"])\ntest_y = read_idx(files[\"t10k-labels-idx1-ubyte.gz\"])\nn_train = len(train_y)\n\npixels = np.concatenate([train_x, test_x])  # (70000, 784) uint8\nlabels = np.concatenate([train_y, test_y])\npixels.shape, labels.shape\n\nimport polars as pl\n\nmnist = pl.from_numpy(pixels, schema=[f\"px{i}\" for i in range(pixels.shape[1])]).with_columns(\n    pl.Series(\"label\", [LABELS[v] for v in labels], dtype=pl.Enum(LABELS)),\n    pl.Series(\"split\", np.where(np.arange(len(labels)) < n_train, \"train\", \"test\")),\n    pl.Series(\"ink\", pixels.mean(axis=1)),  # average pixel intensity: a numeric column to color by\n)\nmnist.shape",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 50,
+    "maxAnchorsCpu": 20000
+  },
+  "screenshot": "labels-0.png",
+  "steps": [
+    {
+      "name": "annotate tab",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "label by digit",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'label').index; const sel = document.querySelector('select[aria-label=\"Label by\"]'); sel.value = String(col); sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labelCount === 10",
+      "assert": [
+        "a.labelMeta.categories.length === 10",
+        "a.labels.column === a.colorColumn",
+        "a.renderer.labels.every(l => l.color.join(',') !== '235,235,235,255')"
+      ],
+      "report": "a.renderer.labels.map(l => [l.text, Math.round(l.size), l.color.join(',')])",
+      "screenshot": "labels-digits.png"
+    },
+    {
+      "name": "plain labels when colored by another column",
+      "eval": "a.setColorColumn(a.describe.columns.find(c => c.name === 'ink').index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'numeric'",
+      "assert": [
+        "a.renderer.labels.every(l => l.color.join(',') === '235,235,235,255')"
+      ],
+      "screenshot": "labels-plain.png"
+    },
+    {
+      "name": "label by split (2 groups)",
+      "eval": "a.setColorColumn(a.describe.columns.find(c => c.name === 'label').index); a.setLabelColumn(a.describe.columns.find(c => c.name === 'split').index)",
+      "until": "a.labelCount === 2 && a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "report": "a.renderer.labels.map(l => l.text)"
+    },
+    {
+      "name": "labels follow a rebuild",
+      "eval": "a.setLabelColumn(a.describe.columns.find(c => c.name === 'label').index); a.umap.nNeighbors = 30; a.umapChanged()",
+      "until": "a.phase === 'embedding'",
+      "timeout": 30000
+    },
+    {
+      "name": "labels while animating",
+      "until": "a.phase === 'embedding' && a.umapProgress && a.umapProgress.stage === 'optimizing' && a.umapProgress.epoch > 40 && a.labelCount === 10",
+      "timeout": 90000,
+      "screenshot": "labels-animating.png",
+      "settle": 0
+    },
+    {
+      "name": "done",
+      "until": "a.phase === 'ready' && a.projection === 'done' && a.labelCount === 10",
+      "timeout": 120000
+    },
+    {
+      "name": "png includes labels",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000"
+    },
+    {
+      "name": "no labels",
+      "eval": "a.setLabelColumn(null)",
+      "until": "a.labelCount === 0",
+      "assert": [
+        "a.renderer.labels.length === 0"
+      ]
+    }
+  ]
+}

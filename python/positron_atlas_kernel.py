@@ -921,7 +921,9 @@ def estimate_projection(job_id: str) -> str:
 # --------------------------------------------------------------------------------------
 
 
-def _color_values(frame: _Frame, col: int, rows: np.ndarray, force_categorical: bool = False) -> tuple[str, np.ndarray, dict[str, Any]]:
+def _color_values(
+    frame: _Frame, col: int, rows: np.ndarray, force_categorical: bool = False, max_categories: int = _MAX_CATEGORIES
+) -> tuple[str, np.ndarray, dict[str, Any]]:
     dtype, kind = frame.column_kind(col)
     vals = frame.column(col, rows)
     if kind in ("numeric", "datetime") and not force_categorical:
@@ -942,8 +944,8 @@ def _color_values(frame: _Frame, col: int, rows: np.ndarray, force_categorical: 
     keys = np.array([str(v) for v in obj], dtype=object)
     keys[nulls] = ""
     uniq, inverse, counts = np.unique(keys[~nulls], return_inverse=True, return_counts=True)
-    order = _category_order(frame, col, kind, uniq, counts)
-    top = order[:_MAX_CATEGORIES]
+    order = _category_order(frame, col, kind, uniq, counts, max_categories)
+    top = order[:max_categories]
     remap = np.full(len(uniq), len(top), dtype=np.uint16)  # "Other"
     remap[top] = np.arange(len(top), dtype=np.uint16)
     codes = np.full(len(obj), len(top) + 1, dtype=np.uint16)  # null
@@ -954,18 +956,18 @@ def _color_values(frame: _Frame, col: int, rows: np.ndarray, force_categorical: 
         "dtype": dtype,
         "categories": [str(uniq[i]) for i in top],
         "counts": [int(counts[i]) for i in top],
-        "otherCount": int(counts[order[_MAX_CATEGORIES:]].sum()) if has_other else 0,
+        "otherCount": int(counts[order[max_categories:]].sum()) if has_other else 0,
         "nullCount": int(nulls.sum()),
         "nUnique": int(len(uniq)),
     }
     return "u16", codes, meta
 
 
-def _category_order(frame: _Frame, col: int, kind: str, uniq: np.ndarray, counts: np.ndarray) -> np.ndarray:
+def _category_order(frame: _Frame, col: int, kind: str, uniq: np.ndarray, counts: np.ndarray, max_categories: int = _MAX_CATEGORIES) -> np.ndarray:
     """Legend order: declared order (pandas Categorical, polars Enum), numeric order for
     numbers and booleans, otherwise most frequent first. Only for few categories."""
     by_freq = np.argsort(-counts, kind="stable")
-    if len(uniq) > _MAX_CATEGORIES:
+    if len(uniq) > max_categories:
         return by_freq
     declared = frame.declared_categories(col)
     if declared:
@@ -981,11 +983,17 @@ def _category_order(frame: _Frame, col: int, kind: str, uniq: np.ndarray, counts
 
 
 @_guard
-def colors(job_id: str, col: int, force_categorical: bool = False) -> str:
+def colors(job_id: str, col: int, force_categorical: bool = False, max_categories: int | None = None) -> str:
+    """Color values (or category codes) of column ``col`` for the prepared rows.
+
+    Categorical results keep the ``max_categories`` most frequent values (default 20; at most
+    65,000 so the codes fit in uint16); the rest become "Other".
+    """
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
-    dtype, arr, meta = _color_values(job.frame, int(col), job.kept_idx, bool(force_categorical))
+    top = _MAX_CATEGORIES if max_categories is None else max(1, min(int(max_categories), 65_000))
+    dtype, arr, meta = _color_values(job.frame, int(col), job.kept_idx, bool(force_categorical), top)
     fname = f"color_{int(col)}_{uuid.uuid4().hex[:6]}.{dtype}"
     _write(job, fname, arr)
     return _json({"ok": True, "file": fname, "dtype": dtype, "meta": meta, "length": int(len(arr))})

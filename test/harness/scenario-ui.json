@@ -15,7 +15,7 @@
         "(() => { const e = document.querySelector('[data-section=result]'); return !!e && e.offsetParent !== null; })()",
         "!(() => { const e = document.querySelector('[data-section=color]'); return !!e && e.offsetParent !== null; })()",
         "document.querySelector('#tab-map').getAttribute('aria-selected') === 'true'",
-        "[...document.querySelectorAll('.controls .tab')].map(t => t.textContent.trim()).join(',') === 'Map,Explore'",
+        "[...document.querySelectorAll('.controls .tab')].map(t => t.textContent.trim()).join(',') === 'Map,Explore,Annotate'",
         "document.querySelector('.controls .buttons button').textContent.includes('Restart')"
       ]
     },

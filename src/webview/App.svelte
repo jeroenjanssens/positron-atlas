@@ -31,7 +31,7 @@
   // Persist settings (debounced) so the tab can be restored.
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui]);
+    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui, atlas.labels]);
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => atlas.variable && atlas.persist(), 400);
   });

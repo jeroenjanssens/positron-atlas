@@ -79,3 +79,15 @@ describe('sgd schedule', () => {
     expect(sgdRate(50, 200, 2)).toBeCloseTo(1.5);
   });
 });
+
+describe('label text colors', async () => {
+  const { contrastText, labelTextColor } = await import('../src/webview/atlas.svelte');
+  it('picks light text on dark backgrounds and dark text on light ones', () => {
+    expect(contrastText('#1f1f1f')).toEqual([235, 235, 235, 255]);
+    expect(contrastText('#ffffff')).toEqual([25, 25, 25, 255]);
+  });
+  it('mixes a group color toward the plain text color', () => {
+    expect(labelTextColor([255, 0, 0], [235, 235, 235, 255])).toEqual([247, 94, 94, 255]);
+    expect(labelTextColor([255, 200, 0], [25, 25, 25, 255])).toEqual([163, 130, 10, 255]);
+  });
+});

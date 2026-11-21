@@ -275,6 +275,24 @@ export class AtlasPanel {
         });
         break;
       }
+      case 'labelCodes': {
+        // Category codes of a column for labels: always categorical, more categories than colors.
+        const r = await this.bridge.call<{ file: string; dtype: 'f32' | 'u16'; meta: ColorMeta; length: number }>(
+          'colors',
+          this.requireJob(),
+          m.column,
+          true,
+          m.maxCategories,
+        );
+        this.post({
+          type: 'labelCodes',
+          column: m.column,
+          file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+          meta: r.meta,
+          length: r.length,
+        });
+        break;
+      }
       case 'row': {
         const r = await this.bridge.call<{ row: number; values: [string, string][]; image?: (number | null)[] }>(
           'row',

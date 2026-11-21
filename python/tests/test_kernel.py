@@ -225,6 +225,32 @@ def test_colors_many_categories_and_nulls(ns, tmp_path):
     assert codes[0] == pak._MAX_CATEGORIES + 1
 
 
+def test_colors_max_categories(ns, frame_kind, tmp_path):
+    vals = [f"v{i % 50:02d}" for i in range(1000)]
+    vals[0] = None
+    df = pd.DataFrame({"a": np.arange(1000.0), "s": vals, "k": np.arange(1000) % 30})
+    ns["df"] = df if frame_kind == "pandas" else pl.from_pandas(df)
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    pak.prepare(jid, json.dumps({"features": [0]}))
+    wait(jid)
+    # All 50 values fit: no "Other", and the codes map back to the values.
+    c = J(pak.colors(jid, 1, True, 200))
+    m = c["meta"]
+    assert len(m["categories"]) == 50 and m["otherCount"] == 0 and m["nullCount"] == 1 and m["nUnique"] == 50
+    codes = np.fromfile(tmp_path / c["file"], dtype="<u2")
+    cats = np.array(m["categories"] + ["<other>", "<null>"])
+    assert cats[codes[0]] == "<null>"
+    assert list(cats[codes[1:]]) == vals[1:]
+    # A smaller limit keeps the most frequent values.
+    m = J(pak.colors(jid, 1, True, 5))["meta"]
+    assert len(m["categories"]) == 5 and m["otherCount"] == 999 - sum(m["counts"])
+    # Forced categories of a numeric column, in numeric order.
+    m = J(pak.colors(jid, 2, True, 100))["meta"]
+    assert m["kind"] == "categorical" and m["categories"] == [str(i) for i in range(30)]
+    # The default is unchanged.
+    assert len(J(pak.colors(jid, 1))["meta"]["categories"]) == pak._MAX_CATEGORIES
+
+
 def test_small_int_is_categorical(ns, tmp_path):
     ns["df"] = pd.DataFrame({"a": np.arange(100.0), "k": np.arange(100) % 3})
     jid = J(pak.create_job("df", str(tmp_path)))["jobId"]

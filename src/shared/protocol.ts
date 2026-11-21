@@ -122,6 +122,17 @@ export interface Settings {
   pcaDims: number;
 }
 
+/** Text labels on the map (Annotate → Labels). */
+export interface LabelOptions {
+  /** Column whose values label the map, or null for no labels. */
+  column: number | null;
+  /** Font size range in pixels; size grows with the square root of the group size. */
+  minSize: number;
+  maxSize: number;
+  /** Color the label text like the points when labels and colors use the same column. */
+  colorText: boolean;
+}
+
 /** Persisted in the webview state so tabs can be restored after a reload. */
 export interface PanelState {
   variable: string;
@@ -131,6 +142,7 @@ export interface PanelState {
   umap?: UmapParams;
   colorColumn?: number | null;
   view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number; imageInvert?: boolean };
+  labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */
   ui?: { tab?: 'map' | 'explore' | 'annotate'; closed?: string[] };
 }
@@ -142,6 +154,7 @@ export type ToWebview =
   | { type: 'xyChunk'; file: FileRef; total: number }
   | { type: 'projected'; seconds: number; exact?: boolean }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
+  | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
   | { type: 'coordsAdded'; variable: string; columns: string[] }
@@ -154,6 +167,7 @@ export type ToHost =
   | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
   | { type: 'exact'; params: UmapParams }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
+  | { type: 'labelCodes'; column: number; maxCategories: number }
   | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'cancel' }
   | { type: 'addCoordinates'; anchorXY: string | null /* base64 float32 */; useProjection: boolean }
