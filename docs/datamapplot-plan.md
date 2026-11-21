@@ -61,7 +61,7 @@ Rules for the interface:
 
 ## 3. Phases
 
-### Phase A: browser harness for testing and screenshots — [ ]
+### Phase A: browser harness for testing and screenshots — [x]
 
 Positron cannot run in CI or in every development container. A small harness runs the real webview
 bundle in Chromium against the real kernel helper:

@@ -137,6 +137,15 @@ npm run build && npm run test:e2e
 
 Screenshots land in `/tmp/positron-atlas-e2e/`.
 
+Without Positron, the **browser harness** runs the built webview in Chromium against the real kernel helper (a small Python server stands in for Positron). It is quicker and also produces screenshots:
+
+```sh
+npm run build && npm run test:harness                   # test/harness/scenario-small.json
+npm run harness -- test/harness/scenario-mnist.json      # any scenario; --theme light for the light theme
+```
+
+Screenshots land in `/tmp/positron-atlas-harness/`.
+
 ## License
 
 MIT. UMAP comes from [embedding-atlas](https://github.com/apple/embedding-atlas) (MIT); rendering uses [deck.gl](https://deck.gl) (MIT).
