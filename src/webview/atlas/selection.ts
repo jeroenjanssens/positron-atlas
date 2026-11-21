@@ -4,7 +4,6 @@
 
 import type { Atlas } from '../atlas.svelte';
 import { combineSelection, countSelected, fadeUnselected, invertSelection as invertSel, packBits, pointsInPolygon, type SelectMode } from '../select/lasso';
-import { bytesToBase64 } from '../vscode';
 import { vscode } from '../vscode';
 import { toHex } from '../logic';
 import { hexToRgb } from '../color/colormaps';
@@ -66,12 +65,12 @@ export function compareSelection(atlas: Atlas): void {
   if (!atlas.selection) return;
   atlas.comparing = true;
   atlas.comparison = null;
-  vscode.post({ type: 'compareSelection', seq: ++atlas.compareSeq, mask: bytesToBase64(packBits(atlas.selection)) });
+  vscode.post({ type: 'compareSelection', seq: ++atlas.compareSeq, mask: packBits(atlas.selection) });
 }
 
 export function selectionToFrame(atlas: Atlas): void {
   if (!atlas.selection) return;
-  vscode.post({ type: 'selectionFrame', mask: bytesToBase64(packBits(atlas.selection)) });
+  vscode.post({ type: 'selectionFrame', mask: packBits(atlas.selection) });
 }
 
 /** Recolor with selection fade. Called by recolor() in colors.ts. */

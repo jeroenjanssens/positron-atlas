@@ -5,7 +5,7 @@
 import type { Atlas } from '../atlas.svelte';
 import { DETAIL_THRESHOLDS, assignToClusters, densityGrid } from '../labels/clusters';
 import { ClusterFinder } from '../labels/clusterWorker';
-import { vscode, bytesToBase64 } from '../vscode';
+import { vscode, typedArrayToBytes } from '../vscode';
 import { gatherU16, dominantNames } from './utils';
 import { updateLabels } from './labels';
 import { MAX_LABELS } from './types';
@@ -86,7 +86,7 @@ export function nameClusters(atlas: Atlas): void {
     atlas.clusterNames = atlas.clusterNames.length === c.k ? atlas.clusterNames : numbered;
     const seq = ++atlas.nameSeq;
     const columns = (atlas.applied?.features ?? []).slice();
-    vscode.post({ type: 'describeGroups', seq, codes: bytesToBase64(new Uint8Array(c.codes.buffer, c.codes.byteOffset, c.codes.byteLength)), k: c.k, columns });
+    vscode.post({ type: 'describeGroups', seq, codes: typedArrayToBytes(c.codes), k: c.k, columns });
     return;
   }
   if (typeof by === 'number') {

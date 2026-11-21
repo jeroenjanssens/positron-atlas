@@ -4,7 +4,7 @@
 
 import type { Atlas } from '../atlas.svelte';
 import type { FileRef } from '../../shared/protocol';
-import { vscode, fetchTyped, float32ToBase64 } from '../vscode';
+import { vscode, fetchTyped, float32ToBytes } from '../vscode';
 import { updateMapColors } from './colors';
 import { refreshClusters } from './clusters';
 import { stopWorker } from './umap.svelte';
@@ -16,7 +16,7 @@ export function project(atlas: Atlas): void {
   atlas.projection = 'running';
   atlas.projectProgress = 0;
   atlas.placedRows = 0;
-  vscode.post({ type: 'project', anchorXY: float32ToBase64(atlas.anchorXY), metric: atlas.umap.metric, seed: atlas.umap.seed });
+  vscode.post({ type: 'project', anchorXY: float32ToBytes(atlas.anchorXY), metric: atlas.umap.metric, seed: atlas.umap.seed });
 }
 
 /** Exact UMAP of all prepared rows in the kernel, with the chosen engine. */

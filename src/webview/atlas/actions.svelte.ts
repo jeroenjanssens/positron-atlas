@@ -5,7 +5,7 @@
 
 import type { Atlas } from '../atlas.svelte';
 import type { PanelState, PrepareOptions, UmapParams } from '../../shared/protocol';
-import { vscode, float32ToBase64 } from '../vscode';
+import { vscode, float32ToBytes } from '../vscode';
 import { dataMapPlotSnippet, formatCount, polarsUmapSnippet, pythonSnippet } from '../logic';
 import { plotBackground } from './render';
 
@@ -14,7 +14,7 @@ export function addCoordinates(atlas: Atlas): void {
     return;
   }
   if (!atlas.prepared.needsProjection) {
-    vscode.post({ type: 'addCoordinates', anchorXY: float32ToBase64(atlas.anchorXY), useProjection: false });
+    vscode.post({ type: 'addCoordinates', anchorXY: float32ToBytes(atlas.anchorXY), useProjection: false });
   } else if (atlas.projection === 'done') {
     vscode.post({ type: 'addCoordinates', anchorXY: null, useProjection: true });
   } else {
@@ -26,7 +26,9 @@ export function savePng(atlas: Atlas): void {
   if (!atlas.renderer) {
     return;
   }
-  vscode.post({ type: 'savePng', dataUrl: atlas.renderer.toDataURL(plotBackground(atlas)) });
+  atlas.renderer.toPngBytes(plotBackground(atlas)).then((bytes) => {
+    vscode.post({ type: 'savePng', bytes });
+  });
 }
 
 export function copyPython(atlas: Atlas): void {

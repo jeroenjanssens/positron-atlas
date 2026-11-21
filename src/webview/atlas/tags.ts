@@ -4,7 +4,7 @@
 
 import type { Atlas } from '../atlas.svelte';
 import type { DescribeResult } from '../../shared/protocol';
-import { vscode, bytesToBase64 } from '../vscode';
+import { vscode, typedArrayToBytes } from '../vscode';
 import { formatCount } from '../logic';
 import { requestLabelCodes } from './labels';
 import { requestColors } from './colors';
@@ -17,7 +17,7 @@ export function tagSelection(atlas: Atlas, tag: string, column: string): void {
   for (let i = 0; i < codes.length; i++) if (atlas.selection[i]) codes[i] = 0;
   vscode.post({
     type: 'writeLabels',
-    codes: bytesToBase64(new Uint8Array(codes.buffer)),
+    codes: new Uint8Array(codes.buffer),
     names: [t],
     column: column.trim(),
     keepOthers: true,
@@ -31,7 +31,7 @@ export function clustersToFrame(atlas: Atlas, column: string): void {
   if (!c || !column.trim() || atlas.clusterNames.length !== c.k) return;
   vscode.post({
     type: 'writeLabels',
-    codes: bytesToBase64(new Uint8Array(c.codes.buffer, c.codes.byteOffset, c.codes.byteLength)),
+    codes: typedArrayToBytes(c.codes),
     names: atlas.clusterNames.slice(),
     column: column.trim(),
     keepOthers: false,
