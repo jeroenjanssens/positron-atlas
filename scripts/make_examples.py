@@ -218,6 +218,86 @@ covtype.shape'''
     ]
 )
 
+FEATURE_NAMES = [
+    "lepton_pT", "lepton_eta", "lepton_phi",
+    "missing_energy_magnitude", "missing_energy_phi",
+    "jet_1_pt", "jet_1_eta", "jet_1_phi", "jet_1_b_tag",
+    "jet_2_pt", "jet_2_eta", "jet_2_phi", "jet_2_b_tag",
+    "jet_3_pt", "jet_3_eta", "jet_3_phi", "jet_3_b_tag",
+    "jet_4_pt", "jet_4_eta", "jet_4_phi", "jet_4_b_tag",
+    "m_jj", "m_jjj", "m_lv", "m_jlv", "m_bb", "m_wbb", "m_wwbb",
+]
+
+HIGGS = notebook(
+    [
+        md(
+            """\
+# HIGGS (11,000,000 rows × 28 features)
+
+The [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs) from the UCI Machine Learning Repository contains 11 million Monte Carlo simulated collision events for a high-energy physics classifier: does the collision produce a Higgs boson (signal) or background noise? Each row has 28 kinematic features measured in the detector.
+
+This example exercises Atlas at scale: 11 million rows, the *anchor + projection* placement path, and legend toggles on the binary class label.
+
+> **License:** CC BY 4.0. **Download:** ~2.6 GB compressed on first run; cached afterwards."""
+        ),
+        code(DOWNLOAD),
+        code(
+            '''\
+import zipfile
+
+ZIP_URL = "https://archive.ics.uci.edu/static/public/280/higgs.zip"
+zip_path = download(ZIP_URL, "higgs.zip")
+
+# The zip contains HIGGS.csv.gz — extract it once if needed.
+csv_gz = CACHE / "HIGGS.csv.gz"
+if not csv_gz.exists():
+    print("Extracting HIGGS.csv.gz from zip ...")
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extract("HIGGS.csv.gz", CACHE)
+print(f"Cached at: {csv_gz}")'''
+        ),
+        md(
+            "Load with polars (reads the gzip CSV directly). The file has no header: the first column is the class label (0 = background, 1 = signal) and the remaining 28 are kinematic features."
+        ),
+        code(
+            f'''\
+import polars as pl
+
+FEATURES = {json.dumps(FEATURE_NAMES)}
+
+print("Reading 11M rows — this takes about 20–40 s the first time ...")
+higgs = pl.read_csv(
+    csv_gz,
+    has_header=False,
+    new_columns=["label_raw"] + FEATURES,
+    schema_overrides={{col: pl.Float32 for col in FEATURES}},
+).with_columns(
+    pl.Series(
+        "label",
+        ["signal" if v == 1 else "background" for v in pl.col("label_raw").to_list()],
+        dtype=pl.Enum(["signal", "background"]),
+    )
+).drop("label_raw")
+higgs.shape'''
+        ),
+        md(HOW_TO_OPEN.format(var="higgs")),
+        md(
+            """\
+## Things to try
+
+- **Color by `label`.** Signal and background separate, though imperfectly — that is the physics. The last 7 columns (`m_jj` … `m_wwbb`) are high-level derived features that the original paper shows improve separation.
+- **Watch the footer.** With 11 million rows, Atlas runs UMAP on up to 100,000 anchors and places the rest in the kernel. The status bar shows the two phases; the whole map fills in progressively.
+- **Lower *Sample rows*** to 1 % (110,000 rows) and click **Apply** for a quick exact UMAP. No projection step needed at that size.
+- **Turn on *Apply PCA first*** with 20 components and click **Apply** for a faster run on the full dataset.
+- **Add coordinates.** After projection, click **Add umap_x / umap_y** in the **Export** section to write the coordinates back into `higgs`. Then use them in a follow-up analysis:
+
+  ```python
+  higgs.group_by("label").agg(pl.col("umap_x", "umap_y").mean())
+  ```"""
+        ),
+    ]
+)
+
 README = """\
 # Example notebooks
 
@@ -228,6 +308,7 @@ Real high-dimensional datasets to explore with Positron Atlas. Each notebook dow
 | [01-mnist.ipynb](01-mnist.ipynb) | Handwritten digits ([MNIST](https://yann.lecun.com/exdb/mnist/)) | 70,000 × 784 | polars |
 | [02-fashion-mnist.ipynb](02-fashion-mnist.ipynb) | Clothing images ([Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist)) | 70,000 × 784 | polars |
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
+| [05-higgs.ipynb](05-higgs.ipynb) | Higgs boson search ([UCI HIGGS](https://archive.ics.uci.edu/dataset/280/higgs)) | 11,000,000 × 28 | polars |
 
 ## Setup
 
@@ -271,6 +352,7 @@ def main() -> None:
             tips=TIPS,
         ),
         "03-covertype.ipynb": COVTYPE,
+        "05-higgs.ipynb": HIGGS,
     }
     for name, nb in nbs.items():
         (OUT / name).write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")

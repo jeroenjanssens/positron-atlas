@@ -45,7 +45,7 @@ Positron does not yet let extensions add items to the Variables pane itself, so 
 
 ### Example notebooks
 
-The `examples/` folder in the source repository has notebooks with real data: MNIST and Fashion-MNIST (70,000 × 784 each) and Covertype (581,012 rows), all as polars DataFrames. Each one downloads its dataset once and needs only numpy and polars.
+The `examples/` folder in the source repository has notebooks with real data: MNIST and Fashion-MNIST (70,000 × 784 each), Covertype (581,012 rows), and HIGGS (11,000,000 × 28), all as polars DataFrames. Each one downloads its dataset once and needs only numpy and polars.
 
 ### Anchors
 
