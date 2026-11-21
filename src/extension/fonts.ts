@@ -502,7 +502,11 @@ export class FontManager {
     await fs.mkdir(cacheDir, { recursive: true });
 
     for (const block of filtered) {
-      const filename = block.url.split('/').pop()!;
+      const filename = block.url.split('?')[0].split('/').pop() ?? '';
+      // Only plain file names (no '..', no separators) end up in the cache directory.
+      if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*\.woff2$/.test(filename)) {
+        continue;
+      }
       const dest = path.join(cacheDir, filename);
       try {
         await fs.access(dest); // already cached
