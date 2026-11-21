@@ -263,6 +263,28 @@ export class ScatterRenderer {
     return out.toDataURL('image/png');
   }
 
+  /** Render the current frame to a PNG and resolve with its bytes. */
+  toPngBytes(background: string): Promise<Uint8Array> {
+    this.deck.redraw('export');
+    const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
+    const out = document.createElement('canvas');
+    out.width = canvas.width;
+    out.height = canvas.height;
+    const g = out.getContext('2d')!;
+    g.fillStyle = background;
+    g.fillRect(0, 0, out.width, out.height);
+    g.drawImage(canvas, 0, 0);
+    return new Promise<Uint8Array>((resolve, reject) => {
+      out.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('canvas.toBlob returned null'));
+          return;
+        }
+        blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
+      }, 'image/png');
+    });
+  }
+
   destroy(): void {
     this.deck.finalize();
   }

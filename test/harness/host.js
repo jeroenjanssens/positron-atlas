@@ -33,7 +33,10 @@
   }
 
   async function writeJobFile(name, bytes) {
-    const res = await fetch(`/write?name=${encodeURIComponent(`${jobDir}/${name}`)}`, { method: 'POST', body: bytes });
+    // bytes may be a Uint8Array (binary path) or a base64 string (legacy fallback).
+    const body = typeof bytes === 'string' ? base64ToBytes(bytes) : bytes;
+    harness.log.push(`payload:${name}:${body instanceof Uint8Array ? 'binary' : 'base64'}:${body.byteLength ?? body.length}`);
+    const res = await fetch(`/write?name=${encodeURIComponent(`${jobDir}/${name}`)}`, { method: 'POST', body });
     return (await res.json()).path;
   }
 
@@ -180,7 +183,7 @@
       }
       case 'project': {
         const name = `anchor_xy_${Date.now()}.f32`;
-        const xyPath = await writeJobFile(name, base64ToBytes(m.anchorXY));
+        const xyPath = await writeJobFile(name, m.anchorXY);
         try {
           await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore })), false);
         } finally {
@@ -204,7 +207,7 @@
       case 'writeLabels': {
         if (!confirmModal(`${m.description} in column ${m.column}`)) return;
         const name = `labels_${Date.now()}.u16`;
-        const codesPath = await writeJobFile(name, base64ToBytes(m.codes));
+        const codesPath = await writeJobFile(name, m.codes);
         try {
           const r = await call('write_labels', jobId, codesPath, m.names, m.column, m.keepOthers);
           const describe = await call('describe', r.variable);
@@ -217,7 +220,7 @@
       }
       case 'describeGroups': {
         const name = `groups_${Date.now()}.u16`;
-        const codesPath = await writeJobFile(name, base64ToBytes(m.codes));
+        const codesPath = await writeJobFile(name, m.codes);
         try {
           const r = await call('describe_groups', jobId, codesPath, m.k, m.columns);
           post({ type: 'groupNames', seq: m.seq, names: r.names });
@@ -229,7 +232,7 @@
       case 'compareSelection':
       case 'selectionFrame': {
         const name = `selection_${Date.now()}.bits`;
-        const maskPath = await writeJobFile(name, base64ToBytes(m.mask));
+        const maskPath = await writeJobFile(name, m.mask);
         try {
           if (m.type === 'compareSelection') {
             const result = await call('compare_selection', jobId, maskPath);
@@ -259,7 +262,7 @@
         let name = '';
         if (m.anchorXY && !m.useProjection) {
           name = `coords_${Date.now()}.f32`;
-          xyPath = await writeJobFile(name, base64ToBytes(m.anchorXY));
+          xyPath = await writeJobFile(name, m.anchorXY);
         } else if (!projectionCurrent) {
           throw new Error('Place all rows first, then add the coordinates.');
         }
@@ -269,7 +272,17 @@
         break;
       }
       case 'savePng':
-        harness.png = m.dataUrl;
+        // Store as a data URL for harness compatibility (convert bytes → base64 data URL).
+        // Use chunked btoa to avoid call-stack overflow on large PNGs.
+        {
+          const bytes = m.bytes;
+          let b64 = '';
+          const step = 0x8000;
+          for (let i = 0; i < bytes.length; i += step) {
+            b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+          }
+          harness.png = `data:image/png;base64,${btoa(b64)}`;
+        }
         break;
       case 'copyText':
         harness.clipboard = m.text;

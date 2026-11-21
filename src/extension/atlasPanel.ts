@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { KernelBridge, KernelError } from './kernelBridge';
 import type { PositronApi } from './positron';
+import { bytesFromPayload } from './binaryUtil';
 import type {
   ColorMeta,
   DescribeResult,
@@ -281,7 +282,7 @@ export class AtlasPanel {
       case 'project': {
         const job = this.requireJob();
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
-        await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
+        await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
         try {
           const settings = readSettings();
           await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore })), false);
@@ -340,7 +341,7 @@ export class AtlasPanel {
           return;
         }
         const codesPath = path.join(this.jobDir.fsPath, `labels_${Date.now()}.u16`);
-        await fs.writeFile(codesPath, Buffer.from(m.codes, 'base64'));
+        await fs.writeFile(codesPath, bytesFromPayload(m.codes));
         try {
           const r = await this.bridge.call<{ variable: string; column: string; rows: number }>(
             'write_labels',
@@ -361,7 +362,7 @@ export class AtlasPanel {
       case 'describeGroups': {
         // Names for automatic clusters from their most distinguishing columns.
         const codesPath = path.join(this.jobDir.fsPath, `groups_${Date.now()}.u16`);
-        await fs.writeFile(codesPath, Buffer.from(m.codes, 'base64'));
+        await fs.writeFile(codesPath, bytesFromPayload(m.codes));
         try {
           const r = await this.bridge.call<{ names: string[] }>('describe_groups', this.requireJob(), codesPath, m.k, m.columns);
           this.post({ type: 'groupNames', seq: m.seq, names: r.names });
@@ -410,7 +411,7 @@ export class AtlasPanel {
         let xyPath = '';
         if (m.anchorXY && !m.useProjection) {
           xyPath = path.join(this.jobDir.fsPath, `coords_${Date.now()}.f32`);
-          await fs.writeFile(xyPath, Buffer.from(m.anchorXY, 'base64'));
+          await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
         } else if (!this.projectionCurrent) {
           throw new Error('Place all rows first, then add the coordinates.');
         }
@@ -428,8 +429,7 @@ export class AtlasPanel {
           defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', `${this.state.variable}-umap.png`)),
         });
         if (uri) {
-          const b64 = m.dataUrl.replace(/^data:image\/png;base64,/, '');
-          await vscode.workspace.fs.writeFile(uri, Buffer.from(b64, 'base64'));
+          await vscode.workspace.fs.writeFile(uri, m.bytes);
         }
         break;
       }
@@ -468,10 +468,10 @@ export class AtlasPanel {
     }
   }
 
-  /** Write a selection mask (base64 packed bits) into the job directory for one kernel call. */
-  private async withMask<T>(mask: string, fn: (path: string) => Promise<T>): Promise<T> {
+  /** Write a selection mask (Uint8Array packed bits, or base64 string as fallback) into the job directory for one kernel call. */
+  private async withMask<T>(mask: Uint8Array | string, fn: (path: string) => Promise<T>): Promise<T> {
     const maskPath = path.join(this.jobDir.fsPath, `selection_${Date.now()}.bits`);
-    await fs.writeFile(maskPath, Buffer.from(mask, 'base64'));
+    await fs.writeFile(maskPath, bytesFromPayload(mask));
     try {
       return await fn(maskPath);
     } finally {
@@ -555,3 +555,5 @@ export class AtlasPanel {
 export function isStatus(x: unknown): x is JobStatus {
   return !!x && typeof x === 'object' && 'stage' in (x as object);
 }
+
+export { bytesFromPayload };

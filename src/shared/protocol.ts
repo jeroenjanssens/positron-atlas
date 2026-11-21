@@ -227,15 +227,15 @@ export type ToHost =
   | { type: 'ready' }
   | { type: 'prepare'; options: PrepareOptions }
   | { type: 'estimate' }
-  | { type: 'project'; anchorXY: string /* base64 little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
+  | { type: 'project'; anchorXY: Uint8Array /* little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
   | { type: 'exact'; params: UmapParams; engine: ExactEngine }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
-  | { type: 'describeGroups'; seq: number; codes: string /* base64 uint16 per prepared row */; k: number; columns: number[] }
+  | { type: 'describeGroups'; seq: number; codes: Uint8Array /* uint16 per prepared row */; k: number; columns: number[] }
   | {
       type: 'writeLabels';
-      /** base64 uint16 per prepared row: i < names.length writes names[i]. */
-      codes: string;
+      /** Uint8Array of uint16 per prepared row: i < names.length writes names[i]. */
+      codes: Uint8Array;
       names: string[];
       column: string;
       /** Keep the current value of rows without a name (else: missing). */
@@ -243,13 +243,13 @@ export type ToHost =
       /** What is written, for the confirmation (e.g. 'Tag 1,234 rows as "outliers"'). */
       description: string;
     }
-  | { type: 'compareSelection'; seq: number; mask: string /* base64 packed bits, least significant first */ }
-  | { type: 'selectionFrame'; mask: string /* base64 packed bits */ }
+  | { type: 'compareSelection'; seq: number; mask: Uint8Array /* packed bits, least significant first */ }
+  | { type: 'selectionFrame'; mask: Uint8Array /* packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'cancel' }
-  | { type: 'addCoordinates'; anchorXY: string | null /* base64 float32 */; useProjection: boolean }
+  | { type: 'addCoordinates'; anchorXY: Uint8Array | null /* float32 */; useProjection: boolean }
   | { type: 'reload' }
-  | { type: 'savePng'; dataUrl: string }
+  | { type: 'savePng'; bytes: Uint8Array }
   | { type: 'copyText'; text: string }
   | { type: 'state'; state: PanelState }
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
