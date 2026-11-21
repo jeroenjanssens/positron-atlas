@@ -133,12 +133,16 @@ export class Atlas {
   gpuAvailable = $state(false);
   /** 'browser': live WASM UMAP; otherwise exact UMAP of all rows in the kernel with that engine (if installed). */
   computeMode = $state<'browser' | ExactEngine>('browser');
+  /** What computed the current layout: 'GPU' or 'CPU' (browser), or the kernel engine. */
+  layoutEngine = $state<string>('');
 
   // ---- non-reactive data -------------------------------------------------------------
   private renderer: ScatterRenderer | null = null;
   private worker: Worker | null = null;
   private runId = 0;
   private appliedUmap: UmapParams | null = null;
+  /** The kernel engine of the exact run in progress. */
+  private exactEngine: ExactEngine = 'umap-learn';
   private anchors: Float32Array | null = null;
   private anchorPos: Uint32Array | null = null;
   private anchorXY: Float32Array | null = null;
@@ -321,6 +325,10 @@ export class Atlas {
     this.describe = d;
     this.settings = settings;
     this.variable = variable;
+    // A kernel engine chosen earlier may not be installed in this session.
+    if ((this.computeMode === 'polars-umap' && !d.deps?.polars_umap) || (this.computeMode === 'umap-learn' && !d.deps?.umap)) {
+      this.computeMode = 'browser';
+    }
     this.dataVariable = '';
     this.error = null;
     const numeric = d.columns.filter((c) => c.kind === 'numeric' || c.kind === 'bool').map((c) => c.index);
@@ -542,6 +550,7 @@ export class Atlas {
         this.paused = false;
         if (m.seconds) {
           this.timings = this.liveRun ? { ...this.timings, update: m.seconds } : { ...this.timings, umap: m.seconds, update: 0 };
+          this.layoutEngine = this.useGpu ? 'GPU' : 'CPU';
         }
         this.phase = 'ready';
         this.umapProgress = null;
@@ -583,6 +592,7 @@ export class Atlas {
     if (!this.prepared || engine === 'browser') {
       return;
     }
+    this.exactEngine = engine;
     this.stopWorker();
     this.allXY = new Float32Array(this.prepared.nKept * 2);
     this.placedRows = 0;
@@ -611,6 +621,7 @@ export class Atlas {
       this.umapProgress = null;
       this.autoFit = true;
       this.timings = { ...this.timings, umap: seconds, project: 0 };
+      this.layoutEngine = this.exactEngine;
       this.projection = this.prepared.needsProjection ? 'done' : 'none';
     } else {
       this.timings = { ...this.timings, project: seconds };

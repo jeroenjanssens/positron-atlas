@@ -25,10 +25,11 @@ if (target) {
 }
 const ignoreFile = '.vscodeignore.package';
 writeFileSync(ignoreFile, ignore);
+let status = 1;
 try {
   const args = ['vsce', 'package', '--no-dependencies', '--ignoreFile', ignoreFile, ...(target ? ['--target', target] : [])];
-  const r = spawnSync('npx', args, { stdio: 'inherit', shell: process.platform === 'win32' });
-  process.exit(r.status ?? 1);
+  status = spawnSync('npx', args, { stdio: 'inherit', shell: process.platform === 'win32' }).status ?? 1;
 } finally {
   rmSync(ignoreFile, { force: true });
 }
+process.exit(status);

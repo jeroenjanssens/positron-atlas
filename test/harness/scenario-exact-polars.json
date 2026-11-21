@@ -25,6 +25,28 @@
       "screenshot": "exact-polars-umap.png"
     },
     {
+      "name": "the footer names the engine that made the layout",
+      "eval": "const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'umap-learn'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200))",
+      "assert": [
+        "a.computeMode === 'umap-learn'",
+        "document.querySelector('footer .summary').textContent.includes('(polars-umap)')"
+      ]
+    },
+    {
+      "name": "an engine missing in the session falls back to Browser",
+      "eval": "a['onInit']({ ...a.describe, deps: { ...a.describe.deps, umap: false } }, a.settings, a.variable, h.state)",
+      "until": "a.computeMode === 'browser'",
+      "timeout": 10000
+    },
+    {
+      "name": "layout ready again",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": [
+        "/\\((CPU|GPU)\\)/.test(document.querySelector('footer .summary').textContent)"
+      ]
+    },
+    {
       "name": "umap-learn snippet runs",
       "eval": "a.prepare.samplePct = 10; a.setTab('export'); await new Promise(r => setTimeout(r, 100)); [...document.querySelectorAll('[data-section=export-code] button')].find(b => b.textContent.includes('umap-learn')).click(); await new Promise(r => setTimeout(r, 200)); window.__exec = null; window.__exec = await (await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: h.clipboard + 'assert embedding.shape == (2000, 2), embedding.shape\\n' }) })).json()",
       "until": "window.__exec",

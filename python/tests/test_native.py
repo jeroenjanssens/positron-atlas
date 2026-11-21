@@ -258,3 +258,27 @@ def test_column_functions_validate_input():
         core.scale_columns(np.asfortranarray(np.ones((10, 3), dtype=np.float32)), np.ones(3, dtype=np.float32), np.ones(3, dtype=np.float32))
     with pytest.raises(ValueError, match="C-contiguous"):
         core.column_moments(np.asfortranarray(np.ones((10, 3), dtype=np.float32)))
+
+
+def test_standardize_reports_progress_and_can_be_cancelled(tmp_path, monkeypatch):
+    import pandas as pd
+
+    x = blobs(200_000, 400, 19)  # 8e7 values: several blocks of 2^26 values
+    space = {"df": pd.DataFrame(x)}
+    monkeypatch.setattr(pak, "_user_ns", lambda: space)
+    jid = json.loads(pak.create_job("df", str(tmp_path)))["jobId"]
+    job = pak._JOBS[jid]
+    seen = []
+    orig = job.set
+
+    def spy(stage=None, progress=None, message=None):
+        if stage == "standardizing":
+            seen.append(progress)
+        return orig(stage, progress, message)
+
+    job.set = spy
+    pak.prepare(jid, json.dumps({"features": list(range(400)), "maxAnchors": 1000}))
+    while (st := json.loads(pak.status(jid)))["stage"] not in ("done", "error"):
+        time.sleep(0.01)
+    assert st["stage"] == "done", st
+    assert len(seen) >= 4 and seen == sorted(seen) and seen[-1] == pytest.approx(0.55)

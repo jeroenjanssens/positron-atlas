@@ -35,6 +35,7 @@ _MAX_CATEGORIES = 20
 
 _NATIVE: Any = None
 _NATIVE_INFO: dict[str, Any] = {}
+_NATIVE_LOCK = threading.Lock()
 
 
 def _native_target() -> str:
@@ -54,10 +55,15 @@ def _native_core() -> Any:
     namespace. When it is missing, does not load, or has another version, the numpy code is used
     and ``_NATIVE_INFO["reason"]`` says why. Set POSITRON_ATLAS_NO_NATIVE=1 to turn it off.
     """
-    global _NATIVE
-    if _NATIVE is not None or _NATIVE_INFO:
+    with _NATIVE_LOCK:  # one load attempt, even when job threads ask at the same time
+        if _NATIVE is None and not _NATIVE_INFO:
+            _load_native()
         return _NATIVE
-    _NATIVE_INFO["available"] = False
+
+
+def _load_native() -> None:
+    global _NATIVE
+    info: dict[str, Any] = {"available": False}
     try:
         import importlib.machinery
         import importlib.util
@@ -87,10 +93,10 @@ def _native_core() -> Any:
         if getattr(mod, "VERSION", None) != VERSION:
             raise RuntimeError(f"native core version {getattr(mod, 'VERSION', None)}, helper {VERSION}")
         _NATIVE = mod
-        _NATIVE_INFO.update(available=True, version=mod.VERSION, path=path, target=target)
+        info.update(available=True, version=mod.VERSION, path=path, target=target)
     except Exception as e:  # noqa: BLE001 - any failure means: use numpy
-        _NATIVE_INFO["reason"] = f"{type(e).__name__}: {e}"
-    return _NATIVE
+        info["reason"] = f"{type(e).__name__}: {e}"
+    _NATIVE_INFO.update(info)
 
 
 def _native_status() -> dict[str, Any]:
@@ -672,13 +678,22 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     core = _native_core() if opts.get("native", True) else None
     if standardize and core is not None and x.dtype == np.float32 and x.flags.c_contiguous and x.flags.writeable:
         # The Rust core: the same sums and formula, multithreaded, with the GIL released.
-        job.set("standardizing", 0.35, "Standardizing")
-        s1, s2 = core.column_moments(x)
+        # In blocks of rows, so progress shows and cancelling stops between blocks.
+        block = max(1, (1 << 26) // d)
+        s1 = np.zeros(d, dtype=np.float64)
+        s2 = np.zeros(d, dtype=np.float64)
+        for start in range(0, k_rows, block):
+            b1, b2 = core.column_moments(x[start : start + block])
+            s1 += b1
+            s2 += b2
+            job.set("standardizing", 0.35 + 0.1 * min(1, (start + block) / k_rows), "Standardizing")
         mean = s1 / k_rows
         std = np.sqrt(np.maximum(s2 / k_rows - mean * mean, 0.0))
         std[std < 1e-12] = 1.0
-        core.scale_columns(x, mean.astype(np.float32), (1.0 / std).astype(np.float32))
-        job.set("standardizing", 0.55)
+        mean32, inv32 = mean.astype(np.float32), (1.0 / std).astype(np.float32)
+        for start in range(0, k_rows, block):
+            core.scale_columns(x[start : start + block], mean32, inv32)
+            job.set("standardizing", 0.45 + 0.1 * min(1, (start + block) / k_rows))
     elif standardize:
         s1 = np.zeros(d, dtype=np.float64)
         s2 = np.zeros(d, dtype=np.float64)
@@ -1116,12 +1131,17 @@ def _factorize(frame: _Frame, col: int, rows: np.ndarray) -> tuple[np.ndarray, l
         ) and not (pd.api.types.is_datetime64_any_dtype(dt) or pd.api.types.is_timedelta64_dtype(dt))
         if not ok:
             return None
+        sub = s.iloc[rows]
         if dt == object:
-            # Object columns can hold anything; only take the fast path for plain text and numbers.
-            sample = s.iloc[: min(len(s), 1000)].dropna()
-            if not all(isinstance(v, (str, int, bool, np.integer, np.bool_)) for v in sample):
-                return None
-        codes, uniques = pd.factorize(s.iloc[rows], use_na_sentinel=True)
+            # Object columns can hold anything (lists, mixed True and 1, ...): factorize their text,
+            # exactly what the general path compares, so equal-but-different values (True == 1)
+            # stay apart and unhashable values work.
+            missing = sub.isna().to_numpy()
+            codes = np.full(len(sub), -1, dtype=np.int64)
+            text_codes, uniques = pd.factorize(sub[~missing].map(str), use_na_sentinel=True)
+            codes[~missing] = text_codes
+            return codes, list(uniques)
+        codes, uniques = pd.factorize(sub, use_na_sentinel=True)
         return np.asarray(codes, dtype=np.int64), list(uniques)
     import polars as pl
 

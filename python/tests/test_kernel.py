@@ -643,7 +643,9 @@ def test_fast_categories_skip_other_dtypes_and_int_nulls_in_polars():
     rows = np.arange(n)
     assert pak._factorize(frame, 0, rows) is None
     assert pak._factorize(frame, 1, rows) is None
-    assert pak._factorize(frame, 2, rows) is None
+    # Object columns of anything are factorized by their text, like the general path.
+    (_, codes_f, meta_f), (_, codes_s, meta_s) = _fast_slow(frame, 2, rows)
+    assert meta_f == meta_s and np.array_equal(codes_f, codes_s)
     # polars integers with nulls: labeled "3", where the general path says "3.0".
     s = pl.DataFrame({"k": pl.Series([3, None, 1, 3], dtype=pl.Int64)})
     _, _, meta = pak._color_values(pak._Frame(s), 0, np.arange(4), True, 200)
@@ -712,3 +714,33 @@ def test_exact_polars_umap_missing(ns, tmp_path, monkeypatch):
     jid, _, _, _ = prepared(ns, "pandas", tmp_path)
     st = run_exact(jid, {"engine": "polars-umap"})
     assert st["stage"] == "error" and "polars-umap is not installed" in st["error"]
+
+
+def test_object_columns_keep_the_general_paths_meaning():
+    # Unhashable values after the first rows, and True/1, False/0 mixed: same as str() per value.
+    n = 1200
+    vals = ["x"] * 1000 + [[1, 2]] * 50 + [1, True, 0, False, None, float("nan"), "1"] * 21 + ["x"] * 3
+    vals = vals[:n]
+    pdf = pd.DataFrame({"o": pd.Series(vals, dtype=object)})
+    frame = pak._Frame(pdf)
+    rows = np.arange(n)
+    (dt_f, codes_f, meta_f), (dt_s, codes_s, meta_s) = _fast_slow(frame, 0, rows)
+    assert meta_f == meta_s
+    assert np.array_equal(codes_f, codes_s)
+    assert {"[1, 2]", "True", "1", "False", "0", "x"} <= set(meta_f["categories"])
+    assert meta_f["nullCount"] > 0
+
+
+def test_native_core_loads_once_across_threads(monkeypatch):
+    import threading
+
+    monkeypatch.setattr(pak, "_NATIVE", None)
+    monkeypatch.setattr(pak, "_NATIVE_INFO", {})
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(pak._native_core())) for _ in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert len({id(r) for r in results}) == 1  # every thread got the same answer (module or None)
+    assert pak._NATIVE_INFO["available"] is (results[0] is not None)
