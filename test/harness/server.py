@@ -39,6 +39,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "test" / "harness"
 DIST = ROOT / "dist" / "webview"
+MEDIA = ROOT / "media"
 
 
 def load_helper(namespace: dict):
@@ -126,6 +127,9 @@ def main() -> None:
                 self.send_file(safe_join(HARNESS, p[len("/harness/") :]))
             elif p.startswith("/job/"):
                 self.send_file(safe_join(job_root, p[len("/job/") :]))
+            elif p.startswith("/media/"):
+                # Serve bundled fonts and other media assets (fonts plumbing D11)
+                self.send_file(safe_join(MEDIA, p[len("/media/") :]))
             elif p == "/info":
                 info = {"variable": scenario["variable"], "jobRoot": str(job_root), "settings": scenario.get("settings", {})}
                 self.send(200, json.dumps(info).encode())

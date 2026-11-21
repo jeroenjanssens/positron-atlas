@@ -1,0 +1,52 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 4, 5000)\ncenters = rng.normal(0, 5, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (5000, 20)), columns=[f'x{i}' for i in range(20)])\n",
+  "settings": { "maxAnchorsCpu": 2000 },
+  "screenshot": "fonts-smoke.png",
+  "steps": [
+    {
+      "name": "set up font message listeners",
+      "eval": "window.__fontReady = {}; window.__fontErrors = {}; window.__fontCatalog = null; window.addEventListener('message', (e) => { const m = e.data; if (!m) return; if (m.type === 'fontReady') window.__fontReady[m.family] = m.css; if (m.type === 'fontError') window.__fontErrors[m.family] = m.message; if (m.type === 'fontCatalog') window.__fontCatalog = m.families; })"
+    },
+    {
+      "name": "fontCatalog: host returns bundled fonts list",
+      "eval": "window.acquireVsCodeApi().postMessage({ type: 'fontCatalog' })",
+      "until": "window.__fontCatalog !== null",
+      "timeout": 3000,
+      "report": "{ count: window.__fontCatalog.length, first: window.__fontCatalog[0] && window.__fontCatalog[0].family }"
+    },
+    {
+      "name": "fontRequest for Cinzel (bundled): fontReady with CSS",
+      "eval": "window.acquireVsCodeApi().postMessage({ type: 'fontRequest', seq: 9001, family: 'Cinzel', weights: [400], scripts: ['latin'] })",
+      "until": "window.__fontReady['Cinzel'] !== undefined",
+      "timeout": 3000,
+      "assert": [
+        "window.__fontReady['Cinzel'].includes('@font-face')",
+        "window.__fontReady['Cinzel'].includes('Cinzel')",
+        "window.__fontReady['Cinzel'].includes('/media/fonts/Cinzel.woff2')"
+      ],
+      "report": "window.__fontReady['Cinzel'].slice(0, 80)"
+    },
+    {
+      "name": "fontRequest for Inter (bundled): fontReady with CSS",
+      "eval": "window.acquireVsCodeApi().postMessage({ type: 'fontRequest', seq: 9002, family: 'Inter', weights: [400], scripts: ['latin'] })",
+      "until": "window.__fontReady['Inter'] !== undefined",
+      "timeout": 3000,
+      "assert": [
+        "window.__fontReady['Inter'].includes('@font-face')",
+        "window.__fontReady['Inter'].includes('/media/fonts/Inter.woff2')"
+      ],
+      "report": "window.__fontReady['Inter'].slice(0, 80)"
+    },
+    {
+      "name": "fontRequest for non-bundled font: fontError",
+      "eval": "window.acquireVsCodeApi().postMessage({ type: 'fontRequest', seq: 9003, family: 'Raleway', weights: [400], scripts: ['latin'] })",
+      "until": "window.__fontErrors['Raleway'] !== undefined",
+      "timeout": 3000,
+      "assert": [
+        "window.__fontErrors['Raleway'].includes('not bundled') || window.__fontErrors['Raleway'].includes('harness')"
+      ],
+      "report": "window.__fontErrors['Raleway']"
+    }
+  ]
+}

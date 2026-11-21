@@ -116,6 +116,17 @@
           "type": "number",
           "default": 50,
           "description": "Default number of PCA dimensions."
+        },
+        "positronAtlas.downloadGoogleFonts": {
+          "type": "string",
+          "default": "ask",
+          "enum": ["ask", "always", "never"],
+          "enumDescriptions": [
+            "Ask once before downloading each new font family from Google Fonts.",
+            "Always download Google Fonts without asking.",
+            "Never download from Google Fonts; only bundled and cached fonts are available."
+          ],
+          "description": "Whether to download font files from Google Fonts on demand. Each download sends the font family name and your IP address to Google."
         }
       }
     }
@@ -129,6 +140,7 @@
     "check": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig ./tsconfig.webview.json",
     "test": "vitest run",
     "test:py": "uv run --project python pytest python/tests -q",
+    "fonts:catalog": "uv run --project python python scripts/google_fonts_catalog.py",
     "build:native": "uv run --project python python scripts/build_native.py",
     "test:rust": "cargo test --release --manifest-path rust/Cargo.toml",
     "package": "npm run build && node scripts/package.mjs",

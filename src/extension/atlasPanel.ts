@@ -18,6 +18,7 @@ import type {
   ToWebview,
 } from '../shared/protocol';
 import { estimateSeconds } from '../shared/estimate';
+import { FontManager } from './fonts';
 
 export const VIEW_TYPE = 'positronAtlas.view';
 
@@ -54,6 +55,7 @@ export class AtlasPanel {
 
   private readonly bridge: KernelBridge;
   private readonly jobDir: vscode.Uri;
+  private readonly fontManager: FontManager;
   private jobId: string | undefined;
   private fileVersion = 0;
   private disposed = false;
@@ -62,28 +64,42 @@ export class AtlasPanel {
   private projectionCurrent = false;
 
   static create(ctx: AtlasContext, target: OpenTarget): AtlasPanel {
+    const fontManager = new FontManager(ctx.extension, ctx.log);
     const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Atlas: ${target.variable}`, vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'), ctx.jobsRoot],
+      localResourceRoots: [
+        vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'),
+        vscode.Uri.joinPath(ctx.extension.extensionUri, 'media', 'fonts'),
+        ctx.jobsRoot,
+        fontManager.localResourceRoot,
+      ],
     });
-    return new AtlasPanel(ctx, panel, { ...target });
+    return new AtlasPanel(ctx, panel, { ...target }, fontManager);
   }
 
   static revive(ctx: AtlasContext, panel: vscode.WebviewPanel, state: PanelState): AtlasPanel {
+    const fontManager = new FontManager(ctx.extension, ctx.log);
     panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'), ctx.jobsRoot],
+      localResourceRoots: [
+        vscode.Uri.joinPath(ctx.extension.extensionUri, 'dist'),
+        vscode.Uri.joinPath(ctx.extension.extensionUri, 'media', 'fonts'),
+        ctx.jobsRoot,
+        fontManager.localResourceRoot,
+      ],
     };
-    return new AtlasPanel(ctx, panel, state);
+    return new AtlasPanel(ctx, panel, state, fontManager);
   }
 
   private constructor(
     private readonly ctx: AtlasContext,
     private readonly panel: vscode.WebviewPanel,
     state: PanelState,
+    fontManager: FontManager,
   ) {
     this.state = state;
+    this.fontManager = fontManager;
     const modulePath = vscode.Uri.joinPath(ctx.extension.extensionUri, 'python', 'positron_atlas_kernel.py').fsPath;
     const version = String(ctx.extension.extension.packageJSON.version ?? '0.0.0');
     this.bridge = new KernelBridge(ctx.positron, state.sessionId, state.languageId, modulePath, version, ctx.log);
@@ -415,6 +431,28 @@ export class AtlasPanel {
       case 'log':
         this.ctx.log[m.level](`[webview ${this.state.variable}] ${m.message}`);
         break;
+      // --- Font plumbing (D11) ---
+      case 'fontRequest': {
+        const { seq, family, scripts = ['latin'] } = m;
+        try {
+          const css = await this.fontManager.resolveFontCss(this.panel.webview, family, scripts);
+          this.post({ type: 'fontReady', seq, family, css });
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          this.ctx.log.warn(`[fonts] ${family}: ${message}`);
+          this.post({ type: 'fontError', seq, family, message });
+        }
+        break;
+      }
+      case 'fontCatalog': {
+        try {
+          const families = await this.fontManager.listFonts();
+          this.post({ type: 'fontCatalog', families });
+        } catch (e) {
+          this.ctx.log.warn(`[fonts] listFonts: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        break;
+      }
     }
   }
 

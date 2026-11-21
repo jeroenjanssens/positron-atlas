@@ -199,7 +199,25 @@ export type ToWebview =
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
   | { type: 'coordsAdded'; variable: string; columns: string[] }
-  | { type: 'estimate'; seconds: number; rows: number };
+  | { type: 'estimate'; seconds: number; rows: number }
+  /** Font plumbing (D11). */
+  | { type: 'fontReady'; seq: number; family: string; css: string }
+  | { type: 'fontError'; seq: number; family: string; message: string }
+  | {
+      type: 'fontCatalog';
+      /** All known font families: bundled ones first, then Google Fonts. */
+      families: FontCatalogEntry[];
+    };
+
+/** Entry in the font catalogue sent to the webview. */
+export interface FontCatalogEntry {
+  family: string;
+  category: 'Serif' | 'Sans Serif' | 'Display' | 'Handwriting' | 'Monospace';
+  /** Available weights (static) or weight range (variable). */
+  weights: number[] | string;
+  /** Where the font file comes from. */
+  source: 'bundled' | 'cached' | 'google';
+}
 
 export type ToHost =
   | { type: 'ready' }
@@ -230,4 +248,7 @@ export type ToHost =
   | { type: 'savePng'; dataUrl: string }
   | { type: 'copyText'; text: string }
   | { type: 'state'; state: PanelState }
-  | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string };
+  | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
+  /** Font plumbing (D11). */
+  | { type: 'fontRequest'; seq: number; family: string; weights?: number[]; scripts?: string[] }
+  | { type: 'fontCatalog' };

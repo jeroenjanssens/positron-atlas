@@ -7,3 +7,6 @@
 !CHANGELOG.md
 !LICENSE
 !media/icon.png
+!media/fonts/*.woff2
+!media/fonts/OFL-*.txt
+!media/fonts/google-fonts-catalog.json

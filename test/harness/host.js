@@ -270,7 +270,76 @@
       case 'log':
         harness.log.push(`${m.level}: ${m.message}`);
         break;
+      // --- Font plumbing (D11) ---
+      case 'fontRequest': {
+        // The harness serves bundled fonts from /media/fonts/. For Google Fonts,
+        // skip the actual download and reply with an error so callers fall back gracefully.
+        const { seq, family, scripts = ['latin'] } = m;
+        const css = await harnessFontCss(family, scripts);
+        if (css !== null) {
+          post({ type: 'fontReady', seq, family, css });
+        } else {
+          post({ type: 'fontError', seq, family, message: `Font "${family}" is not bundled; Google Fonts downloads are skipped in the harness.` });
+        }
+        break;
+      }
+      case 'fontCatalog': {
+        const families = harnessFontCatalog();
+        post({ type: 'fontCatalog', families });
+        break;
+      }
     }
+  }
+
+  // ---- Harness font helpers ----
+
+  // Bundled font table mirroring src/extension/fonts.ts BUNDLED array.
+  const HARNESS_BUNDLED = [
+    { family: 'Cinzel',              category: 'Display',    weights: '400-900', files: { latin: 'Cinzel.woff2', 'latin-ext': 'Cinzel-LatinExt.woff2' } },
+    { family: 'Playfair Display SC', category: 'Serif',      weights: [400,700,900], files: { latin: ['PlayfairDisplaySC-400.woff2','PlayfairDisplaySC-700.woff2','PlayfairDisplaySC-900.woff2'], 'latin-ext': ['PlayfairDisplaySC-400-LatinExt.woff2','PlayfairDisplaySC-700-LatinExt.woff2','PlayfairDisplaySC-900-LatinExt.woff2'] } },
+    { family: 'Marcellus SC',        category: 'Serif',      weights: [400], files: { latin: 'MarcellusSC.woff2', 'latin-ext': 'MarcellusSC-LatinExt.woff2' } },
+    { family: 'Montserrat',          category: 'Sans Serif', weights: '100-900', files: { latin: 'Montserrat.woff2', 'latin-ext': 'Montserrat-LatinExt.woff2' } },
+    { family: 'Roboto',              category: 'Sans Serif', weights: '100-900', files: { latin: 'Roboto.woff2', 'latin-ext': 'Roboto-LatinExt.woff2' } },
+    { family: 'Roboto Condensed',    category: 'Sans Serif', weights: '100-900', files: { latin: 'RobotoCondensed.woff2', 'latin-ext': 'RobotoCondensed-LatinExt.woff2' } },
+    { family: 'Inter',               category: 'Sans Serif', weights: '100-900', files: { latin: 'Inter.woff2', 'latin-ext': 'Inter-LatinExt.woff2' } },
+    { family: 'JetBrains Mono',      category: 'Monospace',  weights: '100-800', files: { latin: 'JetBrainsMono.woff2', 'latin-ext': 'JetBrainsMono-LatinExt.woff2' } },
+  ];
+
+  async function harnessFontCss(family, scripts) {
+    const bundled = HARNESS_BUNDLED.find((b) => b.family.toLowerCase() === family.toLowerCase());
+    if (!bundled) return null; // not bundled; harness doesn't download Google Fonts
+
+    const wanted = new Set(scripts.length > 0 ? scripts : ['latin']);
+    const blocks = [];
+
+    for (const subset of ['latin', 'latin-ext']) {
+      if (!wanted.has(subset)) continue;
+      const fileOrFiles = bundled.files[subset];
+      if (!fileOrFiles) continue;
+
+      const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+      const weights = Array.isArray(bundled.weights) ? bundled.weights : [bundled.weights];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const weight = Array.isArray(bundled.weights) ? bundled.weights[i] : bundled.weights;
+        const url = `/media/fonts/${file}`;
+        blocks.push(
+          `@font-face {\n  font-family: '${bundled.family}';\n  font-style: normal;\n  font-weight: ${weight};\n  font-display: swap;\n  src: url('${url}') format('woff2');\n}`,
+        );
+      }
+    }
+
+    return blocks.join('\n\n');
+  }
+
+  function harnessFontCatalog() {
+    return HARNESS_BUNDLED.map((b) => ({
+      family: b.family,
+      category: b.category,
+      weights: b.weights,
+      source: 'bundled',
+    }));
   }
 
   // Like webview.onDidReceiveMessage: each message starts its handler right away.
