@@ -141,7 +141,17 @@ export interface PanelState {
   prepare?: PrepareOptions;
   umap?: UmapParams;
   colorColumn?: number | null;
-  view?: { pointSize: number; opacity: number; mode: 'points' | 'density'; colormap: string; background?: string; images?: boolean; imageWidth?: number; imageInvert?: boolean };
+  view?: {
+    pointSize: number;
+    opacity: number;
+    mode: 'points' | 'density';
+    colormap: string;
+    background?: string;
+    images?: boolean;
+    imageWidth?: number;
+    imageInvert?: boolean;
+    palette?: 'map' | 'tableau';
+  };
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */
   ui?: { tab?: 'map' | 'explore' | 'annotate'; closed?: string[] };

@@ -20,6 +20,7 @@ import { collisionPriorities, labelSizes, placeGroupLabels } from './labels/plac
 import { HitIndex, bounds } from './render/hitIndex';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from './color/encode';
 import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from './color/colormaps';
+import { mapPalette } from './color/mapPalette';
 import { pythonSnippet, isRebuild, liveChanges, lowerBound, toHex, detectImageColumns, guessImageWidth, type ImageColumns } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 
@@ -38,6 +39,8 @@ export interface ViewOptions {
   imageWidth: number;
   /** Swap dark and light in the image thumbnails. */
   imageInvert: boolean;
+  /** Categorical colors: 'map' follows the layout (nearby groups get related hues), 'tableau' is Tableau 20. */
+  palette: 'map' | 'tableau';
 }
 
 type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
@@ -78,7 +81,7 @@ export class Atlas {
   });
   applied = $state.raw<PrepareOptions | null>(null);
   umap = $state<UmapParams>({ ...DEFAULT_UMAP });
-  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false });
+  view = $state<ViewOptions>({ pointSize: 3, opacity: 0.8, mode: 'points', colormap: 'viridis', background: '', images: false, imageWidth: 0, imageInvert: false, palette: 'map' });
   ui = $state<UiState>({ tab: 'map', closed: [] });
   labels = $state<LabelOptions>({ column: null, minSize: 12, maxSize: 26, colorText: true });
   /** Categories of the label column (null until loaded). */
@@ -88,6 +91,8 @@ export class Atlas {
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
+  /** Colors of the color column's categories when the palette follows the map (null until the layout settles). */
+  mapColors = $state.raw<string[] | null>(null);
   colorRange = $state<[number, number] | null>(null);
   prepared = $state.raw<PrepareResult | null>(null);
   kernelStatus = $state.raw<{ task: string; stage: string; progress: number; message: string } | null>(null);
@@ -480,7 +485,8 @@ export class Atlas {
         }
         this.phase = 'ready';
         this.umapProgress = null;
-        this.render();
+        this.updateMapColors(false);
+        this.recolor();
         if (this.prepared?.needsProjection) {
           vscode.post({ type: 'estimate' });
         }
@@ -548,7 +554,8 @@ export class Atlas {
       this.timings = { ...this.timings, project: seconds };
       this.projection = 'done';
     }
-    this.render();
+    this.updateMapColors(false);
+    this.recolor();
   }
 
   cancelKernel(): void {
@@ -575,6 +582,7 @@ export class Atlas {
     this.forceCategorical = false;
     this.colorMeta = null;
     this.colorValues = null;
+    this.mapColors = null;
     if (c === null) {
       this.recolor();
     } else {
@@ -599,6 +607,10 @@ export class Atlas {
     this.colorValues = values as Float32Array | Uint16Array;
     this.colorMeta = meta;
     this.colorRange = meta.kind === 'numeric' ? [meta.q02 ?? meta.min ?? 0, meta.q98 ?? meta.max ?? 1] : null;
+    this.mapColors = null;
+    if (this.phase === 'ready') {
+      this.updateMapColors(false);
+    }
     this.recolor();
   }
 
@@ -614,7 +626,7 @@ export class Atlas {
       const [lo, hi] = this.colorRange ?? [meta.min ?? 0, meta.max ?? 1];
       this.colorsAll = encodeNumeric(this.colorValues as Float32Array, lo, hi, this.view.colormap, this.colorsAll ?? undefined);
     } else {
-      this.colorsAll = encodeCategorical(this.colorValues as Uint16Array, meta.categories.length, this.colorsAll ?? undefined);
+      this.colorsAll = encodeCategorical(this.colorValues as Uint16Array, meta.categories.length, this.colorsAll ?? undefined, (i) => this.categoryColor(i));
     }
     this.colorsAnchors = this.prepared.needsProjection ? gatherRgba(this.colorsAll, this.anchorPos) : this.colorsAll;
     this.render();
@@ -720,22 +732,62 @@ export class Atlas {
 
   /** Point color of category i of the color column. */
   categoryColor(i: number): string {
+    if (this.view.palette === 'map' && this.mapColors && i < this.mapColors.length) {
+      return this.mapColors[i];
+    }
     return CATEGORICAL[i % CATEGORICAL.length];
+  }
+
+  /**
+   * Recompute the map-following palette from the current layout (when it settles, not on every
+   * animation frame, so colors stay put while the layout converges), then recolor if asked.
+   */
+  updateMapColors(recolor = true): void {
+    const meta = this.colorMeta;
+    if (this.view.palette !== 'map' || meta?.kind !== 'categorical' || !this.colorValues || !this.prepared || !this.anchorXY || !this.anchorPos) {
+      return;
+    }
+    let xy: Float32Array;
+    let codes: Uint16Array;
+    let n: number;
+    if (this.projection === 'done' && this.allXY) {
+      [xy, codes, n] = [this.allXY, this.colorValues as Uint16Array, this.nKept];
+    } else {
+      const all = this.colorValues as Uint16Array;
+      [xy, codes, n] = [this.anchorXY, this.prepared.needsProjection ? gatherU16(all, this.anchorPos) : all, this.prepared.nAnchors];
+    }
+    const k = meta.categories.length;
+    const centers = new Float64Array(k * 2).fill(NaN);
+    for (const l of placeGroupLabels(xy, codes, n, meta.categories)) {
+      centers[2 * l.group] = l.x;
+      centers[2 * l.group + 1] = l.y;
+    }
+    const dark = contrastText(this.plotBackground())[0] > 128;
+    this.mapColors = mapPalette(centers, xy, n, { dark }, (i) => CATEGORICAL[i % CATEGORICAL.length]);
+    if (recolor) {
+      this.recolor();
+    }
   }
 
   // ---- rendering ---------------------------------------------------------------------
   setView(v: Partial<ViewOptions>): void {
     const cmapChanged = v.colormap !== undefined && v.colormap !== this.view.colormap;
+    const paletteChanged = v.palette !== undefined && v.palette !== this.view.palette;
+    const backgroundChanged = v.background !== undefined && v.background !== this.view.background;
     if (v.images !== undefined && v.images !== this.view.images) {
       this.tooltip = null;
     }
     this.view = { ...this.view, ...v };
     this.renderer?.setStyle(this.view);
-    if (cmapChanged) {
-      this.recolor();
+    if (paletteChanged || backgroundChanged) {
+      // The map palette's lightness depends on the background (dark or light).
+      this.mapColors = null;
+      if (this.phase === 'ready' || this.paused) {
+        this.updateMapColors(false);
+      }
     }
-    if (v.background !== undefined) {
-      this.updateLabels();
+    if (cmapChanged || paletteChanged || backgroundChanged) {
+      this.recolor(); // also redraws the labels (outline color)
     }
   }
 

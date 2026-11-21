@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
-  import { CATEGORICAL, NULL_COLOR, OTHER_COLOR, cssGradient } from '../color/colormaps';
+  import { NULL_COLOR, OTHER_COLOR, cssGradient } from '../color/colormaps';
   let { atlas }: { atlas: Atlas } = $props();
   const meta = $derived(atlas.colorMeta);
 
@@ -25,7 +25,7 @@
     {:else}
       {#each meta.categories as cat, i}
         <div class="item" title="{meta.counts[i].toLocaleString()} rows">
-          <span class="sw" style="background:{CATEGORICAL[i % CATEGORICAL.length]}"></span>{cat === '' ? '(empty)' : cat}
+          <span class="sw" style="background:{atlas.categoryColor(i)}"></span>{cat === '' ? '(empty)' : cat}
         </div>
       {/each}
       {#if meta.otherCount}<div class="item"><span class="sw" style="background:{OTHER_COLOR}"></span>other ({(meta.nUnique - meta.categories.length).toLocaleString()} values)</div>{/if}

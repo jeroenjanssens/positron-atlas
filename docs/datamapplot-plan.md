@@ -112,7 +112,7 @@ The quickest high-value feature: a categorical column is enough to label the map
 - Labels follow the layout while UMAP animates (positions are recomputed per frame, throttled).
 - Labels are included in the PNG export.
 
-### Phase D: palette that follows the map — [ ]
+### Phase D: palette that follows the map — [x]
 
 DataMapPlot's `palette_from_datamap`: categories that sit near each other on the map get related
 hues, and outlying categories are more saturated.

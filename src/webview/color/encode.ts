@@ -28,13 +28,21 @@ export function encodeNumeric(values: Float32Array, lo: number, hi: number, cmap
   return rgba;
 }
 
-/** Map category codes (0..n-1, n = Other, n+1 = null) to RGBA. */
-export function encodeCategorical(codes: Uint16Array, nCategories: number, out?: Uint8Array): Uint8Array {
+/**
+ * Map category codes (0..n-1, n = Other, n+1 = null) to RGBA. `colorOf(i)` gives category i's
+ * color (default: the Tableau 20 cycle).
+ */
+export function encodeCategorical(
+  codes: Uint16Array,
+  nCategories: number,
+  out?: Uint8Array,
+  colorOf: (i: number) => string = (i) => CATEGORICAL[i % CATEGORICAL.length],
+): Uint8Array {
   const n = codes.length;
   const rgba = out && out.length === n * 4 ? out : new Uint8Array(n * 4);
   const palette = new Uint8Array((nCategories + 2) * 4);
   for (let c = 0; c < nCategories + 2; c++) {
-    const hex = c < nCategories ? CATEGORICAL[c % CATEGORICAL.length] : c === nCategories ? OTHER_COLOR : NULL_COLOR;
+    const hex = c < nCategories ? colorOf(c) : c === nCategories ? OTHER_COLOR : NULL_COLOR;
     const [r, g, b] = hexToRgb(hex);
     palette.set([r, g, b, c <= nCategories ? 255 : 160], c * 4);
   }

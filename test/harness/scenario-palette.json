@@ -1,0 +1,64 @@
+{
+  "variable": "mnist",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\n\ndef download(url: str, name: str) -> Path:\n    \"\"\"Download a file once and cache it.\"\"\"\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        print(f\"Downloading {url} ...\")\n        tmp = path.with_suffix(path.suffix + \".part\")\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\n\ndef read_idx(path: Path) -> np.ndarray:\n    \"\"\"Read an IDX file (the MNIST format): images as (n, 784) uint8, labels as (n,).\"\"\"\n    with gzip.open(path, \"rb\") as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], \"big\") for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nBASE = \"https://ossci-datasets.s3.amazonaws.com/mnist/\"\nLABELS = [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\"]\n\nfiles = {\n    name: download(BASE + name, \"mnist-\" + name)\n    for name in [\n        \"train-images-idx3-ubyte.gz\",\n        \"train-labels-idx1-ubyte.gz\",\n        \"t10k-images-idx3-ubyte.gz\",\n        \"t10k-labels-idx1-ubyte.gz\",\n    ]\n}\ntrain_x = read_idx(files[\"train-images-idx3-ubyte.gz\"])\ntest_x = read_idx(files[\"t10k-images-idx3-ubyte.gz\"])\ntrain_y = read_idx(files[\"train-labels-idx1-ubyte.gz\"])\ntest_y = read_idx(files[\"t10k-labels-idx1-ubyte.gz\"])\nn_train = len(train_y)\n\npixels = np.concatenate([train_x, test_x])  # (70000, 784) uint8\nlabels = np.concatenate([train_y, test_y])\npixels.shape, labels.shape\n\nimport polars as pl\n\nmnist = pl.from_numpy(pixels, schema=[f\"px{i}\" for i in range(pixels.shape[1])]).with_columns(\n    pl.Series(\"label\", [LABELS[v] for v in labels], dtype=pl.Enum(LABELS)),\n    pl.Series(\"split\", np.where(np.arange(len(labels)) < n_train, \"train\", \"test\")),\n    pl.Series(\"ink\", pixels.mean(axis=1)),  # average pixel intensity: a numeric column to color by\n)\nmnist.shape",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 50,
+    "maxAnchorsCpu": 20000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "map palette after the layout settles",
+      "until": "a.mapColors && a.mapColors.length === 10",
+      "assert": [
+        "JSON.stringify([...document.querySelectorAll('.legend .item .sw')].slice(0, 10).map(e => getComputedStyle(e).backgroundColor)) === JSON.stringify(a.mapColors.map((h => `rgb(${parseInt(h.slice(1,3),16)}, ${parseInt(h.slice(3,5),16)}, ${parseInt(h.slice(5,7),16)})`)))",
+        "new Set(a.mapColors).size === 10"
+      ],
+      "report": "a.mapColors"
+    },
+    {
+      "name": "labels use the palette",
+      "eval": "a.setTab('annotate'); a.setLabelColumn(a.colorColumn)",
+      "until": "a.labelCount === 10",
+      "screenshot": "palette-map.png"
+    },
+    {
+      "name": "explore tab shows the palette control",
+      "eval": "a.setTab('explore')",
+      "until": "document.querySelector('select[aria-label=\"Palette\"]') && document.querySelector('select[aria-label=\"Palette\"]').offsetParent !== null",
+      "assert": [
+        "document.querySelector('select[aria-label=\"Palette\"]').value === 'map'"
+      ],
+      "screenshot": "palette-control.png"
+    },
+    {
+      "name": "tableau palette",
+      "eval": "const s = document.querySelector('select[aria-label=\"Palette\"]'); s.value = 'tableau'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.view.palette === 'tableau'",
+      "assert": [
+        "JSON.stringify([...document.querySelectorAll('.legend .item .sw')].slice(0, 10).map(e => getComputedStyle(e).backgroundColor)) === JSON.stringify(['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'].map((h => `rgb(${parseInt(h.slice(1,3),16)}, ${parseInt(h.slice(3,5),16)}, ${parseInt(h.slice(5,7),16)})`)))"
+      ]
+    },
+    {
+      "name": "back to the map palette",
+      "eval": "a.setView({ palette: 'map' })",
+      "until": "a.view.palette === 'map' && a.mapColors",
+      "report": "a.mapColors"
+    },
+    {
+      "name": "light background recomputes the palette",
+      "eval": "window.__dark = a.mapColors.slice(); a.setView({ background: '#ffffff' })",
+      "until": "a.mapColors && a.mapColors.join() !== window.__dark.join()",
+      "screenshot": "palette-map-light-bg.png"
+    },
+    {
+      "name": "numeric column hides the palette control",
+      "eval": "a.setView({ background: '' }); a.setColorColumn(a.describe.columns.find(c => c.name === 'ink').index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'numeric'",
+      "assert": [
+        "!document.querySelector('select[aria-label=\"Palette\"]')"
+      ]
+    }
+  ]
+}

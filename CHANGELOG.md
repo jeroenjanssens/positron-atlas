@@ -16,4 +16,5 @@
 - Background color picker for the plot (defaults to the theme's editor background; used for PNG export).
 - Points and additive density modes, PNG export, write coordinates back to the DataFrame, copy equivalent umap-learn code.
 - The sidebar is grouped into three tabs: Map (data, UMAP, result), Explore (color, display) and Annotate (labels). Fit to view and Export PNG are on a toolbar on the plot.
+- A categorical palette that follows the map (default; Tableau 20 is still available): nearby groups get related hues, outlying groups more chroma. Computed in OKLCH when the layout settles, adapted to dark and light backgrounds.
 - Labels: label the map by a categorical, boolean or integer column. Labels sit at the densest spot of each group, grow with the group size, hide when they would overlap, follow the animation and appear in the PNG export. Inspired by DataMapPlot.

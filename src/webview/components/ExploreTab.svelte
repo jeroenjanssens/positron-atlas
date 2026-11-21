@@ -25,6 +25,18 @@
     {#if atlas.colorColumn !== null && atlas.describe?.columns[atlas.colorColumn]?.kind === 'numeric'}
       <label class="check"><input type="checkbox" bind:checked={atlas.forceCategorical} onchange={() => atlas.requestColors()} /> Treat as categories</label>
     {/if}
+    {#if atlas.colorMeta?.kind === 'categorical'}
+      <label class="select" title="Follows the map: groups that are close on the map get related hues, and outlying groups are more saturated (as in DataMapPlot). Tableau 20: a fixed list of distinct colors.">
+        <span>Palette</span>
+        <select value={atlas.view.palette} aria-label="Palette" onchange={(e) => atlas.setView({ palette: (e.target as HTMLSelectElement).value as 'map' | 'tableau' })}>
+          <option value="map">Follows the map</option>
+          <option value="tableau">Tableau 20</option>
+        </select>
+      </label>
+      {#if atlas.view.palette === 'map' && !atlas.mapColors}
+        <div class="hint muted">Colors follow the map once the layout settles.</div>
+      {/if}
+    {/if}
     {#if atlas.colorMeta?.kind === 'numeric'}
       <label class="select">
         <span>Colormap</span>
