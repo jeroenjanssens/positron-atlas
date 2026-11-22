@@ -285,6 +285,12 @@ function showInstantTooltip(atlas: Atlas, x: number, y: number, prepIdx: number)
     const clusterName = instantClusterName(atlas, prepIdx);
     if (colorVal !== null) values.push(['color', colorVal]);
     if (clusterName !== null) values.push(['cluster', clusterName]);
+    // B3/Item 9: show symbol category if symbol column is active.
+    if (atlas.symbolValues && atlas.symbolCategories.length > 0) {
+      const code = atlas.symbolValues[prepIdx];
+      const cat = atlas.symbolCategories[code];
+      if (cat !== undefined) values.push(['symbol', cat]);
+    }
   }
   // A2: include the layer id in the tooltip (base layer only for now; B3 extends this).
   atlas.tooltip = { x, y, row: keepIdx, values, title: title ?? undefined, layerId: 'base' };

@@ -572,6 +572,17 @@ export const HELP: Record<string, HelpEntry> = {
 
   // ---- Explore → Size (A10) ----------------------------------------------------
 
+  'explore.symbolBy': {
+    title: 'Symbol by',
+    what: "Assign a distinct point shape (circle, square, triangle, …) to each category of a categorical column with ≤ 8 unique values.",
+    intuition:
+      'Shapes are assigned in order: circle → square → triangle → diamond → cross → star → hexagon → x. ' +
+      'Use this together with Color by to encode two categorical dimensions simultaneously. ' +
+      'A symbol legend appears in the map legend. The hovered point shows its category in the tooltip.',
+    when: 'When you have a small categorical column (e.g. a data-source or split label) and want to tell groups apart even when colours are similar.',
+    cost: 'none',
+  },
+
   'explore.sizeBy': {
     title: 'Size by',
     what: "Scale each point's radius by the value of a numeric column.",

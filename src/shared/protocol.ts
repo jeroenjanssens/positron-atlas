@@ -514,6 +514,16 @@ export type ToWebview =
   | { type: 'overlayRemoved'; layerId: string }
   /** B3: row values fetched from an overlay layer for hover/pin cards. */
   | { type: 'overlayRows'; seq: number; layerId: string; values: Record<number, [string, string][]> }
+  /** B3/Item 9: u16 category codes + category names for symbol-by-column. */
+  | { type: 'symbolCodes'; column: number; file: FileRef; categories: string[] }
+  /** B3: column descriptions for an overlay variable. */
+  | { type: 'overlayDescribe'; layerId: string; columns: ColumnInfo[] }
+  /** B3: position indices in the overlay that match a search query. */
+  | { type: 'searchOverlayResults'; layerId: string; query: string; file: FileRef; count: number }
+  /** B3: overlay search returned no matches. */
+  | { type: 'searchOverlayEmpty'; layerId: string; query: string }
+  /** B3: float32 column values for histogram filter on an overlay layer. */
+  | { type: 'histValuesOverlay'; layerId: string; column: number; file: FileRef }
   | {
       type: 'exportHtmlAssembly';
       /**
@@ -678,4 +688,12 @@ export type ToHost =
   /** B3: remove an overlay layer from the kernel job and the layer list. */
   | { type: 'removeOverlay'; layerId: string }
   /** B3: fetch row values from an overlay layer for hover/pin cards. */
-  | { type: 'overlayRows'; layerId: string; seq: number; indices: number[]; columns?: number[] };
+  | { type: 'overlayRows'; layerId: string; seq: number; indices: number[]; columns?: number[] }
+  /** B3/Item 9: request u16 category codes for a column (≤8 categories → symbol shapes). */
+  | { type: 'symbolCodes'; column: number }
+  /** B3: get column descriptions for an overlay variable (for search/filter). */
+  | { type: 'describeOverlay'; layerId: string }
+  /** B3: search an overlay layer's column for a substring query. */
+  | { type: 'searchOverlay'; layerId: string; column: number; query: string; limit: number }
+  /** B3: request float32 column values for a histogram filter on an overlay layer. */
+  | { type: 'histValuesOverlay'; layerId: string; column: number };

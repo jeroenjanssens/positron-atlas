@@ -40,6 +40,30 @@
     const v = (e.target as HTMLSelectElement).value;
     atlas.setHistColumn(v === '' ? null : Number(v));
   }
+
+  function onSymbolChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    atlas.setSymbolColumn(v === '' ? null : Number(v));
+  }
+
+  /** Categorical columns with ≤8 unique values (suitable for per-point symbol codes). */
+  const symbolColumns = $derived(
+    (atlas.describe?.columns ?? []).filter(
+      (c) => c.kind === 'categorical' && (c.n_unique_est === null || c.n_unique_est <= 8)
+    )
+  );
+
+  /** Overlay layers that have been fully described (columns are known). */
+  const describedOverlays = $derived(
+    atlas.layers.filter((l) => l.kind === 'point-overlay' && l.visible && atlas.overlayDescribes.has(l.id))
+  );
+
+  /** Numeric columns for the currently selected histogram layer. */
+  const histLayerColumns = $derived(
+    atlas.histFilterLayerId
+      ? (atlas.overlayDescribes.get(atlas.histFilterLayerId) ?? []).filter((c) => c.kind === 'numeric' || c.kind === 'datetime')
+      : numericColumns
+  );
 </script>
 
 <Section {atlas} id="color" title="Color">
@@ -109,6 +133,18 @@
         </div>
       {/if}
     {/if}
+    <div class="select">
+      <span>Symbol by <Info id="explore.symbolBy" /></span>
+      <Select value={atlas.symbolColumn === null ? '' : String(atlas.symbolColumn)} ariaLabel="Symbol by" onchange={onSymbolChange}>
+        <option value="">None (circles)</option>
+        {#each symbolColumns as c (c.index)}
+          <option value={String(c.index)}>{c.name}</option>
+        {/each}
+      </Select>
+    </div>
+    {#if symbolColumns.length === 0}
+      <div class="hint muted">No categorical column with ≤ 8 categories found.</div>
+    {/if}
 </Section>
 
 <Section {atlas} id="size" title="Size">
@@ -130,11 +166,34 @@
 </Section>
 
 <Section {atlas} id="filter" title="Filter">
+  {#if describedOverlays.length > 0}
+    <div class="select">
+      <span>Layer</span>
+      <Select value={atlas.histFilterLayerId ?? ''} ariaLabel="Histogram layer" onchange={(e) => {
+        const v = (e.target as HTMLSelectElement).value;
+        atlas.histFilterLayerId = v || null;
+        atlas.setHistColumn(null);
+      }}>
+        <option value="">Base map</option>
+        {#each describedOverlays as layer (layer.id)}
+          <option value={layer.id}>{layer.name}</option>
+        {/each}
+      </Select>
+    </div>
+  {/if}
   <div class="select">
     <span>Histogram <Info id="explore.histFilter" /></span>
-    <Select value={atlas.histFilter ? String(atlas.histFilter.column) : ''} ariaLabel="Histogram filter column" onchange={onHistChange}>
+    <Select value={atlas.histFilter ? String(atlas.histFilter.column) : ''} ariaLabel="Histogram filter column" onchange={(e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      if (atlas.histFilterLayerId) {
+        if (v === '') { atlas.histFilterLayerId = null; }
+        else { atlas.requestHistOverlay(atlas.histFilterLayerId, Number(v)); }
+      } else {
+        onHistChange(e);
+      }
+    }}>
       <option value="">None</option>
-      {#each numericColumns as c (c.index)}
+      {#each histLayerColumns as c (c.index)}
         <option value={String(c.index)}>{c.name}</option>
       {/each}
     </Select>

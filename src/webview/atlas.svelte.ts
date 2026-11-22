@@ -198,6 +198,19 @@ import {
   onOverlayRemoved as onOverlayRemovedImpl,
   onOverlayRows as onOverlayRowsImpl,
 } from './atlas/overlay';
+import {
+  setSymbolColumn as setSymbolColumnImpl,
+  onSymbolCodes as onSymbolCodesImpl,
+  reapplySymbols as reapplySymbolsImpl,
+} from './atlas/symbolsColumn';
+import {
+  runSearchOverlay as runSearchOverlayImpl,
+  onSearchOverlayResults as onSearchOverlayResultsImpl,
+  onSearchOverlayEmpty as onSearchOverlayEmptyImpl,
+  clearSearchOverlay as clearSearchOverlayImpl,
+  requestHistOverlay as requestHistOverlayImpl,
+  onHistValuesOverlay as onHistValuesOverlayImpl,
+} from './atlas/searchOverlay';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
 import { enqueueApiCommand as enqueueApiCommandImpl } from './atlas/api';
@@ -410,6 +423,28 @@ export class Atlas {
   undoLabel = $state('');
   /** Non-empty label = can redo; shown in toolbar tooltip. */
   redoLabel = $state('');
+
+  // ---- B3/Item 9: symbol by column -----------------------------------------------
+  /** Column index used for per-point symbol codes (null = circle-only fast path). */
+  symbolColumn = $state<number | null>(null);
+  /** Per-kept-row u16 symbol codes (nKept length). Null until loaded. */
+  symbolValues = $state.raw<Uint16Array | null>(null);
+  /** Category labels for symbolValues codes (index = code, value = label string). */
+  symbolCategories = $state.raw<string[]>([]);
+  /** Anchor-only subset of symbolValues (mirrors colorsAnchors). Non-reactive. */
+  symbolValuesAnchors: Uint16Array | null = null;
+
+  // ---- B3/Item 3: overlay describe + search/filter targeting -------------------
+  /** Column metadata per overlay layer (from describeOverlay). Non-reactive. */
+  overlayDescribes = new Map<string, import('../shared/protocol').ColumnInfo[]>();
+  /** Id of the overlay layer currently targeted by the search box (null = base). */
+  searchLayerId = $state<string | null>(null);
+  /** Per-overlay search result masks (Uint8Array over position indices). Non-reactive. */
+  overlaySearchMasks = new Map<string, Uint8Array>();
+  /** Id of the overlay layer whose histogram filter is active (null = base). */
+  histFilterLayerId = $state<string | null>(null);
+  /** Cached float32 column values per overlay layer for histogram filtering. Non-reactive. */
+  histValuesOverlayData = new Map<string, { column: number; values: Float32Array }>();
 
   // ---- B3: overlay layer data -------------------------------------------------
   /** XY positions per overlay layer (Float32Array of n*dims values). Non-reactive. */
@@ -766,6 +801,23 @@ export class Atlas {
       case 'overlayRows':
         onOverlayRowsImpl(this, msg.seq, msg.layerId, msg.values);
         break;
+      // --- B3/Item 9: symbol by column ---
+      case 'symbolCodes':
+        await onSymbolCodesImpl(this, msg.column, msg.file, msg.categories);
+        break;
+      // --- B3/Item 3: overlay describe + search/filter targeting ---
+      case 'overlayDescribe':
+        this.overlayDescribes.set(msg.layerId, msg.columns);
+        break;
+      case 'searchOverlayResults':
+        await onSearchOverlayResultsImpl(this, msg);
+        break;
+      case 'searchOverlayEmpty':
+        onSearchOverlayEmptyImpl(this, msg);
+        break;
+      case 'histValuesOverlay':
+        await onHistValuesOverlayImpl(this, msg);
+        break;
     }
   }
 
@@ -1005,6 +1057,20 @@ export class Atlas {
     this.render();
     this.persist();
   }
+
+  // ---- B3/Item 9: symbol by column ---------------------------------------------
+  /** Set the column to use for per-point symbol codes (null = circle-only fast path). */
+  setSymbolColumn(c: number | null): void { setSymbolColumnImpl(this, c); }
+  /** Rebuild anchor-only symbol codes after prepare/projection changes. */
+  reapplySymbols(): void { reapplySymbolsImpl(this); }
+
+  // ---- B3/Item 3: overlay search + histogram targeting -------------------------
+  /** Search within an overlay layer's column. When layerId is null, falls back to base search. */
+  runSearchOverlay(layerId: string, col: number, q: string): void { runSearchOverlayImpl(this, layerId, col, q); }
+  /** Clear overlay search state and reset the renderer. */
+  clearSearchOverlay(): void { clearSearchOverlayImpl(this); }
+  /** Request histogram values for an overlay layer's column. */
+  requestHistOverlay(layerId: string, col: number): void { requestHistOverlayImpl(this, layerId, col); }
 
   // ---- B3: overlay layers ------------------------------------------------------
 

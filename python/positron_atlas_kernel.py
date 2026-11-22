@@ -3054,6 +3054,96 @@ def overlay_selection_frame(job_id: str, layer_id: str, mask_path: str) -> str:
     return _json({"ok": True, "variable": name, "rows": int(len(orig_indices))})
 
 
+def describe_overlay(job_id: str, layer_id: str) -> str:
+    """Return column descriptions for an overlay layer's source variable.
+
+    Used by the webview to populate search/filter column pickers for overlay layers.
+    Returns {ok, columns} where columns matches the ColumnInfo protocol shape.
+    """
+    job = _get(job_id)
+    overlay = job.overlays.get(layer_id)
+    if overlay is None:
+        return _json({"ok": False, "error": f"Overlay layer '{layer_id}' not found."})
+    try:
+        ov_obj = _resolve(overlay.name)
+        frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": str(e)})
+    cols = []
+    for j, cname in enumerate(frame.column_names()):
+        dtype, kind = frame.column_kind(j)
+        cols.append({"index": j, "name": cname, "dtype": dtype, "kind": kind, "null_frac": None, "n_unique_est": None})
+    return _json({"ok": True, "columns": cols})
+
+
+def search_overlay(job_id: str, layer_id: str, column: int, query: str, limit: int = 100_000) -> str:
+    """Search a text column of an overlay layer for a substring.
+
+    Returns overlay position indices (u32) of matching rows, written to a temp file.
+    """
+    if not query:
+        return _json({"ok": True, "file": None, "count": 0})
+    job = _get(job_id)
+    overlay = job.overlays.get(layer_id)
+    if overlay is None:
+        return _json({"ok": False, "error": f"Overlay layer '{layer_id}' not found."})
+    try:
+        ov_obj = _resolve(overlay.name)
+        frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": str(e)})
+    col = int(column)
+    q = str(query)
+    q_low = q.lower()
+    if frame.kind == "pandas":
+        col_name = frame.column_names()[col]
+        series = frame.obj[col_name].iloc[overlay.kept_idx]
+        mask_bool = series.str.contains(q, case=False, regex=False, na=False).to_numpy(dtype=bool, na_value=False)
+    elif frame.kind == "polars":
+        import re as _re
+        col_name = frame.column_names()[col]
+        series = frame.obj[col_name].gather(overlay.kept_idx)
+        try:
+            mask_bool = series.str.contains(f"(?i){_re.escape(q)}").to_numpy(dtype=bool)
+        except Exception:  # noqa: BLE001
+            vals = np.array(series.to_list(), dtype=object)
+            mask_bool = np.array([isinstance(v, str) and q_low in v.lower() for v in vals], dtype=bool)
+    else:
+        vals = np.array([frame.column(col, np.array([i], dtype=np.intp))[0] for i in overlay.kept_idx], dtype=object)
+        mask_bool = np.array([isinstance(v, str) and q_low in v.lower() for v in vals], dtype=bool)
+    pos_indices = np.where(mask_bool)[0].astype(np.uint32)
+    if len(pos_indices) > limit:
+        pos_indices = pos_indices[:limit]
+    fname = f"search_overlay_{layer_id}_{int(time.time() * 1000)}.u32"
+    fpath = os.path.join(job.job_dir, fname)
+    pos_indices.astype("<u4").tofile(fpath)
+    return _json({"ok": True, "file": fname, "count": int(len(pos_indices))})
+
+
+def hist_values_overlay(job_id: str, layer_id: str, column: int) -> str:
+    """Return float32 values for a numeric column of an overlay layer.
+
+    Used for the histogram filter on overlay layers.
+    """
+    job = _get(job_id)
+    overlay = job.overlays.get(layer_id)
+    if overlay is None:
+        return _json({"ok": False, "error": f"Overlay layer '{layer_id}' not found."})
+    try:
+        ov_obj = _resolve(overlay.name)
+        frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": str(e)})
+    col = int(column)
+    vals_raw = frame.column(col, overlay.kept_idx)
+    dtype, kind = frame.column_kind(col)
+    fv = _to_float(vals_raw, kind).astype(np.float32)
+    fname = f"hist_ov_{layer_id}_{col}_{int(time.time() * 1000)}.f32"
+    fpath = os.path.join(job.job_dir, fname)
+    fv.astype("<f4").tofile(fpath)
+    return _json({"ok": True, "file": fname, "dtype": "f32", "length": len(fv)})
+
+
 def _probe_generic(v: Any) -> dict[str, Any] | None:
     """Return frame metadata for a non-pandas, non-polars object, or None if unrecognised."""
     # Polars LazyFrame: list as lazy, shape unknown without collecting.

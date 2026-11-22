@@ -988,6 +988,73 @@ export class AtlasPanel {
         this.post({ type: 'overlayRows', seq: m.seq, layerId: m.layerId, values });
         break;
       }
+      // --- B3/Item 9: Symbol-by-column codes ---
+      case 'symbolCodes': {
+        const r = await this.bridge.call<{ file: string; dtype: 'f32' | 'u16'; meta: ColorMeta; length: number }>(
+          'colors',
+          this.requireJob(),
+          m.column,
+          true,   // forceCategorical
+          8,      // maxCategories (N_SYMBOLS)
+        );
+        const meta = r.meta as import('../shared/protocol').CategoricalColorMeta;
+        this.post({
+          type: 'symbolCodes',
+          column: m.column,
+          file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+          categories: meta.kind === 'categorical' ? meta.categories : [],
+        });
+        break;
+      }
+      // --- B3: Overlay column descriptions (for search/filter) ---
+      case 'describeOverlay': {
+        const job = this.jobId;
+        if (!job) break;
+        const r = await this.bridge.call<{ ok: boolean; columns: import('../shared/protocol').ColumnInfo[] }>(
+          'describe_overlay', job, m.layerId,
+        ).catch(() => null) as any;
+        if (r?.ok) {
+          this.post({ type: 'overlayDescribe', layerId: m.layerId, columns: r.columns });
+        }
+        break;
+      }
+      // --- B3: Overlay search ---
+      case 'searchOverlay': {
+        const job = this.jobId;
+        if (!job) break;
+        const r = await this.bridge.call<{ ok: boolean; file?: string; count: number }>(
+          'search_overlay', job, m.layerId, m.column, m.query, m.limit ?? 100_000,
+        ).catch(() => null) as any;
+        if (r?.ok && r.file && r.count > 0) {
+          this.post({
+            type: 'searchOverlayResults',
+            layerId: m.layerId,
+            query: m.query,
+            file: this.fileRef({ file: r.file, dtype: 'u32', shape: [r.count] }),
+            count: r.count,
+          });
+        } else {
+          this.post({ type: 'searchOverlayEmpty', layerId: m.layerId, query: m.query });
+        }
+        break;
+      }
+      // --- B3: Overlay histogram values ---
+      case 'histValuesOverlay': {
+        const job = this.jobId;
+        if (!job) break;
+        const r = await this.bridge.call<{ ok: boolean; file: string; dtype: 'f32'; length: number }>(
+          'hist_values_overlay', job, m.layerId, m.column,
+        ).catch(() => null) as any;
+        if (r?.ok) {
+          this.post({
+            type: 'histValuesOverlay',
+            layerId: m.layerId,
+            column: m.column,
+            file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+          });
+        }
+        break;
+      }
     }
   }
 

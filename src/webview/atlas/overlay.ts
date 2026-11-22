@@ -87,6 +87,10 @@ export async function onOverlayXYChunk(atlas: Atlas, layerId: string, file: File
   // Build spatial hit index when all rows have been received (2D only for now).
   if (newFilled >= nKept && nd === 2) {
     atlas.overlayHits.set(layerId, new HitIndex(buf, nKept));
+    // B3/Item 3: request column metadata for the overlay so the search/hist pickers work.
+    if (!atlas.overlayDescribes.has(layerId)) {
+      vscode.post({ type: 'describeOverlay', layerId });
+    }
   }
   atlas.render();
 }
@@ -105,6 +109,19 @@ export function onOverlayRemoved(atlas: Atlas, layerId: string): void {
   // Clear cached row data for this layer.
   for (const key of [...atlas.overlayRowCache.keys()]) {
     if (key.startsWith(`${layerId}:`)) atlas.overlayRowCache.delete(key);
+  }
+  // B3/Item 3: clear describe + search state for this layer.
+  atlas.overlayDescribes.delete(layerId);
+  atlas.overlaySearchMasks.delete(layerId);
+  atlas.histValuesOverlayData.delete(layerId);
+  if (atlas.searchLayerId === layerId) {
+    atlas.searchLayerId = null;
+    atlas.searchQuery = '';
+    atlas.searchMatchCount = 0;
+    atlas.renderer?.setSearch(null);
+  }
+  if (atlas.histFilterLayerId === layerId) {
+    atlas.histFilterLayerId = null;
   }
   atlas.render();
 }

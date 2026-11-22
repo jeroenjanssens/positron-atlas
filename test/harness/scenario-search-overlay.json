@@ -1,0 +1,54 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 300\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\nm = 60\nk2 = rng.integers(0, 2, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 10)), columns=[f'x{i}' for i in range(10)])\ndf2['label'] = ['alpha' if v == 0 else 'beta' for v in k2]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 500
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 90000
+    },
+    {
+      "name": "add overlay df2",
+      "eval": "a.addOverlay('df2')",
+      "until": "a.layers.filter(l => l.kind === 'point-overlay').length === 1",
+      "timeout": 60000
+    },
+    {
+      "name": "wait for overlay XY and describe",
+      "until": "(() => { const ov = a.layers.find(l => l.kind === 'point-overlay'); return ov && (a.overlayFilled.get(ov.id) ?? 0) >= (a.overlayNKept.get(ov.id) ?? 1) && a.overlayDescribes.has(ov.id); })()",
+      "timeout": 60000
+    },
+    {
+      "name": "verify overlay describe contains label column",
+      "assert": [
+        "(() => { const ov = a.layers.find(l => l.kind === 'point-overlay'); const cols = a.overlayDescribes.get(ov.id); return cols && cols.some(c => c.name === 'label'); })()"
+      ],
+      "report": "(() => { const ov = a.layers.find(l => l.kind === 'point-overlay'); return { cols: a.overlayDescribes.get(ov.id)?.map(c => c.name) }; })()"
+    },
+    {
+      "name": "search overlay for alpha",
+      "eval": "const ov = a.layers.find(l => l.kind === 'point-overlay'); const cols = a.overlayDescribes.get(ov.id); const labelCol = cols.find(c => c.name === 'label'); a.runSearchOverlay(ov.id, labelCol.index, 'alpha')",
+      "until": "a.searchMatchCount > 0 && !a.searchPending",
+      "timeout": 30000
+    },
+    {
+      "name": "verify overlay search results",
+      "assert": [
+        "a.searchMatchCount > 0",
+        "a.searchMatchCount < 60",
+        "a.searchQuery === 'alpha'"
+      ],
+      "report": "{ searchMatchCount: a.searchMatchCount, searchQuery: a.searchQuery, searchLayerId: a.searchLayerId }"
+    },
+    {
+      "name": "clear overlay search",
+      "eval": "a.clearSearchOverlay()",
+      "until": "a.searchQuery === '' && a.searchLayerId === null",
+      "timeout": 5000
+    }
+  ]
+}

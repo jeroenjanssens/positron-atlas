@@ -3,7 +3,7 @@
  */
 
 import type { Atlas } from '../atlas.svelte';
-import type { FilterAttribute } from '../render/renderer';
+import type { FilterAttribute, PointSet } from '../render/renderer';
 import { bounds, bounds3D } from '../render/hitIndex';
 import { lowerBound } from '../logic';
 import { themeBackground } from './utils';
@@ -12,6 +12,7 @@ import { runSearch, searchColumn } from './search';
 import { buildRadii, buildHistFilterValues } from './colors';
 import { getLayer } from './layers';
 import { fullExtent3D, type Extent3D } from '../render/boxes';
+import { reapplyOverlaySearch, buildOverlayHistFilter } from './searchOverlay';
 
 export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>): void {
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
@@ -127,6 +128,13 @@ export function render(atlas: Atlas): void {
       histAll,
     )];
   }
+  // B3/Item 9: split base PointSets by symbol code when symbolValuesAnchors is set.
+  if (atlas.symbolValuesAnchors) {
+    const split = _splitBySymbolCode(sets, filters, atlas);
+    sets = split[0];
+    filters = split[1];
+  }
+
   // B3: append overlay point sets (one per visible point-overlay layer).
   for (const layer of atlas.layers) {
     if (layer.kind !== 'point-overlay' || !layer.visible) continue;
@@ -148,16 +156,21 @@ export function render(atlas: Atlas): void {
       layerBlending: layer.blending,
       symbolCode: layer.symbol,
     });
-    filters.push(null);
+    // B3/Item 3: overlay histogram filter.
+    filters.push(buildOverlayHistFilter(atlas, layer.id, nFilled));
   }
 
   atlas.renderer.setPointSets(sets, filters);
   // B5: push annotations to renderer for the leader-lines deck.gl layer.
   atlas.renderer.setAnnotations(atlas.annotations);
   // Re-apply any active search highlight after the point sets change (A7).
-  if (atlas.searchMask && atlas.searchQuery) {
+  if (atlas.searchMask && atlas.searchQuery && !atlas.searchLayerId) {
     const col = searchColumn(atlas);
     if (col !== null) runSearch(atlas, atlas.searchQuery, col);
+  }
+  // B3/Item 3: re-apply overlay search mask aligned to current PointSets.
+  if (atlas.searchLayerId) {
+    reapplyOverlaySearch(atlas, sets);
   }
   atlas._renderTick++;
   // A12: invalidate glow when point data changes (2D only).
@@ -204,6 +217,88 @@ export function render(atlas: Atlas): void {
     // Code that wants a re-fit (new UMAP result, fitView button) must re-set autoFit=true.
     atlas.autoFit = false;
   }
+}
+
+/**
+ * B3/Item 9: Split base PointSets by per-point symbol code.
+ *
+ * Returns [newSets, newFilters] where each base PointSet is replaced by one sub-PointSet
+ * per unique symbol code value (each sub-set has symbolCode set, positions/colors/radii
+ * subsampled to those points, and filter values subsampled accordingly).
+ * Non-base PointSets (overlays) are passed through unchanged.
+ */
+function _splitBySymbolCode(
+  sets: PointSet[],
+  filters: (FilterAttribute | null)[],
+  atlas: Atlas,
+): [PointSet[], (FilterAttribute | null)[]] {
+  const symAll = atlas.symbolValues;
+  const symAnchors = atlas.symbolValuesAnchors;
+  if (!symAll && !symAnchors) return [sets, filters];
+
+  const newSets: PointSet[] = [];
+  const newFilters: (FilterAttribute | null)[] = [];
+
+  for (let si = 0; si < sets.length; si++) {
+    const s = sets[si];
+    // Only split base PointSets; overlays are handled separately.
+    if (s.layerId !== 'base') {
+      newSets.push(s);
+      newFilters.push(filters[si]);
+      continue;
+    }
+    // Determine which symbol codes array to use for this PointSet.
+    const sym = s.id === 'all' ? symAll?.subarray(0, s.length) : symAnchors;
+    if (!sym || sym.length !== s.length) {
+      newSets.push(s);
+      newFilters.push(filters[si]);
+      continue;
+    }
+    const nd = s.positionStride ?? 2;
+    const flt = filters[si];
+    const precomputed = flt?.precomputed ?? null;
+
+    // Count per unique code.
+    const counts = new Map<number, number>();
+    for (let i = 0; i < s.length; i++) {
+      const c = sym[i];
+      counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+
+    // Build compact sub-arrays for each code.
+    for (const [code, count] of counts) {
+      const pos = new Float32Array(count * nd);
+      const col = new Uint8Array(count * 4);
+      const rad = s.radii ? new Float32Array(count) : undefined;
+      const pre = precomputed ? new Float32Array(count) : undefined;
+      let j = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (sym[i] !== code) continue;
+        for (let d = 0; d < nd; d++) pos[j * nd + d] = s.positions[i * nd + d];
+        col[j * 4] = s.colors[i * 4];
+        col[j * 4 + 1] = s.colors[i * 4 + 1];
+        col[j * 4 + 2] = s.colors[i * 4 + 2];
+        col[j * 4 + 3] = s.colors[i * 4 + 3];
+        if (rad && s.radii) rad[j] = s.radii[i];
+        if (pre && precomputed) pre[j] = precomputed[i];
+        j++;
+      }
+      newSets.push({
+        ...s,
+        id: `${s.id}-sym${code}`,
+        positions: pos,
+        colors: col,
+        length: count,
+        radii: rad,
+        symbolCode: code,
+      });
+      newFilters.push(pre
+        ? { codes: new Uint16Array(count), hidden: new Set(), precomputed: pre }
+        : null,
+      );
+    }
+  }
+  return [newSets, newFilters];
 }
 
 export function fitView(atlas: Atlas): void {

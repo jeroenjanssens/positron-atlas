@@ -76,6 +76,39 @@
   </div>
 {/if}
 
+{#if atlas.symbolColumn !== null && atlas.symbolCategories.length > 0}
+  <div class="legend symbol-legend">
+    <div class="legend-title">{atlas.describe?.columns[atlas.symbolColumn]?.name ?? 'Symbol'}</div>
+    {#each atlas.symbolCategories as cat, code (code)}
+      {@const sym = symbolName(code)}
+      <div class="item sym-item">
+        <svg class="sym-icon" viewBox="0 0 10 10" fill="var(--foreground, #ccc)" stroke="none" aria-hidden="true">
+          {#if sym === 'circle'}
+            <circle cx="5" cy="5" r="4"/>
+          {:else if sym === 'square'}
+            <rect x="1" y="1" width="8" height="8"/>
+          {:else if sym === 'triangle'}
+            <polygon points="5,1 9,9 1,9"/>
+          {:else if sym === 'diamond'}
+            <polygon points="5,1 9,5 5,9 1,5"/>
+          {:else if sym === 'cross'}
+            <rect x="3.5" y="1" width="3" height="8"/>
+            <rect x="1" y="3.5" width="8" height="3"/>
+          {:else if sym === 'star'}
+            <polygon points="5,0.5 6.2,3.8 9.8,3.8 7,6 8,9.5 5,7.5 2,9.5 3,6 0.2,3.8 3.8,3.8"/>
+          {:else if sym === 'hexagon'}
+            <polygon points="5,0.5 9,2.75 9,7.25 5,9.5 1,7.25 1,2.75"/>
+          {:else}
+            <rect x="3.5" y="1" width="3" height="8" transform="rotate(45 5 5)"/>
+            <rect x="1" y="3.5" width="8" height="3" transform="rotate(45 5 5)"/>
+          {/if}
+        </svg>
+        <span class="sym-label">{cat === '' ? '(empty)' : cat}</span>
+      </div>
+    {/each}
+  </div>
+{/if}
+
 {#if overlayLayers.length > 0}
   <div class="legend overlay-legend">
     <div class="legend-title">Overlays</div>
@@ -125,6 +158,21 @@
     margin-top: 4px;
     border-top: 1px solid var(--border, #333);
     padding-top: 4px;
+  }
+  .symbol-legend {
+    margin-top: 6px;
+  }
+  .sym-item {
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sym-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .overlay-legend {
     margin-top: 6px;

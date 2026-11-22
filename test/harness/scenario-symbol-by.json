@@ -1,0 +1,67 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 100\n# 50 points at x=-10 (category 'a'), 50 at x=+10 (category 'b').\nx = np.concatenate([np.full(50, -10.0), np.full(50, 10.0)])\ny = rng.uniform(-3, 3, n)\ndf = pd.DataFrame({'x': x, 'y': y, 'cat': ['a']*50 + ['b']*50})\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 500
+  },
+  "steps": [
+    {
+      "name": "init with coords columns",
+      "eval": "a.setLayoutMode('columns')",
+      "until": "a.layoutMode === 'columns'"
+    },
+    {
+      "name": "set coords columns to x,y",
+      "eval": "a.prepare = { ...a.prepare, coordsColumns: { x: a.describe.columns.findIndex(c => c.name === 'x'), y: a.describe.columns.findIndex(c => c.name === 'y') } }; a.runPrepare()",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set large point size for visible pixels",
+      "eval": "a.setView({ pointSize: 40 })",
+      "until": "a.view.pointSize === 40"
+    },
+    {
+      "name": "count pixels on right side without symbol (all circles)",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0); const d = ctx.getImageData(cv.width/2, 0, cv.width/2, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__circlePixels = n",
+      "until": "window.__circlePixels !== undefined",
+      "assert": "window.__circlePixels > 50"
+    },
+    {
+      "name": "set symbol column to 'cat' (2 categories)",
+      "eval": "const catIdx = a.describe.columns.findIndex(c => c.name === 'cat'); a.setSymbolColumn(catIdx)",
+      "until": "a.symbolValues !== null && a.symbolCategories.length === 2",
+      "timeout": 30000
+    },
+    {
+      "name": "verify symbol state",
+      "assert": [
+        "a.symbolColumn !== null",
+        "a.symbolValues !== null",
+        "a.symbolCategories.length === 2",
+        "a.symbolCategories.includes('a')",
+        "a.symbolCategories.includes('b')"
+      ],
+      "report": "{ symbolCategories: a.symbolCategories, symbolColumn: a.symbolColumn }"
+    },
+    {
+      "name": "count pixels on right side with symbol (squares for 'b')",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0); const d = ctx.getImageData(cv.width/2, 0, cv.width/2, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__squarePixels = n",
+      "until": "window.__squarePixels !== undefined",
+      "screenshot": "symbol-by-squares.png",
+      "report": "{ circlePixels: window.__circlePixels, squarePixels: window.__squarePixels, ratio: window.__squarePixels / window.__circlePixels }"
+    },
+    {
+      "name": "verify squares have more filled pixels than circles (square area > circle area)",
+      "assert": "window.__squarePixels > window.__circlePixels * 1.1",
+      "report": "{ circlePixels: window.__circlePixels, squarePixels: window.__squarePixels, ratio: (window.__squarePixels / window.__circlePixels).toFixed(3) }"
+    },
+    {
+      "name": "clear symbol column restores circles",
+      "eval": "a.setSymbolColumn(null)",
+      "until": "a.symbolColumn === null && a.symbolValues === null",
+      "timeout": 5000
+    }
+  ]
+}

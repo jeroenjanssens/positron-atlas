@@ -692,6 +692,40 @@
         post({ type: 'overlayRows', seq: m.seq, layerId: m.layerId, values });
         break;
       }
+      // --- B3/Item 9: Symbol-by-column codes ---
+      case 'symbolCodes': {
+        if (!jobId) break;
+        const r = await call('colors', jobId, m.column, true, 8).catch(() => null);
+        if (!r) break;
+        const categories = r.meta?.categories ?? [];
+        post({ type: 'symbolCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), categories });
+        break;
+      }
+      // --- B3: overlay column descriptions ---
+      case 'describeOverlay': {
+        if (!jobId) break;
+        const r = await call('describe_overlay', jobId, m.layerId).catch(() => null);
+        if (r?.ok) post({ type: 'overlayDescribe', layerId: m.layerId, columns: r.columns });
+        break;
+      }
+      // --- B3: overlay search ---
+      case 'searchOverlay': {
+        if (!jobId) break;
+        const r = await call('search_overlay', jobId, m.layerId, m.column, m.query, m.limit ?? 100000).catch(() => null);
+        if (r?.ok && r.file && r.count > 0) {
+          post({ type: 'searchOverlayResults', layerId: m.layerId, query: m.query, file: fileRef({ file: r.file, dtype: 'u32', shape: [r.count] }), count: r.count });
+        } else {
+          post({ type: 'searchOverlayEmpty', layerId: m.layerId, query: m.query });
+        }
+        break;
+      }
+      // --- B3: overlay histogram values ---
+      case 'histValuesOverlay': {
+        if (!jobId) break;
+        const r = await call('hist_values_overlay', jobId, m.layerId, m.column).catch(() => null);
+        if (r?.ok) post({ type: 'histValuesOverlay', layerId: m.layerId, column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }) });
+        break;
+      }
     }
   }
 
