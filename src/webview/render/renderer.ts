@@ -84,6 +84,9 @@ const ADDITIVE = {
 
 const NORMAL = { depthWriteEnabled: false, depthCompare: 'always' } as const;
 
+/** Height of the plot toolbar plus the search box, kept free when fitting the view. */
+const FIT_TOP_PX = 76;
+
 /** deck.gl scatter renderer with binary attributes and a controlled orthographic view. */
 export class ScatterRenderer {
   private deck: Deck<OrthographicView>;
@@ -360,14 +363,19 @@ export class ScatterRenderer {
     const fullW = this.container.clientWidth || 800;
     const pad = fullW - padRight > 200 ? padRight : 0;
     const w = fullW - pad;
-    const h = this.container.clientHeight || 600;
+    const fullH = this.container.clientHeight || 600;
+    // Keep the band under the plot toolbar and search box (top left) free of data.
+    const top = fullH > 300 ? FIT_TOP_PX : 0;
+    const h = fullH - top;
     const dx = Math.max(b[2] - b[0], 1e-6);
     const dy = Math.max(b[3] - b[1], 1e-6);
     const scale = Math.min(w / dx, h / dy) * 0.9;
     const zoom = Math.log2(scale);
-    // Shift the center left so the data sits in the area not covered by the legend.
+    // Shift the center left so the data sits in the area not covered by the legend,
+    // and by half the top band so the data sits below the toolbar.
     const cx = (b[0] + b[2]) / 2 + pad / 2 / scale;
-    this.viewState = { target: [cx, (b[1] + b[3]) / 2, 0], zoom };
+    const cy = (b[1] + b[3]) / 2 + top / 2 / scale;
+    this.viewState = { target: [cx, cy, 0], zoom };
     this.fittedZoom = zoom; // A8: record overview zoom for fine-label threshold
     this.deck.setProps({ viewState: this.viewState as any });
   }

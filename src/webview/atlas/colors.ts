@@ -74,21 +74,33 @@ export function recolorByClusters(atlas: Atlas): void {
     ? gatherRgba(atlas.colorsAll, atlas.anchorPos)
     : atlas.colorsAll;
   // Colour the outlines by cluster colour (each cluster may have multiple rings).
-  const clusterRings = atlas.cluster.outlines;
-  if (clusterRings && clusterRings.length) {
-    const flatRings: [number, number][][] = [];
-    const perColors: [number, number, number, number][] = [];
-    for (let ci = 0; ci < clusterRings.length; ci++) {
-      const hex = palette[ci % palette.length];
-      const [r, g, b] = hexToRgb(hex);
-      for (const ring of clusterRings[ci]) {
-        flatRings.push(ring);
-        perColors.push([r, g, b, 255]);
-      }
-    }
-    atlas.renderer?.setOutlines(flatRings, undefined, perColors);
+  const outlines = clusterOutlines(atlas);
+  if (outlines) {
+    atlas.renderer?.setOutlines(outlines.rings, undefined, outlines.colors);
   }
   atlas.render();
+}
+
+/**
+ * Cluster outlines with one colour per ring (the cluster's palette colour), when points are
+ * coloured by cluster; null otherwise. Used here and by the label update, which redraws outlines.
+ */
+export function clusterOutlines(atlas: Atlas): { rings: [number, number][][]; colors: [number, number, number, number][] } | null {
+  const clusterRings = atlas.cluster?.outlines;
+  if (!atlas.colorByCluster || !clusterRings || !clusterRings.length) {
+    return null;
+  }
+  const palette = atlas.clusterPalette?.length ? atlas.clusterPalette : buildClusterPalette(atlas, clusterRings.length);
+  const rings: [number, number][][] = [];
+  const colors: [number, number, number, number][] = [];
+  for (let ci = 0; ci < clusterRings.length; ci++) {
+    const [r, g, b] = hexToRgb(palette[ci % palette.length]);
+    for (const ring of clusterRings[ci]) {
+      rings.push(ring);
+      colors.push([r, g, b, 255]);
+    }
+  }
+  return { rings, colors };
 }
 
 /** Build k colors for clusters using the active palette setting. */

@@ -3,6 +3,7 @@
  * Implements A2 (typography), A3 (draggable labels), A8 (multi-level), A9 (highlighted badges).
  */
 
+import { clusterOutlines } from './colors';
 import type { Atlas } from '../atlas.svelte';
 import type { ColorMeta, FileRef, LabelOptions } from '../../shared/protocol';
 import { vscode, fetchTyped } from '../vscode';
@@ -432,7 +433,12 @@ export function updateLabels(atlas: Atlas): void {
   atlas.renderer.setLabels(out, labelStyle);
 
   const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
-  atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
+  const coloured = showOutlines ? clusterOutlines(atlas) : null;
+  if (coloured) {
+    atlas.renderer.setOutlines(coloured.rings, undefined, coloured.colors);
+  } else {
+    atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
+  }
 
   // Async font load: re-render once the font is ready (A2).
   void ensureLabelFont(atlas).then(() => {
