@@ -26,7 +26,7 @@ export function savePng(atlas: Atlas): void {
   if (!atlas.renderer) {
     return;
   }
-  atlas.renderer.toPngBytes(plotBackground(atlas)).then((bytes) => {
+  atlas.renderer.toPngBytesWithOverlay(plotBackground(atlas), atlas).then((bytes) => {
     vscode.post({ type: 'savePng', bytes });
   });
 }
@@ -48,7 +48,10 @@ export function copyDataMapPlot(atlas: Atlas): void {
   const d = atlas.describe;
   if (!d) return;
   const label = !atlas.labels.clusters && atlas.labels.column !== null ? (d.columns[atlas.labels.column]?.name ?? null) : atlas.labels.clusters ? 'atlas_cluster' : null;
-  vscode.post({ type: 'copyText', text: dataMapPlotSnippet(atlas.dataVariable || atlas.variable, d.frameKind, label) });
+  const t = $state.snapshot(atlas.titleOverlay) as import('../../shared/protocol').TitleOptions;
+  const title = t.title.trim() || undefined;
+  const subtitle = t.subtitle.trim() || undefined;
+  vscode.post({ type: 'copyText', text: dataMapPlotSnippet(atlas.dataVariable || atlas.variable, d.frameKind, label, title, subtitle) });
 }
 
 /** Export the map as an interactive DataMapPlot HTML file (D3/D12). */
@@ -89,6 +92,12 @@ export function persist(atlas: Atlas): void {
   for (const [col, set] of atlas.hiddenCategories) {
     hiddenCategoriesRecord[col] = [...set];
   }
+  // Serialize annotations Map → Record<string, AnnotationData>
+  const annotationsRecord: Record<string, import('../../shared/protocol').AnnotationData> = {};
+  for (const [k, v] of atlas.annotations) {
+    annotationsRecord[k] = v;
+  }
+
   const state: PanelState = {
     variable: atlas.variable || prev?.variable || '',
     sessionId: prev?.sessionId ?? '',
@@ -102,6 +111,9 @@ export function persist(atlas: Atlas): void {
     tooltip: $state.snapshot(atlas.tooltipOpts) as import('../../shared/protocol').TooltipOptions,
     hiddenCategories: Object.keys(hiddenCategoriesRecord).length ? hiddenCategoriesRecord : undefined,
     loadImagesFromUrls: atlas.loadImagesFromUrls !== 'ask' ? atlas.loadImagesFromUrls : undefined,
+    titleOverlay: $state.snapshot(atlas.titleOverlay) as import('../../shared/protocol').TitleOptions,
+    annotations: Object.keys(annotationsRecord).length ? annotationsRecord : undefined,
+    annotateIdColumn: atlas.annotateIdColumn,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

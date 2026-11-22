@@ -229,8 +229,15 @@ export function formatPercent(p: number): string {
 /**
  * Python that draws the map with DataMapPlot (datamapplot.create_interactive_plot), from the
  * coordinates Atlas adds to the DataFrame (umap_x, umap_y) and an optional label column.
+ * Optional title and subtitle are passed as the title= and sub_title= parameters.
  */
-export function dataMapPlotSnippet(variable: string, frameKind: 'pandas' | 'polars', labelColumn: string | null): string {
+export function dataMapPlotSnippet(
+  variable: string,
+  frameKind: 'pandas' | 'polars',
+  labelColumn: string | null,
+  title?: string,
+  subtitle?: string,
+): string {
   const col = (name: string) => JSON.stringify(name);
   const lines = [
     '# Atlas: Export → To the DataFrame → "Add coordinates" adds umap_x and umap_y.',
@@ -251,11 +258,13 @@ export function dataMapPlotSnippet(variable: string, frameKind: 'pandas' | 'pola
     }
   }
   lines.push('');
-  if (labelColumn !== null) {
-    lines.push('plot = datamapplot.create_interactive_plot(coords, labels, noise_label="Unlabelled")');
-  } else {
-    lines.push('plot = datamapplot.create_interactive_plot(coords)');
-  }
+  const plotArgs: string[] = ['coords'];
+  if (labelColumn !== null) plotArgs.push('labels', 'noise_label="Unlabelled"');
+  if (title) plotArgs.push(`title=${JSON.stringify(title)}`);
+  if (subtitle) plotArgs.push(`sub_title=${JSON.stringify(subtitle)}`);
+  // DataMapPlot does not have a direct equivalent for per-point callout annotations;
+  // use highlighted_labels or custom hover_text to annotate specific rows.
+  lines.push(`plot = datamapplot.create_interactive_plot(${plotArgs.join(', ')})`);
   lines.push('plot  # or plot.save("map.html")');
   return lines.join('\n') + '\n';
 }

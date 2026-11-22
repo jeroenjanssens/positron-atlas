@@ -56,6 +56,13 @@
     <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
   </button>
 
+  <!-- Annotate tool (A4): codicon-pin -->
+  <button class="tool" class:active={atlas.tool === 'annotate'} aria-pressed={atlas.tool === 'annotate'} aria-label="Annotate"
+    title="Annotate: click a point to add a callout annotation. Drag the callout to move it; double-click to edit text."
+    disabled={!atlas.prepared} onclick={() => (atlas.tool = atlas.tool === 'annotate' ? 'pan' : 'annotate')}>
+    <span class="codicon codicon-pin" aria-hidden="true"></span>
+  </button>
+
   <span class="sep" aria-hidden="true"></span>
 
   <!-- Fullscreen (F1) -->

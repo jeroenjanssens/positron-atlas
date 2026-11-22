@@ -42,14 +42,19 @@
         <div class="hc-more">+ {card.values.length - 24} more columns</div>
       {/if}
     {/if}
-    {#if card.linkValue}
-      <div class="hc-actions">
+    <div class="hc-actions">
+      {#if card.linkValue}
         <button class="primary hc-link-btn" onclick={() => atlas.openPinnedLink()} title={card.linkValue}>
           <span class="codicon codicon-link-external" aria-hidden="true"></span>
           Open link
         </button>
-      </div>
-    {/if}
+      {/if}
+      <button class="hc-annotate-btn" title="Add annotation for this point (A4)"
+        onclick={() => { atlas.closePinnedCard(); atlas.addAnnotationFromCard(card); }}>
+        <span class="codicon codicon-pin" aria-hidden="true"></span>
+        Annotate
+      </button>
+    </div>
     <div class="hc-hint">Click elsewhere or press Escape to close · Cmd/Ctrl+click to open link</div>
   </div>
 {/if}
@@ -137,7 +142,6 @@
   }
   .hc-copy .codicon { font-size: 12px; }
   .hc-more { color: var(--muted); margin-top: 2px; }
-  .hc-actions { margin-top: 8px; }
   .hc-link-btn {
     display: inline-flex;
     align-items: center;
@@ -145,5 +149,20 @@
     font-size: 0.9em;
   }
   .hc-link-btn .codicon { font-size: 13px; }
+  .hc-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .hc-annotate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.9em;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--tt-fg);
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 2px;
+  }
+  .hc-annotate-btn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1)); }
+  .hc-annotate-btn .codicon { font-size: 13px; }
   .hc-hint { margin-top: 8px; color: var(--muted); font-size: 0.8em; }
 </style>

@@ -212,6 +212,47 @@ export interface TooltipOptions {
   imageUrlColumn: number | null | undefined;
 }
 
+/** Title / subtitle / logo overlay options (A1). */
+export interface TitleOptions {
+  title: string;
+  subtitle: string;
+  /** Font family name passed to ensureFont(); '' uses the editor font. */
+  fontFamily: string;
+  /** Title font size in CSS pixels. */
+  fontSize: number;
+  /** CSS color string; '' follows the theme foreground. */
+  color: string;
+  /** Logo as a data: URL or empty string. */
+  logoData: string;
+  /** Logo width in CSS pixels; 0 = auto (48 px). */
+  logoWidth: number;
+}
+
+/** A single point annotation (A4). */
+export interface AnnotationData {
+  /** Stable unique id. */
+  id: string;
+  /** Key by which this annotation is looked up after sorting/filtering.
+   *  Row index as a string, or the value of the chosen ID column. */
+  rowKey: string;
+  /** Original DataFrame row index. */
+  row: number;
+  /** Text to show in the callout (empty = image annotation). */
+  text: string;
+  /** Visual style: plain | badge (coloured like the point) | image. */
+  style: 'plain' | 'badge' | 'image';
+  /** World x coordinate of the annotated point (from the layout at creation time). */
+  worldX: number;
+  /** World y coordinate of the annotated point. */
+  worldY: number;
+  /** Screen-pixel x offset from the projected point to the callout box top-left. */
+  offsetX: number;
+  /** Screen-pixel y offset from the projected point to the callout box top-left. */
+  offsetY: number;
+  /** Point's color as an rgba() string (used for badge style). */
+  color?: string;
+}
+
 /** Persisted in the webview state so tabs can be restored after a reload. */
 export interface PanelState {
   variable: string;
@@ -240,6 +281,12 @@ export interface PanelState {
   hiddenCategories?: Record<number, number[]>;
   /** Whether images from URLs are allowed: 'always', 'never', or 'ask' (default). */
   loadImagesFromUrls?: 'always' | 'never' | 'ask';
+  /** Title / subtitle / logo overlay (A1). */
+  titleOverlay?: TitleOptions;
+  /** Point annotations keyed by annotation id (A4). */
+  annotations?: Record<string, AnnotationData>;
+  /** Column index used as the annotation ID key; null = use row index. */
+  annotateIdColumn?: number | null;
 }
 
 export type ToWebview =

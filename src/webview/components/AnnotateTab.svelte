@@ -11,6 +11,63 @@
 
   let { atlas }: { atlas: Atlas } = $props();
 
+  // ---- Title overlay (A1) ----
+  const title = $derived(atlas.titleOverlay);
+
+  function setTitle(partial: Partial<typeof title>) {
+    atlas.titleOverlay = { ...atlas.titleOverlay, ...partial };
+  }
+
+  function onLogoFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setTitle({ logoData: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---- Annotations list (A4) ----
+  const annotationList = $derived([...atlas.annotations.values()]);
+
+  function goToAnnotation(ann: { worldX: number; worldY: number }) {
+    // Zoom to and center the annotated point.
+    atlas.renderer?.fit([ann.worldX - 1, ann.worldY - 1, ann.worldX + 1, ann.worldY + 1], true, atlas.legendWidth());
+  }
+
+  let importError = $state('');
+
+  function onImportFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        atlas.importAnnotationsJson(String(reader.result));
+        importError = '';
+      } catch (err) {
+        importError = `Import failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function downloadAnnotations() {
+    const json = atlas.exportAnnotationsJson();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${atlas.variable || 'annotations'}_annotations.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const labelColumns = $derived(
     (atlas.describe?.columns ?? []).filter(
       (c) =>
@@ -264,6 +321,85 @@
   {/if}
 </Section>
 
+<!-- Title / subtitle / logo overlay (A1) -->
+<Section {atlas} id="titleOverlay" title="Title">
+  <label class="select">
+    <span>Title <Info id="titleOverlay.title" /></span>
+    <input class="text" type="text" placeholder="Map title" value={title.title}
+      oninput={(e) => setTitle({ title: (e.target as HTMLInputElement).value })} aria-label="Map title" />
+  </label>
+  <label class="select">
+    <span>Subtitle <Info id="titleOverlay.subtitle" /></span>
+    <input class="text" type="text" placeholder="Subtitle (optional)" value={title.subtitle}
+      oninput={(e) => setTitle({ subtitle: (e.target as HTMLInputElement).value })} aria-label="Subtitle" />
+  </label>
+  <div class="select">
+    <span>Font <Info id="titleOverlay.fontFamily" /></span>
+    <FontPicker value={title.fontFamily} ariaLabel="Title font" onchange={(f) => setTitle({ fontFamily: f })} />
+  </div>
+  <Slider label="Size" value={title.fontSize} min={10} max={72} format={(v) => `${v}px`}
+    hint="Title font size in pixels"
+    onchange={(v) => setTitle({ fontSize: v })} infoId="titleOverlay.fontSize" />
+  <label class="select">
+    <span>Color <Info id="titleOverlay.color" /></span>
+    <input type="color" class="color" value={title.color || '#cccccc'}
+      oninput={(e) => setTitle({ color: (e.target as HTMLInputElement).value })} aria-label="Title color" />
+  </label>
+  <label class="select">
+    <span>Logo <Info id="titleOverlay.logo" /></span>
+    <input type="file" accept="image/*" onchange={onLogoFile} aria-label="Choose logo image" />
+  </label>
+  {#if title.logoData}
+    <div class="logo-preview">
+      <img src={title.logoData} alt="Logo preview" style="max-height:40px;max-width:80px;object-fit:contain;" />
+      <button onclick={() => setTitle({ logoData: '' })} title="Remove logo">Remove</button>
+    </div>
+  {/if}
+  <Slider label="Logo width" value={title.logoWidth || 48} min={16} max={160} format={(v) => `${v}px`}
+    hint="Logo width in pixels (0 = 48 px)"
+    onchange={(v) => setTitle({ logoWidth: v })} infoId="titleOverlay.logoWidth" />
+  {#if !title.title.trim() && !title.subtitle.trim() && !title.logoData}
+    <div class="hint muted">Enter a title above, then it appears as an overlay on the map (top left) and is included in PNG exports.</div>
+  {/if}
+</Section>
+
+<!-- Point annotations (A4) -->
+<Section {atlas} id="pointAnnotations" title="Annotations">
+  <div class="hint muted">
+    <Info id="pointAnnotations.list" />
+    Use the <span class="codicon codicon-pin" aria-label="pin" style="font-size:12px;vertical-align:-1px;"></span> Annotate tool in the toolbar to click a point and add a callout, or click <strong>Annotate</strong> on the hover card.
+    Drag callouts to reposition them; double-click to edit text.
+  </div>
+  {#if annotationList.length}
+    <div class="ann-list" role="list">
+      {#each annotationList as ann (ann.id)}
+        <div class="ann-item" role="listitem">
+          <button class="ann-goto icon-btn" title="Go to annotation" onclick={() => goToAnnotation(ann)}>
+            <span class="codicon codicon-location" aria-hidden="true"></span>
+          </button>
+          <span class="ann-item-text" title={ann.text}>{ann.text || `Row ${ann.row}`}</span>
+          <button class="ann-del icon-btn" title="Delete" onclick={() => atlas.removeAnnotation(ann.id)}>
+            <span class="codicon codicon-trash" aria-hidden="true"></span>
+          </button>
+        </div>
+      {/each}
+    </div>
+    <div class="btn-row">
+      <button onclick={downloadAnnotations} title="Export annotations as JSON">Export JSON</button>
+      <button class="danger" onclick={() => atlas.clearAnnotations()} title="Remove all annotations">Clear all</button>
+    </div>
+  {:else}
+    <div class="hint muted">No annotations yet.</div>
+  {/if}
+  <div class="btn-row">
+    <label class="file-btn" title="Import annotations from a JSON file">
+      Import JSON
+      <input type="file" accept=".json,application/json" onchange={onImportFile} style="display:none" />
+    </label>
+  </div>
+  {#if importError}<div class="hint error">{importError}</div>{/if}
+</Section>
+
 <Section {atlas} id="tags" title="Tags">
   <label class="select">
     <span>Tag <Info id="tags.tag" /></span>
@@ -335,4 +471,15 @@
     max-height: 160px;
     overflow-y: auto;
   }
+  .logo-preview { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .ann-list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+  .ann-item { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
+  .ann-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9em; }
+  .ann-goto, .ann-del { background: none; border: none; cursor: pointer; color: var(--muted); padding: 0 2px; display: flex; align-items: center; }
+  .ann-goto:hover, .ann-del:hover { color: var(--vscode-editor-foreground, #ccc); }
+  .ann-goto .codicon, .ann-del .codicon { font-size: 13px; }
+  .file-btn { display: inline-block; padding: 3px 10px; background: var(--btn-bg); border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; cursor: pointer; font: inherit; color: var(--btn-fg); }
+  .file-btn:hover { background: var(--btn-hover-bg, var(--btn-bg)); }
+  .hint.error { color: var(--vscode-errorForeground, #f14c4c); }
+  .danger { background: var(--vscode-errorForeground, #f14c4c); color: #fff; }
 </style>

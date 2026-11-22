@@ -895,6 +895,84 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Annotate → Title (A1) ---------------------------------------------------
+
+  'titleOverlay.title': {
+    title: 'Map title',
+    what: 'A short title shown in the top-left of the map.',
+    intuition:
+      'The title appears as an HTML overlay over the plot, so it stays crisp at any zoom level. ' +
+      'It is included in PNG exports and in the DataMapPlot code snippet (title= parameter).',
+    when: 'For presentations, reports, or when exporting the map.',
+    cost: 'none',
+    dataMapPlot: 'title=',
+  },
+
+  'titleOverlay.subtitle': {
+    title: 'Subtitle',
+    what: 'An optional subtitle shown below the title.',
+    intuition:
+      'The subtitle is smaller than the title and slightly more transparent. ' +
+      'It is included in PNG exports and as the sub_title= parameter in DataMapPlot code.',
+    when: 'To add a brief description, date, or data source below the title.',
+    cost: 'none',
+    dataMapPlot: 'sub_title=',
+  },
+
+  'titleOverlay.fontFamily': {
+    title: 'Title font',
+    what: 'Font family for the title and subtitle text.',
+    intuition:
+      'Pick a bundled font (e.g. Cinzel, Montserrat) or type any font name. ' +
+      'Leave empty to use the editor font. The font is loaded before export.',
+    when: 'To match the map style to a presentation or report theme.',
+    cost: 'none',
+  },
+
+  'titleOverlay.fontSize': {
+    title: 'Title size',
+    what: 'Font size of the title in CSS pixels.',
+    intuition: 'The subtitle is automatically scaled to 60% of the title size.',
+    cost: 'none',
+  },
+
+  'titleOverlay.color': {
+    title: 'Title color',
+    what: 'Text color for the title and subtitle.',
+    intuition:
+      'Pick a color that contrasts with the map background. ' +
+      'The title has a subtle text shadow to stay readable over dense clusters.',
+    cost: 'none',
+  },
+
+  'titleOverlay.logo': {
+    title: 'Logo image',
+    what: 'An optional image shown above the title.',
+    intuition:
+      'Pick any image file from your computer. It is stored in the panel state as a data URL ' +
+      'so it survives reloads. Keep it small (a few KB) to avoid bloating the state.',
+    when: 'To brand the map with a company or project logo.',
+    cost: 'none',
+  },
+
+  'titleOverlay.logoWidth': {
+    title: 'Logo width',
+    what: 'Width of the logo image in CSS pixels.',
+    intuition: 'The image height is scaled proportionally. Default is 48 px.',
+    cost: 'none',
+  },
+
+  // ---- Annotate → Annotations (A4) -------------------------------------------
+
+  'pointAnnotations.list': {
+    title: 'Annotations list',
+    what: 'All point annotations you have added to the map.',
+    intuition:
+      'Each annotation is linked to a DataFrame row. Click the location icon to zoom to it, ' +
+      'or the trash icon to delete it. Export saves all annotations as a JSON file you can re-import later.',
+    cost: 'none',
+  },
+
   // ---- Plot toolbar ------------------------------------------------------------
 
   'toolbar.pan': {
@@ -920,6 +998,16 @@ export const HELP: Record<string, HelpEntry> = {
     title: 'Fit to view',
     what: 'Resets the zoom and pan so all points are visible.',
     intuition: 'Equivalent to double-clicking the background. Useful after zooming into a cluster.',
+    cost: 'none',
+  },
+
+  'toolbar.annotate': {
+    title: 'Annotate',
+    what: 'Click a point to add a callout annotation.',
+    intuition:
+      'While in annotate mode the cursor changes to a crosshair. ' +
+      'Clicking a point opens a callout showing the title column value (or "Row N" if no title column is configured). ' +
+      'Drag the callout to reposition it; double-click the text to edit it.',
     cost: 'none',
   },
 };

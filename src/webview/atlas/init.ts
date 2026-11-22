@@ -133,6 +133,34 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   if (state?.loadImagesFromUrls === 'always' || state?.loadImagesFromUrls === 'never') {
     atlas.loadImagesFromUrls = state.loadImagesFromUrls;
   }
+  // Restore title overlay (A1).
+  if (state?.titleOverlay) {
+    const t = state.titleOverlay;
+    atlas.titleOverlay = {
+      title: typeof t.title === 'string' ? t.title : '',
+      subtitle: typeof t.subtitle === 'string' ? t.subtitle : '',
+      fontFamily: typeof t.fontFamily === 'string' ? t.fontFamily : '',
+      fontSize: typeof t.fontSize === 'number' ? t.fontSize : 24,
+      color: typeof t.color === 'string' ? t.color : '',
+      logoData: typeof t.logoData === 'string' ? t.logoData : '',
+      logoWidth: typeof t.logoWidth === 'number' ? t.logoWidth : 0,
+    };
+  }
+  // Restore annotations (A4).
+  if (state?.annotations) {
+    const map = new Map<string, import('../../shared/protocol').AnnotationData>();
+    for (const [k, v] of Object.entries(state.annotations)) {
+      if (v && typeof v.id === 'string' && typeof v.rowKey === 'string') {
+        map.set(k, v as import('../../shared/protocol').AnnotationData);
+      }
+    }
+    atlas.annotations = map;
+  } else {
+    atlas.annotations = new Map();
+  }
+  if (typeof state?.annotateIdColumn === 'number' || state?.annotateIdColumn === null) {
+    atlas.annotateIdColumn = state.annotateIdColumn;
+  }
   // Reset hover state from prior session.
   atlas.rowCache.clear();
   atlas.hoverInflight = 0;

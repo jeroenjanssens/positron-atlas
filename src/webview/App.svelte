@@ -7,6 +7,8 @@
   import LassoLayer from './components/LassoLayer.svelte';
   import PixelImage from './components/PixelImage.svelte';
   import HoverCard from './components/HoverCard.svelte';
+  import TitleOverlay from './components/TitleOverlay.svelte';
+  import AnnotationOverlay from './components/AnnotationOverlay.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
   import SearchBox from './components/SearchBox.svelte';
 
@@ -35,7 +37,8 @@
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui, atlas.labels,
-      atlas.tooltipOpts, atlas.hiddenCategories, atlas.loadImagesFromUrls]);
+      atlas.tooltipOpts, atlas.hiddenCategories, atlas.loadImagesFromUrls,
+      atlas.titleOverlay, atlas.annotations, atlas.annotateIdColumn]);
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => atlas.variable && atlas.persist(), 400);
   });
@@ -102,11 +105,22 @@
     <PlotToolbar {atlas} />
     {#if atlas.phase === 'ready'}<SearchBox {atlas} />{/if}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="plot" class:lasso={atlas.tool === 'lasso'} bind:this={plot} style:background={atlas.view.background || null}
+    <div class="plot" class:lasso={atlas.tool === 'lasso'} class:annotate={atlas.tool === 'annotate'} bind:this={plot} style:background={atlas.view.background || null}
       role="application" aria-label="Map plot"
-      onclick={(e) => atlas.onClick(e)}
-      onkeydown={(e) => e.key === 'Enter' && atlas.onClick(e as unknown as MouseEvent)}>
+      onclick={(e) => {
+        if (atlas.tool === 'annotate') {
+          // Ignore clicks that land on overlay elements (callout boxes, leader SVG, title).
+          const target = e.target as HTMLElement;
+          if (target.closest('.callout') || target.closest('.leader-svg') || target.closest('.title-overlay')) return;
+          atlas.handleAnnotateClick();
+        } else {
+          atlas.onClick(e);
+        }
+      }}
+      onkeydown={(e) => e.key === 'Enter' && (atlas.tool === 'annotate' ? atlas.handleAnnotateClick() : atlas.onClick(e as unknown as MouseEvent))}>
       <LassoLayer {atlas} />
+      <TitleOverlay {atlas} />
+      <AnnotationOverlay {atlas} />
     </div>
     <Legend {atlas} />
     <HoverCard {atlas} />

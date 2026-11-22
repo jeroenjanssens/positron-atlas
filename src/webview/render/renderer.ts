@@ -1,6 +1,14 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
 import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
+import { compositeOverlay } from './composite';
+import type { AnnotationData, TitleOptions } from '../../shared/protocol';
+
+/** Minimal interface from Atlas that the renderer needs for PNG compositing. */
+export interface OverlayState {
+  titleOverlay: TitleOptions;
+  annotations: Map<string, AnnotationData>;
+}
 
 export interface PointSet {
   id: string;
@@ -252,6 +260,24 @@ export class ScatterRenderer {
   /** Current zoom level. */
   currentZoom(): number {
     return typeof this.viewState.zoom === 'number' ? this.viewState.zoom : 0;
+  }
+
+  /** Project world coordinates to CSS-pixel screen coordinates (inverse of unproject).
+   *  Returns null when the viewport is not ready. */
+  projectWorld(wx: number, wy: number): [number, number] | null {
+    const vp = (this.deck as any).getViewports?.()[0];
+    if (vp) {
+      const [sx, sy] = vp.project([wx, wy]);
+      return [sx, sy];
+    }
+    // Fallback: orthographic view centered on target.
+    const scale = Math.pow(2, this.viewState.zoom as number);
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    const t = this.viewState.target as number[];
+    const sx = (wx - t[0]) * scale + w / 2;
+    const sy = -(wy - t[1]) * scale + h / 2;
+    return [sx, sy];
   }
 
   setStyle(style: Partial<RenderStyle>): void {
@@ -576,6 +602,45 @@ export class ScatterRenderer {
     g.fillStyle = background;
     g.fillRect(0, 0, out.width, out.height);
     g.drawImage(canvas, 0, 0);
+    return new Promise<Uint8Array>((resolve, reject) => {
+      out.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('canvas.toBlob returned null'));
+          return;
+        }
+        blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)), reject);
+      }, 'image/png');
+    });
+  }
+
+  /** Like toPngBytes, but also composites the title overlay and annotations (A1, A4). */
+  toPngBytesWithOverlay(background: string, overlay: OverlayState): Promise<Uint8Array> {
+    this.deck.redraw('export');
+    const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
+    const out = document.createElement('canvas');
+    out.width = canvas.width;
+    out.height = canvas.height;
+    const g = out.getContext('2d')!;
+    g.fillStyle = background;
+    g.fillRect(0, 0, out.width, out.height);
+    g.drawImage(canvas, 0, 0);
+
+    // Build annotation screen positions for compositing.
+    const dpr = window.devicePixelRatio || 1;
+    const annotationsWithPos = [...overlay.annotations.values()].flatMap((ann) => {
+      const pt = this.projectWorld(ann.worldX, ann.worldY);
+      if (!pt) return [];
+      return [{ ann, screenX: pt[0], screenY: pt[1] }];
+    });
+
+    compositeOverlay(g, {
+      cssWidth: this.container.clientWidth,
+      cssHeight: this.container.clientHeight,
+      dpr,
+      title: overlay.titleOverlay,
+      annotations: annotationsWithPos,
+    });
+
     return new Promise<Uint8Array>((resolve, reject) => {
       out.toBlob((blob) => {
         if (!blob) {

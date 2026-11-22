@@ -6,6 +6,7 @@
  */
 
 import type {
+  AnnotationData,
   CategoricalColorMeta,
   ColorMeta,
   ExactEngine,
@@ -15,6 +16,7 @@ import type {
   PrepareOptions,
   PrepareResult,
   Settings,
+  TitleOptions,
   ToWebview,
   TooltipOptions,
   UmapParams,
@@ -96,6 +98,19 @@ import {
 } from './atlas/selection';
 import { tagSelection as tagSelectionImpl, clustersToFrame as clustersToFrameImpl, onLabelsWritten as onLabelsWrittenImpl } from './atlas/tags';
 import {
+  addAnnotation as addAnnotationImpl,
+  addAnnotationFromCard as addAnnotationFromCardImpl,
+  removeAnnotation as removeAnnotationImpl,
+  clearAnnotations as clearAnnotationsImpl,
+  updateAnnotationOffset as updateAnnotationOffsetImpl,
+  updateAnnotationText as updateAnnotationTextImpl,
+  updateAnnotationStyle as updateAnnotationStyleImpl,
+  exportAnnotationsJson as exportAnnotationsJsonImpl,
+  importAnnotationsJson as importAnnotationsJsonImpl,
+  handleAnnotateClick as handleAnnotateClickImpl,
+  DEFAULT_TITLE,
+} from './atlas/annotations';
+import {
   setView as setViewImpl,
   render as renderImpl,
   fitView as fitViewImpl,
@@ -168,7 +183,7 @@ export class Atlas {
   clustering = $state(false);
   labelMeta = $state.raw<CategoricalColorMeta | null>(null);
   labelCount = $state(0);
-  tool = $state<'pan' | 'lasso'>('pan');
+  tool = $state<'pan' | 'lasso' | 'annotate'>('pan');
   selection = $state.raw<Uint8Array | null>(null);
   selectedCount = $state(0);
   selectionOnAnchors = $state(false);
@@ -205,6 +220,12 @@ export class Atlas {
   layoutEngine = $state<string>('');
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
+
+  // ---- overlay / annotation state (A1, A4) ------------------------------------
+  titleOverlay = $state<TitleOptions>({ ...DEFAULT_TITLE });
+  annotations = $state.raw<Map<string, AnnotationData>>(new Map());
+  /** Column index used as the annotation ID key; null = row index. */
+  annotateIdColumn = $state<number | null>(null);
 
   // ---- hover / legend reactive state (H2–H8, L1) --------------------------------
   /** Pinned hover card: set by onClick, cleared by closePinnedCard (H7). */
@@ -589,6 +610,20 @@ export class Atlas {
       this.ui.closed = [...this.ui.closed, id];
     }
   }
+
+  // ---- annotations (A1, A4) ----------------------------------------------------
+  addAnnotation(prepIdx: number, row: number, worldX: number, worldY: number, text: string): AnnotationData | null { return addAnnotationImpl(this, prepIdx, row, worldX, worldY, text); }
+  removeAnnotation(id: string): void { removeAnnotationImpl(this, id); }
+  clearAnnotations(): void { clearAnnotationsImpl(this); }
+  updateAnnotationOffset(id: string, offsetX: number, offsetY: number): void { updateAnnotationOffsetImpl(this, id, offsetX, offsetY); }
+  updateAnnotationText(id: string, text: string): void { updateAnnotationTextImpl(this, id, text); }
+  updateAnnotationStyle(id: string, style: AnnotationData['style']): void { updateAnnotationStyleImpl(this, id, style); }
+  exportAnnotationsJson(): string { return exportAnnotationsJsonImpl(this); }
+  importAnnotationsJson(json: string): void { importAnnotationsJsonImpl(this, json); }
+  /** Handle a click in annotate-tool mode; returns the new annotation or null. */
+  handleAnnotateClick(titleText = ''): AnnotationData | null { return handleAnnotateClickImpl(this, titleText); }
+  /** Create an annotation from the pinned hover card. */
+  addAnnotationFromCard(card: { row: number; title?: string; preparedIdx: number; x: number; y: number }): AnnotationData | null { return addAnnotationFromCardImpl(this, card); }
 
   // ---- actions -----------------------------------------------------------------
   addCoordinates(): void { addCoordinatesImpl(this); }

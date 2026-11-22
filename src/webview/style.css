@@ -55,6 +55,7 @@ body { color: var(--fg); background: var(--bg); font-family: var(--vscode-font-f
 aside { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; }
 main { position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .plot { position: relative; flex: 1; min-height: 0; }
+.plot.annotate { cursor: crosshair; }
 
 .controls { padding: 8px 10px 24px; }
 .controls header h1 { font-size: 1.15em; margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
