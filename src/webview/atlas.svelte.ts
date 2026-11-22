@@ -209,6 +209,12 @@ export class Atlas {
   colorRange = $state<[number, number] | null>(null);
   /** True when coloring by automatic cluster codes (A6). */
   colorByCluster = $state(false);
+  /**
+   * Incremented each time render() calls renderer.setPointSets so that the ExploreTab's
+   * `renderVisibleCount` expression re-evaluates (the renderer's internal state is not
+   * reactive; this tick gives Svelte a reactive dependency to track).
+   */
+  _renderTick = $state(0);
   /** Column index for size-by-column (A10), or null for uniform size. */
   sizeColumn = $state<number | null>(null);
   /** Per-kept-row float32 sizes (A10), scaled to pixel radii. Null = uniform. */
@@ -436,11 +442,13 @@ export class Atlas {
   }
 
   /**
-   * CPU-side count of points that pass the current legend filter (L1).
+   * CPU-side count of points that pass the current filter (legend + histogram).
    * Returns the total anchor count when no filter is active.
    * Useful for scenario assertions without needing GPU pixel reads.
+   * Reads _renderTick to create a reactive dependency so the ExploreTab UI updates (A13).
    */
   get renderVisibleCount(): number {
+    void this._renderTick; // reactive dependency; incremented by render()
     return this.renderer?.filterPassCount ?? 0;
   }
 

@@ -106,6 +106,7 @@ export function render(atlas: Atlas): void {
     const col = searchColumn(atlas);
     if (col !== null) runSearch(atlas, atlas.searchQuery, col);
   }
+  atlas._renderTick++;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth());
