@@ -196,6 +196,8 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>3D view options (item 13)</td><td><code>src/webview/render/renderer.ts</code>: <code>DepthFadeExtension</code> (GPU-only, <code>fs:DECKGL_FILTER_COLOR</code> injection, zero CPU cost); <code>setOrtho3D</code> / <code>toggleOrtho3D</code> toggle <code>OrbitView orthographic</code>. <code>view.toggle3DOrtho</code> action (key <code>5</code>) registered in extension.ts. Settings persisted in <code>ViewOptions.orthographic3D</code> and <code>.depthFade</code></td></tr>
     <tr><td>HTML viewer in 3D (item 16)</td><td><code>src/viewer/ViewerApp.svelte</code>: detects <code>header.positionStride === 3</code>, calls <code>setDims(3)</code>, restores camera via <code>restoreCamera3D</code>, builds <code>ScreenHitIndex</code> from <code>projectAll3D</code> each rAF. <code>src/shared/viewerBlob.ts</code> v2 adds <code>positionStride</code>, <code>camera3D</code>, <code>boxes3D</code>, <code>dataBox3D</code>, <code>imageInvert</code>; min version 1 for backward compat</td></tr>
     <tr><td>What is drawn, in which order</td><td><code>src/webview/atlas/layers.ts</code> (the layer registry: the base map and every overlay, with visibility, opacity, blending, draw order and symbol code; the renderer and the HTML overlays both read it)</td></tr>
+    <tr><td>Time animation (slider, play, video export)</td><td><code>src/webview/atlas/animate.ts</code> (state + render loop), <code>src/webview/atlas/render.ts</code> (DataFilterExtension animate filter), <code>src/extension/atlasPanel.ts</code> <code>case 'saveVideo'</code></td></tr>
+    <tr><td>Tracks and vectors overlays</td><td><code>src/webview/atlas/render.ts</code> (PathLayer + LineLayer), <code>python/positron_atlas_kernel.py</code> <code>tracks()</code> and <code>time_values()</code></td></tr>
     <tr><td>Testing without Positron</td><td><code>test/harness/</code> (<code>just harness</code>)</td></tr>
     <tr><td>Conventions and checks</td><td><code>CONTRIBUTING.md</code></td></tr>
   </tbody>
@@ -229,7 +231,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="36" y="164" width="328" height="72" rx="8" style="stroke:var(--web)"/>
     <text class="t" x="50" y="188">Atlas state</text><text class="m" x="134" y="188">atlas.svelte.ts</text>
     <text class="s" x="50" y="207">anchors · anchorXY · allXY · colours · selection</text>
-    <text class="s" x="50" y="224">logic per area in atlas/*.ts (hover, colours, labels, …)</text>
+    <text class="s" x="50" y="224">animateVals · trackData · logic per area in atlas/*.ts</text>
 
     <rect class="box" x="36" y="262" width="160" height="96" rx="8"/>
     <text class="t" x="50" y="286">UMAP worker</text>
@@ -245,7 +247,7 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="36" y="384" width="328" height="72" rx="8"/>
     <text class="t" x="50" y="408">deck.gl renderer</text><text class="m" x="178" y="408">render/renderer.ts</text>
-    <text class="s" x="50" y="427">Scatterplot · Polygon · Text · 2D or 3D (orbit view)</text>
+    <text class="s" x="50" y="427">Scatterplot · Path · Arrow · Polygon · Text · 2D or 3D</text>
     <text class="s" x="50" y="444">density · glow · layer registry (order, opacity, blend)</text>
 
     <rect class="box" x="36" y="476" width="328" height="84" rx="8"/>
@@ -310,7 +312,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="t" x="870" y="202">_positron_atlas helper</text>
     <text class="s" x="870" y="221">in sys.modules, not in your namespace</text>
     <text class="s" x="870" y="238">describe · colors · rows · texts · compare_selection</text>
-    <text class="s" x="870" y="255">search · sizes · histogram · export_datamapplot · …</text>
+    <text class="s" x="870" y="255">search · sizes · histogram · time_values · tracks · …</text>
 
     <rect class="box" x="856" y="294" width="308" height="96" rx="8"/>
     <text class="t" x="870" y="318">Job thread</text><text class="m" x="950" y="318">_Job, daemon thread</text>
@@ -356,13 +358,14 @@ only the selected numeric columns are converted to float32, and only the anchors
       <rect class="chip" x="176" y="684" width="138" height="26" rx="5"/><text x="188" y="701">anchor_pos.u32</text>
       <rect class="chip" x="322" y="684" width="150" height="26" rx="5"/><text x="334" y="701">xy_0000.f32 …</text>
       <rect class="chip" x="480" y="684" width="170" height="26" rx="5"/><text x="492" y="701">colours (.f32 / .u16)</text>
-      <rect class="chip" x="658" y="684" width="230" height="26" rx="5"/><text x="670" y="701">raw.npy · features.npy (&gt; 1 GiB)</text>
-      <rect class="chip" x="896" y="684" width="64" height="26" rx="5"/><text x="908" y="701">.probe</text>
+      <rect class="chip" x="658" y="684" width="200" height="26" rx="5"/><text x="670" y="701">time_values_*.f32</text>
+      <rect class="chip" x="866" y="684" width="130" height="26" rx="5"/><text x="878" y="701">tracks_*.f32</text>
+      <rect class="chip" x="1004" y="684" width="168" height="26" rx="5"/><text x="1016" y="701">raw.npy · features.npy</text>
       <text x="40" y="738" style="fill:var(--file)">inputs from the host:</text>
-      <rect class="chip" x="190" y="722" width="150" height="26" rx="5"/><text x="202" y="739">anchor_xy_*.f32</text>
-      <rect class="chip" x="348" y="722" width="150" height="26" rx="5"/><text x="360" y="739">selection_*.bits</text>
-      <rect class="chip" x="506" y="722" width="250" height="26" rx="5"/><text x="518" y="739">labels_*.u16 · groups_*.u16</text>
-      <rect class="chip" x="764" y="722" width="150" height="26" rx="5"/><text x="776" y="739">coords_*.f32</text>
+      <rect class="chip" x="190" y="722" width="210" height="26" rx="5"/><text x="202" y="739">anchor_xy_*.f32 (UMAP / tracks)</text>
+      <rect class="chip" x="408" y="722" width="150" height="26" rx="5"/><text x="420" y="739">selection_*.bits</text>
+      <rect class="chip" x="566" y="722" width="250" height="26" rx="5"/><text x="578" y="739">labels_*.u16 · groups_*.u16</text>
+      <rect class="chip" x="824" y="722" width="150" height="26" rx="5"/><text x="836" y="739">coords_*.f32</text>
     </g>
   </g>
 
