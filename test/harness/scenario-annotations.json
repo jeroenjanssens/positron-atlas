@@ -1,0 +1,115 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(2)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 6, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'cluster_{v}' for v in k]\ndf['title'] = [f'Point {i}' for i in range(n)]\n",
+  "settings": { "maxAnchorsCpu": 3000 },
+  "screenshot": "annotations-initial.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "switch to annotate tool",
+      "eval": "a.tool = 'annotate'",
+      "assert": [
+        "a.tool === 'annotate'",
+        "document.querySelector('.plot-toolbar [aria-label=\"Annotate\"]') !== null"
+      ],
+      "report": "a.tool"
+    },
+    {
+      "name": "hover first anchor point",
+      "eval": "const xy = a.anchorXY; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.pendingHover && a.pendingHover.prepIdx !== undefined",
+      "timeout": 5000
+    },
+    {
+      "name": "click in annotate mode creates an annotation",
+      "eval": "a.handleAnnotateClick()",
+      "assert": [
+        "a.annotations.size === 1"
+      ],
+      "report": "{ size: a.annotations.size, ann: [...a.annotations.values()][0] }",
+      "screenshot": "annotations-first.png"
+    },
+    {
+      "name": "annotation has the right structure",
+      "assert": [
+        "a.annotations.size === 1",
+        "[...a.annotations.values()][0].style === 'plain'",
+        "typeof [...a.annotations.values()][0].offsetX === 'number'",
+        "typeof [...a.annotations.values()][0].worldX === 'number'",
+        "[...a.annotations.values()][0].offsetX !== 0"
+      ],
+      "report": "{ ann: [...a.annotations.values()][0] }"
+    },
+    {
+      "name": "drag the callout box",
+      "drag": "(() => {\n  const ann = [...a.annotations.values()][0];\n  const pt = a.renderer.projectWorld(ann.worldX, ann.worldY);\n  const plotRect = document.querySelector('.plot').getBoundingClientRect();\n  const sx = plotRect.left + pt[0] + ann.offsetX + 20;\n  const sy = plotRect.top + pt[1] + ann.offsetY + 10;\n  return [[sx, sy], [sx + 60, sy - 30], [sx + 60, sy - 30]];\n})()",
+      "settle": 300
+    },
+    {
+      "name": "drag moved the offset",
+      "assert": [
+        "a.annotations.size === 1"
+      ],
+      "report": "{ offsetX: [...a.annotations.values()][0].offsetX, offsetY: [...a.annotations.values()][0].offsetY }",
+      "screenshot": "annotations-dragged.png"
+    },
+    {
+      "name": "export and import JSON round-trip",
+      "eval": "const json = a.exportAnnotationsJson(); a.clearAnnotations(); a.importAnnotationsJson(json);",
+      "assert": [
+        "a.annotations.size === 1"
+      ],
+      "report": "{ size: a.annotations.size }"
+    },
+    {
+      "name": "reload persists annotations",
+      "eval": "a.persist()",
+      "assert": [
+        "h.state && h.state.annotations && Object.keys(h.state.annotations).length === 1"
+      ],
+      "report": "h.state && Object.keys(h.state.annotations || {}).length"
+    },
+    {
+      "name": "annotate from pinned hover card",
+      "eval": "const xy = a.anchorXY; a['onPointer']({ x: 350, y: 250, world: [xy[2], xy[3]] })",
+      "until": "a.pendingHover !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "click pins the card",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "annotate button on card adds annotation",
+      "eval": "const card = a.pinnedCard; a.closePinnedCard(); a.addAnnotationFromCard(card);",
+      "assert": [
+        "a.annotations.size === 2"
+      ],
+      "report": "a.annotations.size",
+      "screenshot": "annotations-two.png"
+    },
+    {
+      "name": "export PNG includes annotation overlay",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000",
+      "timeout": 10000,
+      "assert": [
+        "h.png.startsWith('data:image/png')"
+      ],
+      "report": "{ pngLen: h.png.length }"
+    },
+    {
+      "name": "clear all annotations",
+      "eval": "a.clearAnnotations()",
+      "assert": [
+        "a.annotations.size === 0"
+      ]
+    }
+  ]
+}

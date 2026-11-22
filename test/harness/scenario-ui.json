@@ -60,7 +60,7 @@
       "name": "fit to view from toolbar",
       "eval": "a.renderer.viewState.zoom -= 2; a.fitView()",
       "assert": [
-        "document.querySelectorAll('.plot-toolbar .tool').length === 4"
+        "document.querySelectorAll('.plot-toolbar .tool').length === 5"
       ]
     },
     {

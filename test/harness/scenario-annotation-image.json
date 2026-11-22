@@ -1,0 +1,68 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 500\nk = rng.integers(0, 3, n)\n# 4x4 synthetic pixel images (16 px columns)\ndf = pd.DataFrame(rng.uniform(0, 1, (n, 16)), columns=[f'px{i}' for i in range(16)])\ndf['label'] = [f'cls{v}' for v in k]\n",
+  "settings": { "maxAnchorsCpu": 500, "pcaEnabled": false },
+  "screenshot": "annotation-image-initial.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "enable image mode (pixel columns detected)",
+      "eval": "a.setView({ images: true })",
+      "assert": [
+        "a.imageColumns !== null"
+      ],
+      "report": "{ imageColumns: a.imageColumns, imageShape: a.imageShape }"
+    },
+    {
+      "name": "switch to annotate tool",
+      "eval": "a.tool = 'annotate'"
+    },
+    {
+      "name": "hover first anchor",
+      "eval": "const xy = a.anchorXY; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.pendingHover && a.pendingHover.prepIdx !== undefined",
+      "timeout": 5000
+    },
+    {
+      "name": "click creates image-style annotation",
+      "eval": "a.handleAnnotateClick()",
+      "assert": [
+        "a.annotations.size === 1",
+        "[...a.annotations.values()][0].style === 'image'"
+      ],
+      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style }",
+      "screenshot": "annotation-image-created.png"
+    },
+    {
+      "name": "annotation overlay present for image annotation",
+      "assert": [
+        "a.annotations.size === 1"
+      ],
+      "report": "{ ann: [...a.annotations.values()][0] }"
+    },
+    {
+      "name": "export PNG includes image annotation",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000",
+      "timeout": 10000,
+      "assert": [
+        "h.png.startsWith('data:image/png')"
+      ],
+      "report": "{ pngLen: h.png.length }",
+      "screenshot": "annotation-image-exported.png"
+    },
+    {
+      "name": "JSON round-trip preserves image style",
+      "eval": "const json = a.exportAnnotationsJson(); a.clearAnnotations(); a.importAnnotationsJson(json);",
+      "assert": [
+        "a.annotations.size === 1",
+        "[...a.annotations.values()][0].style === 'image'"
+      ],
+      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style }"
+    }
+  ]
+}

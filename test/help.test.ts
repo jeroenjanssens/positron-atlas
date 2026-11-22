@@ -100,7 +100,7 @@ describe('HELP entries', () => {
 
   it('covers all expected sections', () => {
     const sections = new Set(ids.map((id) => id.split('.')[0]));
-    const expected = ['data', 'umap', 'result', 'explore', 'labels', 'tags', 'export', 'toolbar'];
+    const expected = ['data', 'umap', 'result', 'explore', 'labels', 'tags', 'export', 'toolbar', 'titleOverlay', 'pointAnnotations'];
     for (const s of expected) {
       expect(sections.has(s), `No entries for section "${s}"`).toBe(true);
     }
@@ -153,7 +153,7 @@ describe('Info component cross-references (I3)', () => {
   it('every help.ts id is referenced by at least one component (no dead entries)', () => {
     // Toolbar entries are shown via button title= attributes rather than Info popovers;
     // they are exempt from the component-reference check.
-    const toolbarExempt = new Set(['toolbar.pan', 'toolbar.lasso', 'toolbar.fitView']);
+    const toolbarExempt = new Set(['toolbar.pan', 'toolbar.lasso', 'toolbar.fitView', 'toolbar.annotate']);
     for (const id of Object.keys(HELP)) {
       if (toolbarExempt.has(id)) continue;
       expect(inComponents.has(id), `HELP entry "${id}" is not referenced in any component`).toBe(true);

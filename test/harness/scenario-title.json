@@ -1,0 +1,68 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(1)\nn = 2000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 5, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = [f'g{v}' for v in k]\n",
+  "settings": { "maxAnchorsCpu": 2000 },
+  "screenshot": "title-initial.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set title and subtitle",
+      "eval": "a.titleOverlay = { ...a.titleOverlay, title: 'My Test Map', subtitle: 'A subtitle here', fontSize: 28, color: '#ff9900' }",
+      "screenshot": "title-set.png"
+    },
+    {
+      "name": "title overlay div is present",
+      "assert": [
+        "document.querySelector('.title-overlay') !== null",
+        "document.querySelector('.map-title') !== null",
+        "document.querySelector('.map-title').textContent === 'My Test Map'",
+        "document.querySelector('.map-subtitle') !== null",
+        "document.querySelector('.map-subtitle').textContent === 'A subtitle here'"
+      ],
+      "report": "document.querySelector('.map-title').textContent"
+    },
+    {
+      "name": "export PNG includes title area",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000",
+      "timeout": 10000,
+      "assert": [
+        "h.png.startsWith('data:image/png')"
+      ],
+      "report": "{ pngLen: h.png.length }"
+    },
+    {
+      "name": "clear title",
+      "eval": "a.titleOverlay = { ...a.titleOverlay, title: '', subtitle: '' }",
+      "assert": [
+        "document.querySelector('.title-overlay') === null || document.querySelector('.map-title') === null"
+      ],
+      "screenshot": "title-cleared.png"
+    },
+    {
+      "name": "title overlay persists after reload",
+      "eval": "a.titleOverlay = { ...a.titleOverlay, title: 'Persisted Title', subtitle: '' }; a.persist()"
+    },
+    {
+      "name": "persisted title is in state",
+      "assert": [
+        "h.state && h.state.titleOverlay && h.state.titleOverlay.title === 'Persisted Title'"
+      ],
+      "report": "h.state && h.state.titleOverlay"
+    },
+    {
+      "name": "DataMapPlot snippet includes title",
+      "eval": "a.copyDataMapPlot()",
+      "until": "h.clipboard.includes('My Test Map') || h.clipboard.includes('Persisted Title')",
+      "timeout": 5000,
+      "assert": [
+        "h.clipboard.includes('title=')"
+      ],
+      "report": "h.clipboard.slice(0, 200)"
+    }
+  ]
+}
