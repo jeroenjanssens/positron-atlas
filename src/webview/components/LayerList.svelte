@@ -48,6 +48,34 @@
   }
 
   function onDragEnd() { dragId = null; }
+
+  // B3: "Add DataFrame..." inline form
+  let addingOverlay = $state(false);
+  let overlayVariable = $state('');
+
+  function startAddOverlay() {
+    addingOverlay = true;
+    overlayVariable = '';
+  }
+
+  function cancelAddOverlay() {
+    addingOverlay = false;
+    overlayVariable = '';
+  }
+
+  function confirmAddOverlay() {
+    const v = overlayVariable.trim();
+    if (v) {
+      atlas.addOverlay(v);
+    }
+    addingOverlay = false;
+    overlayVariable = '';
+  }
+
+  function onOverlayKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') confirmAddOverlay();
+    else if (e.key === 'Escape') cancelAddOverlay();
+  }
 </script>
 
 <div class="layer-list">
@@ -77,6 +105,17 @@
       </button>
 
       <span class="layer-name" title={layer.name}>{layer.name}</span>
+
+      {#if layer.kind === 'point-overlay'}
+        <button
+          class="remove-btn"
+          onclick={() => atlas.removeOverlay(layer.id)}
+          aria-label="Remove overlay layer {layer.name}"
+          title="Remove overlay"
+        >
+          <span class="codicon codicon-close" aria-hidden="true"></span>
+        </button>
+      {/if}
 
       <span class="layer-controls">
         <span class="opacity-wrap">
@@ -108,6 +147,33 @@
       </span>
     </div>
   {/each}
+
+  <!-- B3: Add DataFrame overlay -->
+  {#if atlas.phase === 'ready'}
+    {#if addingOverlay}
+      <div class="add-overlay-form">
+        <input
+          class="overlay-input"
+          type="text"
+          placeholder="Variable name (e.g. df2)"
+          bind:value={overlayVariable}
+          onkeydown={onOverlayKeydown}
+          aria-label="Python variable name for overlay DataFrame"
+        />
+        <button class="add-btn" onclick={confirmAddOverlay} title="Add overlay" disabled={!overlayVariable.trim()}>
+          <span class="codicon codicon-check" aria-hidden="true"></span>
+        </button>
+        <button class="add-btn" onclick={cancelAddOverlay} title="Cancel">
+          <span class="codicon codicon-close" aria-hidden="true"></span>
+        </button>
+      </div>
+    {:else}
+      <button class="add-overlay-btn" onclick={startAddOverlay}>
+        <span class="codicon codicon-add" aria-hidden="true"></span>
+        Add DataFrame…
+      </button>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -175,5 +241,87 @@
 
   .opacity-wrap {
     min-width: 0;
+  }
+
+  .remove-btn {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    color: var(--vscode-foreground, currentColor);
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 11px;
+  }
+
+  .remove-btn:hover {
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+    color: var(--vscode-errorForeground, #f44);
+  }
+
+  .add-overlay-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--vscode-textLink-foreground, #4a9);
+    padding: 4px 2px;
+    border-radius: 3px;
+    margin-top: 2px;
+  }
+
+  .add-overlay-btn:hover {
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.1));
+  }
+
+  .add-overlay-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .overlay-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    padding: 2px 4px;
+    border: 1px solid var(--vscode-input-border, #ccc);
+    background: var(--vscode-input-background, #fff);
+    color: var(--vscode-input-foreground, #000);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .overlay-input:focus {
+    border-color: var(--vscode-focusBorder, #0078d4);
+  }
+
+  .add-btn {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    color: var(--vscode-foreground, currentColor);
+    flex-shrink: 0;
+  }
+
+  .add-btn:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+  }
+
+  .add-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 </style>

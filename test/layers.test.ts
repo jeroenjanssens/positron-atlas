@@ -10,6 +10,8 @@ import {
   restoreLayers,
   deckLayerDescriptors,
   htmlOverlayZIndex,
+  addOverlayLayer,
+  removeLayer,
   DECK_LAYER_IDS,
   HTML_LAYER_IDS,
 } from '../src/webview/atlas/layers';
@@ -243,5 +245,72 @@ describe('htmlOverlayZIndex', () => {
     const annotationsZ = htmlOverlayZIndex(layers, 'annotations');
     // annotations has lower order, so it gets lower z-index
     expect(annotationsZ).toBeLessThan(glowZ);
+  });
+});
+
+// B3: overlay layer helpers
+describe('addOverlayLayer', () => {
+  it('adds a point-overlay layer with the highest order', () => {
+    const layers = createInitialLayers(); // max order = 50 (around-labels)
+    const result = addOverlayLayer(layers, 'ov-1', 'My overlay', 'df2');
+    expect(result).toHaveLength(layers.length + 1);
+    const ov = getLayer(result, 'ov-1')!;
+    expect(ov).toBeDefined();
+    expect(ov.kind).toBe('point-overlay');
+    expect(ov.name).toBe('My overlay');
+    expect(ov.sourceName).toBe('df2');
+    expect(ov.visible).toBe(true);
+    expect(ov.opacity).toBe(1);
+    expect(ov.order).toBeGreaterThan(50);
+  });
+
+  it('stacks multiple overlay layers in order', () => {
+    const base = createInitialLayers();
+    const a1 = addOverlayLayer(base, 'ov-a', 'A', 'df_a');
+    const a2 = addOverlayLayer(a1, 'ov-b', 'B', 'df_b');
+    const ovA = getLayer(a2, 'ov-a')!;
+    const ovB = getLayer(a2, 'ov-b')!;
+    expect(ovB.order).toBeGreaterThan(ovA.order);
+  });
+});
+
+describe('removeLayer', () => {
+  it('removes a layer by id', () => {
+    const layers = createInitialLayers();
+    const result = removeLayer(layers, 'base');
+    expect(result).toHaveLength(layers.length - 1);
+    expect(getLayer(result, 'base')).toBeUndefined();
+    expect(getLayer(result, 'outlines')).toBeDefined();
+  });
+
+  it('is a no-op for unknown id', () => {
+    const layers = createInitialLayers();
+    const result = removeLayer(layers, 'nonexistent');
+    expect(result).toEqual(layers);
+  });
+});
+
+describe('restoreLayers with point-overlay', () => {
+  it('restores point-overlay layers from saved state', () => {
+    const saved: LayerState[] = [
+      { id: 'ov-1', kind: 'point-overlay', name: 'Overlay A', visible: false, opacity: 0.7, blending: 'additive', order: 100, sourceName: 'df2' },
+    ];
+    const result = restoreLayers(saved);
+    // Should have all 6 defaults plus the one overlay.
+    expect(result).toHaveLength(7);
+    const ov = getLayer(result, 'ov-1')!;
+    expect(ov.kind).toBe('point-overlay');
+    expect(ov.visible).toBe(false);
+    expect(ov.opacity).toBe(0.7);
+    expect(ov.blending).toBe('additive');
+    expect(ov.sourceName).toBe('df2');
+  });
+
+  it('ignores point-overlay entries with invalid ids', () => {
+    const saved = [
+      { id: '', kind: 'point-overlay', name: 'Bad', visible: true, opacity: 1, blending: 'normal', order: 10 } as LayerState,
+    ];
+    const result = restoreLayers(saved);
+    expect(result).toEqual(createInitialLayers());
   });
 });
