@@ -334,6 +334,20 @@
       });
     }
 
+    // B2: Set 2D bounding-box overlays from the blob.
+    if (header.boxes?.length) {
+      import('../webview/render/boxes').then(({ buildBoxLayers2D }) => {
+        // Parse the CSS hex colors to RGBA tuples.
+        const boxes2D = header.boxes!.map((b) => {
+          const r = parseInt(b.color.slice(1, 3), 16) || 0;
+          const g = parseInt(b.color.slice(3, 5), 16) || 0;
+          const bl = parseInt(b.color.slice(5, 7), 16) || 0;
+          return { extent: b.extent, color: [r, g, bl, 180] as [number, number, number, number], label: b.label };
+        });
+        renderer?.setBoxes(boxes2D, []);
+      });
+    }
+
     // Initial render
     rerenderFilterNoCode();
 

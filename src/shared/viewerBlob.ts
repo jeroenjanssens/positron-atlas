@@ -130,6 +130,18 @@ export interface BlobHeader {
   sample?: { n: number; total: number; pct: number };
   /** 2D map rotation angle in degrees (0 = north-up). Absent = 0. */
   rotation2D?: number;
+  /** B2: 2D axis-aligned bounding-box overlays. */
+  boxes?: BlobBox2D[];
+}
+
+/** A 2D axis-aligned bounding-box overlay embedded in the viewer blob (B2). */
+export interface BlobBox2D {
+  /** [minX, minY, maxX, maxY] in map/world coordinates. */
+  extent: [number, number, number, number];
+  /** CSS hex colour string (e.g. "#ff8800"). */
+  color: string;
+  /** Optional corner label. */
+  label?: string;
 }
 
 // ---------------------------------------------------------------------------

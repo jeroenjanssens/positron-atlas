@@ -14,6 +14,7 @@ import { plotBackground } from './render';
 import { getLoadedFontCss } from '../fonts';
 import type {
   BlobAnnotation,
+  BlobBox2D,
   BlobHeader,
   BlobLabel,
   BlobLegend,
@@ -148,6 +149,23 @@ function buildAnnotations(atlas: Atlas): BlobAnnotation[] {
   return result;
 }
 
+function toHexColor(rgba: [number, number, number, number]): string {
+  const [r, g, b] = rgba;
+  return '#' + [r, g, b].map((v) => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('');
+}
+
+function buildBoxes(atlas: Atlas): BlobBox2D[] {
+  if (!atlas.renderer || atlas.dims === 3) return [];
+  // 2D only: collect from the renderer's box list (set by labels.ts via applyGroupBoxes).
+  const boxes2D = (atlas.renderer as any).boxes2D as import('../render/boxes').Box2D[] | null;
+  if (!boxes2D?.length) return [];
+  return boxes2D.map((b) => ({
+    extent: b.extent,
+    color: toHexColor(b.color),
+    label: b.label,
+  }));
+}
+
 function buildTitle(atlas: Atlas): BlobTitle {
   const t = atlas.titleOverlay;
   return {
@@ -221,6 +239,8 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       sample: { n: atlas.prepared.nSampled, total: atlas.prepared.nRows, pct: opts.samplePct },
       // Persist 2D rotation so the HTML viewer opens at the same angle (item 14).
       rotation2D: atlas.rotation2D !== 0 ? atlas.rotation2D : undefined,
+      // B2: 2D group bounding-box overlays.
+      boxes: buildBoxes(atlas).length ? buildBoxes(atlas) : undefined,
     },
     variable: atlas.variable,
   };
