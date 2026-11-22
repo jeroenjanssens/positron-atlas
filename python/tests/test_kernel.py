@@ -1116,7 +1116,7 @@ def test_cache_hit_numpy_exact_equality(ns, tmp_path):
     jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
     _wait_nbr_done(jid)
     job = pak._JOBS[jid]
-    assert job.nbr_idx is not None and job.nbr_key == ("euclidean", 10), "cache not populated"
+    assert ("euclidean", 10) in job.nbr_caches, "euclidean cache not populated"
 
     path, axy = _write_axy(job, labels, tmp_path)
 
@@ -1148,7 +1148,7 @@ def test_cache_hit_native_vs_numpy_equality(ns, tmp_path, native):
     jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=native)
     _wait_nbr_done(jid)
     job = pak._JOBS[jid]
-    assert job.nbr_idx is not None, f"cache not populated: {job.nbr_error}"
+    assert ("euclidean", 10) in job.nbr_caches, f"cache not populated: {job.nbr_error}"
 
     path, axy = _write_axy(job, labels, tmp_path)
 
@@ -1163,30 +1163,33 @@ def test_cache_invalidated_by_new_prepare(ns, tmp_path):
     jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
     _wait_nbr_done(jid)
     job = pak._JOBS[jid]
-    assert job.nbr_idx is not None, "cache not populated after first prepare"
+    assert job.nbr_caches, "cache not populated after first prepare"
 
     # Second prepare — should invalidate the cache immediately.
     opts = {"features": list(range(20)), "seed": 2, "maxAnchors": 400, "native": False}
     J(pak.prepare(jid, json.dumps(opts)))
     # Immediately after the prepare() call the job is resetting; cache must be cleared.
-    assert job.nbr_idx is None, "cache should be cleared at start of new prepare"
+    assert not job.nbr_caches, "cache should be cleared at start of new prepare"
     st = wait(jid)
     assert st["stage"] == "done", st
 
 
-def test_cache_miss_on_metric_change(ns, tmp_path):
-    """Cosine project after euclidean cache → cache miss → full placement (not cached)."""
+def test_cosine_cache_first_call_cached(ns, tmp_path):
+    """First cosine project computes neighbours on-the-fly and returns cached=True."""
     jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
     _wait_nbr_done(jid)
     job = pak._JOBS[jid]
-    assert job.nbr_key == ("euclidean", 10), "expected euclidean cache from prepare"
+    assert ("euclidean", 10) in job.nbr_caches, "expected euclidean cache from prepare"
 
     path, _ = _write_axy(job, labels, tmp_path)
     J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
     st = wait(jid)
     assert st["stage"] == "done", st
-    # Cosine with euclidean cache → full placement, cached=False
-    assert st["result"]["cached"] is False, st["result"]
+    # Cosine neighbours computed on-the-fly → cached=True
+    assert st["result"]["cached"] is True, st["result"]
+    assert ("cosine", 10) in job.nbr_caches, "cosine cache should be populated after first call"
+    # Euclidean cache should still be present (both fit within default budget).
+    assert ("euclidean", 10) in job.nbr_caches, "euclidean cache should not be evicted"
 
 
 def test_memory_cap_disables_cache(ns, tmp_path):
@@ -1195,13 +1198,93 @@ def test_memory_cap_disables_cache(ns, tmp_path):
     # nbr_done must be set immediately (no background thread started)
     job = pak._JOBS[jid]
     assert job.nbr_done.is_set(), "nbr_done should be set immediately when cache is disabled"
-    assert job.nbr_idx is None, "cache should be empty when cap is 0"
+    assert not job.nbr_caches, "cache should be empty when cap is 0"
 
-    # Project should succeed (full placement, not cached)
+    # Project should succeed (full placement, not cached) — budget=0 disables cosine cache too.
     path, _ = _write_axy(job, labels, tmp_path)
     J(pak.project(jid, path, json.dumps({"k": 10, "native": False})))
     st = wait(jid)
     assert st["stage"] == "done" and st["result"]["cached"] is False, st["result"]
+
+
+def test_cosine_cache_second_call_cached(ns, tmp_path):
+    """Second cosine project hits the cosine cache; xy output is exactly equal to first."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    path, _ = _write_axy(job, labels, tmp_path)
+
+    # First cosine project: computes neighbours on-the-fly.
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
+    st1 = wait(jid)
+    assert st1["stage"] == "done" and st1["result"]["cached"] is True, st1["result"]
+    xy1 = np.concatenate([
+        np.fromfile(tmp_path / o["file"], dtype="<f4").reshape(-1, 2)
+        for o in st1["outputs"] if o["kind"] == "xy"
+    ])
+
+    # Second cosine project: should hit the cache with identical results.
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
+    st2 = wait(jid)
+    assert st2["stage"] == "done" and st2["result"]["cached"] is True, st2["result"]
+    xy2 = np.concatenate([
+        np.fromfile(tmp_path / o["file"], dtype="<f4").reshape(-1, 2)
+        for o in st2["outputs"] if o["kind"] == "xy"
+    ])
+    np.testing.assert_array_equal(xy1, xy2)
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_cosine_numpy_vs_rust_identical(ns, tmp_path, native):
+    """Cosine placement numpy and Rust backends produce bit-identical cached results."""
+    if native and pak._native_core() is None:
+        pytest.skip(f"native core not available: {pak._NATIVE_INFO.get('reason')}")
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=native)
+    _wait_nbr_done(jid)
+    path, _ = _write_axy(pak._JOBS[jid], labels, tmp_path)
+
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": native})))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    assert st["result"]["cached"] is True, st["result"]
+
+
+def test_cosine_cache_budget_evicts_euclidean(ns, tmp_path):
+    """When budget allows only one cache, cosine evicts euclidean and gets cached."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    assert ("euclidean", 10) in job.nbr_caches, "euclidean cache not populated"
+
+    # Set the budget to fit exactly one cache but not two.
+    # job.nbr_cache_mb accepts floats for testing sub-MB precision.
+    nbr_idx, nbr_sqd, nap = job.nbr_caches[("euclidean", 10)]
+    one_cache_bytes = nbr_idx.nbytes + nbr_sqd.nbytes  # bytes for one (metric, k) entry
+    # Budget: 1.5× one cache → fits one but not two (which would need 2×).
+    job.nbr_cache_mb = (one_cache_bytes * 1.5) / (1024 * 1024)
+
+    path, _ = _write_axy(job, labels, tmp_path)
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
+    st = wait(jid)
+    assert st["stage"] == "done" and st["result"]["cached"] is True, st["result"]
+    # Cosine cache should be present, euclidean evicted.
+    assert ("cosine", 10) in job.nbr_caches, "cosine cache should be present"
+    assert ("euclidean", 10) not in job.nbr_caches, "euclidean should be evicted"
+
+
+def test_cosine_cache_budget_zero_skips_caching(ns, tmp_path):
+    """neighborCacheMB=0: cosine neighbours not cached, full placement is used."""
+    jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=False, neighborCacheMB=0)
+    _wait_nbr_done(jid)
+    job = pak._JOBS[jid]
+    path, _ = _write_axy(job, labels, tmp_path)
+
+    J(pak.project(jid, path, json.dumps({"k": 10, "metric": "cosine", "native": False})))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    # Budget=0 → cosine cache skipped → full placement, cached=False.
+    assert st["result"]["cached"] is False, st["result"]
+    assert ("cosine", 10) not in job.nbr_caches, "cosine cache should not be populated at budget=0"
 
 
 def test_cancel_during_neighbours(ns, tmp_path):

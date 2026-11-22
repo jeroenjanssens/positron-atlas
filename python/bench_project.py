@@ -110,7 +110,7 @@ def run(n: int, d: int, n_anchors: int, backend: str, sample: int = 20_000) -> d
     b.place(x, rows, anchor_xy, out, chunk)
     t_place = time.perf_counter() - t0
 
-    # --- cached re-placement: pre-compute neighbours (as the background thread does),
+    # --- euclidean cached re-placement: pre-compute neighbours (as the background thread does),
     #     then place from cached indices (place_from_neighbors only, no index search). ---
     q_all = np.ascontiguousarray(x[rows], dtype=np.float32)
     core = pak._native_core()
@@ -133,6 +133,32 @@ def run(n: int, d: int, n_anchors: int, backend: str, sample: int = 20_000) -> d
     t_replace = time.perf_counter() - t0
     # ----------------------------------------------------------------------------------
 
+    # --- cosine re-placement: first call computes cosine neighbours and stores them;
+    #     second call reuses the stored indices (no index search). -------------------
+    # Normalize for cosine.
+    anc_cos = np.ascontiguousarray(anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12), dtype=np.float32)
+    q_cos = np.ascontiguousarray(q_all / np.maximum(np.linalg.norm(q_all, axis=1, keepdims=True), 1e-12), dtype=np.float32)
+
+    t0 = time.perf_counter()
+    if backend == "rust" and core is not None:
+        idx_cos = core.Index(anc_cos, seed=0, cosine=True)
+        cos_idx, cos_sqd = idx_cos.neighbors_u32(q_cos, K)
+    else:
+        cos_index = pak.AnchorIndex(anc_cos, seed=0)
+        cos_idx_i64, cos_sqd_f = cos_index.query(q_cos, K)
+        sentinel = np.iinfo(np.uint32).max
+        cos_idx = np.where(cos_idx_i64 >= 0, cos_idx_i64.astype(np.uint32), sentinel)
+        cos_sqd = cos_sqd_f.astype(np.float32)
+    t_cos_nbr = time.perf_counter() - t0  # first cosine call: index build + search
+
+    t0 = time.perf_counter()
+    if backend == "rust" and core is not None:
+        placed_cos = core.place_from_neighbors(cos_idx, cos_sqd, anchor_xy)
+    else:
+        placed_cos = pak.place_from_neighbors(cos_idx, cos_sqd, anchor_xy)
+    t_cos_replace = time.perf_counter() - t0  # second cosine call: cached replace only
+    # ----------------------------------------------------------------------------------
+
     # Accuracy on a sample of the placed rows, against exact neighbors.
     qs = rows[np.sort(np.random.default_rng(2).choice(len(rows), size=min(sample, len(rows)), replace=False))]
     q = np.ascontiguousarray(x[qs])
@@ -153,6 +179,9 @@ def run(n: int, d: int, n_anchors: int, backend: str, sample: int = 20_000) -> d
         "neighbours_s": round(t_nbr, 3),
         "replace_s": round(t_replace, 3),
         "replace_us_per_row": round(t_replace / max(len(rows), 1) * 1e6, 2),
+        "cosine_nbr_s": round(t_cos_nbr, 3),
+        "cosine_replace_s": round(t_cos_replace, 3),
+        "cosine_replace_us_per_row": round(t_cos_replace / max(len(rows), 1) * 1e6, 2),
         "recall@10": round(recall, 4),
         "place_err": round(err, 5),
     }
