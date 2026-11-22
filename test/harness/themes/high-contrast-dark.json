@@ -1,4 +1,5 @@
 {
+  "_comment": "Hand-crafted approximation (~177 vars). Real Positron injects ~1090 vars. To get a true dump: in Positron, open DevTools on the webview and run: JSON.stringify(Object.fromEntries([...document.documentElement.style].map(p => [p, document.documentElement.style.getPropertyValue(p)])), null, 2). These values were manually curated from the VS Code high-contrast-dark theme source.",
   "--vscode-activityBar-activeBorder": "#6fc3df",
   "--vscode-activityBar-background": "#000000",
   "--vscode-activityBar-border": "#6fc3df",

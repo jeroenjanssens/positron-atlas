@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
-  import Info from './controls/Info.svelte';
   let { atlas }: { atlas: Atlas } = $props();
 
   // Fullscreen state
@@ -38,23 +37,23 @@
     title="Pan and zoom: drag to pan, scroll to zoom, hover for details. Hold Shift (add) or Alt (remove) and drag to select."
     onclick={() => (atlas.tool = 'pan')}>
     <span class="codicon codicon-move" aria-hidden="true"></span>
-    <Info id="toolbar.pan" />
   </button>
 
-  <!-- Lasso tool: custom lasso SVG (kept in codicon style) -->
+  <!-- Lasso tool: custom lasso SVG (16 px, currentColor, codicon style) -->
   <button class="tool" class:active={atlas.tool === 'lasso'} aria-pressed={atlas.tool === 'lasso'} aria-label="Lasso select"
     title="Lasso select: drag around points to select them. Shift adds to the selection, Alt removes, Escape clears."
     disabled={!atlas.prepared} onclick={() => (atlas.tool = atlas.tool === 'lasso' ? 'pan' : 'lasso')}>
-    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5c3.6 0 6 1.6 6 3.6s-2.4 3.6-6 3.6-6-1.6-6-3.6 2.4-3.6 6-3.6Z" stroke-dasharray="2 1.6" /><path d="M4.2 9.1c-.6.9-.5 2.1.4 2.6.9.5 1.4 1.4 1 2.4" /></svg>
-    <Info id="toolbar.lasso" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <ellipse cx="8" cy="6.1" rx="5.8" ry="3.5" stroke-dasharray="2 1.5"/>
+      <path d="M4.2 9.1c-.6.9-.5 2.1.4 2.6.9.5 1.4 1.4 1 2.4"/>
+    </svg>
   </button>
 
   <span class="sep" aria-hidden="true"></span>
 
   <!-- Fit to view: codicon-screen-normal -->
-  <button class="tool" title="Fit to view" aria-label="Fit to view" disabled={!atlas.prepared} onclick={() => atlas.fitView()}>
+  <button class="tool" title="Fit to view: reset zoom so all points are visible" aria-label="Fit to view" disabled={!atlas.prepared} onclick={() => atlas.fitView()}>
     <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
-    <Info id="toolbar.fitView" />
   </button>
 
   <span class="sep" aria-hidden="true"></span>

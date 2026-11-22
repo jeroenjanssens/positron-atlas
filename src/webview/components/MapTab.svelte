@@ -4,6 +4,7 @@
   import Slider from './Slider.svelte';
   import Checkbox from './controls/Checkbox.svelte';
   import Info from './controls/Info.svelte';
+  import Select from './controls/Select.svelte';
   import { formatCount, formatSeconds } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
@@ -97,33 +98,36 @@
         · ≈ {formatSeconds(anchorSeconds)} ({atlas.useGpu ? 'GPU' : 'CPU'})
       </span>
     </label>
-    <label class="select">
+    <div class="select">
       <span>Missing values <Info id="data.missingValues" /></span>
-      <select bind:value={atlas.prepare.nanPolicy}>
+      <Select value={atlas.prepare.nanPolicy} ariaLabel="Missing values" onchange={(e) => (atlas.prepare.nanPolicy = (e.target as HTMLSelectElement).value as 'drop' | 'impute')}>
         <option value="drop">Drop rows</option>
         <option value="impute">Impute median</option>
-      </select>
-    </label>
+      </Select>
+    </div>
     <label class="select">
       <span>Data seed <Info id="data.seed" /></span>
       <input class="num wide" type="number" bind:value={atlas.prepare.seed} />
     </label>
-    <button class="primary" disabled={busy || !atlas.prepareDirty || atlas.prepare.features.length === 0} onclick={() => atlas.runPrepare()}>
-      {atlas.prepareDirty ? 'Apply' : 'Applied'} <Info id="data.apply" />
-    </button>
+    <div class="btn-row">
+      <button class="primary" disabled={busy || !atlas.prepareDirty || atlas.prepare.features.length === 0} onclick={() => atlas.runPrepare()}>
+        {atlas.prepareDirty ? 'Apply' : 'Applied'}
+      </button>
+      <Info id="data.apply" />
+    </div>
 </Section>
 
 <Section {atlas} id="umap" title="UMAP">
     {#if atlas.describe?.deps?.umap || atlas.describe?.deps?.polars_umap}
-      <label class="select">
+      <div class="select">
         <span>Compute <Info id="umap.computeMode" /></span>
-        <select bind:value={atlas.computeMode} aria-label="Compute"
-          title={atlas.computeMode === 'browser' ? 'Browser: live UMAP on the anchors, animated.' : `Kernel: exact UMAP of all prepared rows in the Python session.`}>
+        <Select value={atlas.computeMode} ariaLabel="Compute"
+          onchange={(e) => { atlas.computeMode = (e.target as HTMLSelectElement).value as 'browser' | 'polars-umap' | 'umap-learn'; }}>
           <option value="browser">Browser (live)</option>
           {#if atlas.describe?.deps?.polars_umap}<option value="polars-umap">Kernel (polars-umap)</option>{/if}
           {#if atlas.describe?.deps?.umap}<option value="umap-learn">Kernel (umap-learn)</option>{/if}
-        </select>
-      </label>
+        </Select>
+      </div>
       {#if atlas.computeMode !== 'browser'}
         <div class="hint muted">Runs {atlas.computeMode} on all {formatCount(atlas.nKept)} prepared rows in the kernel. No animation; parameters apply when you click Run.</div>
       {/if}
@@ -135,13 +139,13 @@
     <Slider label="Spread" tag="live" bind:value={atlas.umap.spread} min={0.5} max={3} step={0.05} onchange={umapChanged}
       hint="spread: the scale of embedded points. Applied live." infoId="umap.spread" />
     <Slider label="Epochs" tag="rebuild" bind:value={atlas.umap.nEpochs} min={50} max={1000} step={10} onchange={umapChanged} infoId="umap.nEpochs" />
-    <label class="select">
+    <div class="select">
       <span>Metric <span class="tag rebuild">rebuild</span> <Info id="umap.metric" /></span>
-      <select bind:value={atlas.umap.metric} onchange={umapChanged}>
+      <Select value={atlas.umap.metric} ariaLabel="Metric" onchange={(e) => { atlas.umap.metric = (e.target as HTMLSelectElement).value as 'euclidean' | 'cosine'; umapChanged(); }}>
         <option value="euclidean">Euclidean</option>
         <option value="cosine">Cosine</option>
-      </select>
-    </label>
+      </Select>
+    </div>
     <label class="select">
       <span>UMAP seed <span class="tag rebuild">rebuild</span> <Info id="umap.seed" /></span>
       <span class="inline">
@@ -165,16 +169,20 @@
         <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>
         {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
       {:else if atlas.paused}
-        <button class="primary" title="Continue to the end of the schedule" onclick={() => atlas.resumeUmap()}>▶ Resume <Info id="umap.resume" /></button>
-        <button title="Run one epoch" onclick={() => atlas.stepUmap(1)}>+1 <Info id="umap.step" /></button>
+        <button class="primary" title="Continue to the end of the schedule" onclick={() => atlas.resumeUmap()}>▶ Resume</button>
+        <Info id="umap.resume" />
+        <button title="Run one epoch" onclick={() => atlas.stepUmap(1)}>+1</button>
+        <Info id="umap.step" />
         <button title="Run ten epochs" onclick={() => atlas.stepUmap(10)}>+10</button>
-        <button title="Stop here and keep this layout" onclick={() => atlas.stopUmap()}>■ Done <Info id="umap.stop" /></button>
-
+        <button title="Stop here and keep this layout" onclick={() => atlas.stopUmap()}>■ Done</button>
+        <Info id="umap.stop" />
       {:else if atlas.phase === 'embedding'}
-        <button title="Pause to step through the epochs" disabled={atlas.umapProgress?.stage !== 'optimizing'} onclick={() => atlas.pauseUmap()}>❚❚ Pause <Info id="umap.pause" /></button>
+        <button title="Pause to step through the epochs" disabled={atlas.umapProgress?.stage !== 'optimizing'} onclick={() => atlas.pauseUmap()}>❚❚ Pause</button>
+        <Info id="umap.pause" />
         <button title="Stop here and keep this layout" onclick={() => atlas.stopUmap()}>■ Stop</button>
       {:else}
-        <button disabled={!atlas.prepared} onclick={() => atlas.startUmap()}>Restart <Info id="umap.restart" /></button>
+        <button disabled={!atlas.prepared} onclick={() => atlas.startUmap()}>Restart</button>
+        <Info id="umap.restart" />
         <button disabled={!atlas.prepared} title="Start from the initial layout (epoch 0) and step through the epochs" onclick={() => atlas.startUmap(true)}>Restart paused</button>
       {/if}
     </div>
@@ -188,11 +196,15 @@
 
 {#if atlas.prepared?.needsProjection}
   <Section {atlas} id="result" title="Result">
-      <button class="primary" disabled={atlas.phase !== 'ready' || atlas.projection === 'running' || atlas.projection === 'done'} onclick={() => atlas.project()}>
-        {atlas.projection === 'done' ? 'All rows placed' : `Place all ${formatCount(atlas.nKept)} rows`}
-        {#if atlas.estimate && atlas.projection === 'stale'} (≈ {formatSeconds(atlas.estimate.seconds)}) <Info id="result.estimate" />{/if}
-      </button>
+      <div class="btn-row">
+        <button class="primary" disabled={atlas.phase !== 'ready' || atlas.projection === 'running' || atlas.projection === 'done'} onclick={() => atlas.project()}>
+          {atlas.projection === 'done' ? 'All rows placed' : `Place all ${formatCount(atlas.nKept)} rows`}
+          {#if atlas.estimate && atlas.projection === 'stale'} (≈ {formatSeconds(atlas.estimate.seconds)}){/if}
+        </button>
+        <Info id="result.placeAll" />
+        {#if atlas.estimate && atlas.projection === 'stale'}<Info id="result.estimate" />{/if}
+      </div>
       {#if atlas.projection === 'running'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
-      <div class="hint muted">UMAP runs on the anchors; this places every other row next to its nearest anchors. <Info id="result.placeAll" /></div>
+      <div class="hint muted">UMAP runs on the anchors; this places every other row next to its nearest anchors.</div>
   </Section>
 {/if}

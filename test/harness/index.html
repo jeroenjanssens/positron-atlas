@@ -21,7 +21,7 @@
     function applyTheme(vars) {
       const style = document.createElement('style');
       const lines = Object.entries(vars)
-        .filter(([, v]) => v !== null && v !== undefined)
+        .filter(([k, v]) => k.startsWith('--') && v !== null && v !== undefined)
         .map(([k, v]) => `  ${k}: ${v};`);
       style.textContent = ':root {\n' + lines.join('\n') + '\n}';
       style.id = 'positron-theme';

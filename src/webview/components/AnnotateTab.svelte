@@ -4,6 +4,7 @@
   import Slider from './Slider.svelte';
   import Checkbox from './controls/Checkbox.svelte';
   import Info from './controls/Info.svelte';
+  import Select from './controls/Select.svelte';
   import { formatCount } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
@@ -36,9 +37,9 @@
 </script>
 
 <Section {atlas} id="labels" title="Labels">
-  <label class="select">
+  <div class="select">
     <span>Label by <Info id="labels.labelBy" /></span>
-    <select value={source} onchange={onLabelChange} aria-label="Label by">
+    <Select value={source} ariaLabel="Label by" onchange={onLabelChange}>
       <option value="">None</option>
       <option value="clusters">Automatic clusters</option>
       {#if labelColumns.length}
@@ -46,15 +47,15 @@
           {#each labelColumns as c (c.index)}<option value={String(c.index)}>{c.name}</option>{/each}
         </optgroup>
       {/if}
-    </select>
-  </label>
+    </Select>
+  </div>
   {#if atlas.labels.clusters}
     <Slider label="Detail" value={atlas.labels.detail} min={1} max={5} format={(v) => detailNames[v - 1] ?? ''}
       hint="How finely the layout is split into clusters: 1 gives fewer, larger clusters; 5 more, smaller ones"
       onchange={(v) => atlas.setLabelOptions({ detail: v })} infoId="labels.detail" />
-    <label class="select">
+    <div class="select">
       <span>Name by <Info id="labels.nameBy" /></span>
-      <select value={String(atlas.labels.nameBy)} onchange={onNameByChange} aria-label="Name clusters by">
+      <Select value={String(atlas.labels.nameBy)} ariaLabel="Name clusters by" onchange={onNameByChange}>
         <option value="number">Number</option>
         <option value="features">Distinguishing columns</option>
         {#if labelColumns.length}
@@ -62,15 +63,18 @@
             {#each labelColumns as c (c.index)}<option value={String(c.index)}>{c.name}</option>{/each}
           </optgroup>
         {/if}
-      </select>
-    </label>
+      </Select>
+    </div>
     <Checkbox
       checked={atlas.labels.outlines}
       onchange={(v) => atlas.setLabelOptions({ outlines: v })}>
       Show outlines <Info id="labels.outlines" />
     </Checkbox>
-    <button disabled={!atlas.clusterCount || atlas.clustering} onclick={() => atlas.clustersToFrame('atlas_cluster')}
-      title="Write each row's cluster name into the column atlas_cluster of the DataFrame (rows in no cluster: missing)">Add clusters to DataFrame <Info id="labels.addToFrame" /></button>
+    <div class="btn-row">
+      <button disabled={!atlas.clusterCount || atlas.clustering} onclick={() => atlas.clustersToFrame('atlas_cluster')}
+        title="Write each row's cluster name into the column atlas_cluster of the DataFrame (rows in no cluster: missing)">Add clusters to DataFrame</button>
+      <Info id="labels.addToFrame" />
+    </div>
     <div class="hint muted">
       {#if atlas.clustering}
         Finding clusters…
@@ -129,9 +133,12 @@
     <span>Column <Info id="tags.column" /></span>
     <input class="text" type="text" bind:value={tagColumn} aria-label="Tag column" />
   </label>
-  <button class="primary" disabled={!atlas.selection || !tag.trim() || !tagColumn.trim()} onclick={() => atlas.tagSelection(tag, tagColumn)}>
-    {atlas.selection ? `Tag ${formatCount(atlas.selectedCount)} selected rows` : 'Tag selected rows'} <Info id="tags.apply" />
-  </button>
+  <div class="btn-row">
+    <button class="primary" disabled={!atlas.selection || !tag.trim() || !tagColumn.trim()} onclick={() => atlas.tagSelection(tag, tagColumn)}>
+      {atlas.selection ? `Tag ${formatCount(atlas.selectedCount)} selected rows` : 'Tag selected rows'}
+    </button>
+    <Info id="tags.apply" />
+  </div>
   <div class="hint muted">
     {#if !atlas.selection}Select points first, with the lasso tool or Shift-drag.{:else}Writes the tag into {tagColumn.trim() || 'the column'} of {atlas.variable}; you can then color or label by it.{/if}
   </div>

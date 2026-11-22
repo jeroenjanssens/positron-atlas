@@ -27,7 +27,18 @@
       btnEl?.focus();
     }
   }
+
+  // Also listen at document level so Escape always closes the pinned popover
+  // regardless of which element currently has focus.
+  function onDocKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && (visible || pinned)) {
+      pinned = false;
+      visible = false;
+    }
+  }
 </script>
+
+<svelte:document onkeydown={onDocKeyDown} />
 
 {#if entry}
   <span class="info-wrap" id={controlId ? `info-${controlId}` : undefined}>
