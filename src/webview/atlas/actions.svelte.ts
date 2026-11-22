@@ -182,6 +182,10 @@ export function persist(atlas: Atlas): void {
     histFilter: atlas.histFilter ?? undefined,
     dims: atlas.dims !== 2 ? atlas.dims : undefined,
     layoutMode: atlas.layoutMode !== 'umap' ? atlas.layoutMode : undefined,
+    // A2: persist non-default layer settings only.
+    layers: atlas.layers.some((l) => !l.visible || l.opacity !== 1 || l.blending !== 'normal')
+      ? ($state.snapshot(atlas.layers) as import('../../shared/protocol').PanelState['layers'])
+      : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

@@ -263,7 +263,8 @@ function showInstantTooltip(atlas: Atlas, x: number, y: number, prepIdx: number)
     if (colorVal !== null) values.push(['color', colorVal]);
     if (clusterName !== null) values.push(['cluster', clusterName]);
   }
-  atlas.tooltip = { x, y, row: keepIdx, values, title: title ?? undefined };
+  // A2: include the layer id in the tooltip (base layer only for now; B3 extends this).
+  atlas.tooltip = { x, y, row: keepIdx, values, title: title ?? undefined, layerId: 'base' };
 }
 
 /** Show a full tooltip from a cached row (H2/H3). */
@@ -271,6 +272,7 @@ function showTooltip(atlas: Atlas, x: number, y: number, prepIdx: number, cached
   const title = atlas.textsStore.ready ? atlas.textsStore.get(prepIdx) : null;
   const link = getTooltipLink(atlas, cached.values);
   const imgUri = cached.imageUri;
+  // A2: include the layer id in the tooltip.
   atlas.tooltip = {
     x,
     y,
@@ -280,6 +282,7 @@ function showTooltip(atlas: Atlas, x: number, y: number, prepIdx: number, cached
     title: title ?? undefined,
     linkValue: link ?? undefined,
     imageUri: imgUri,
+    layerId: 'base',
   };
   // Request image if image-URL column is configured and not yet cached (H8).
   if (!imgUri && atlas.tooltipOpts.imageUrlColumn !== null && atlas.tooltipOpts.imageUrlColumn !== undefined) {

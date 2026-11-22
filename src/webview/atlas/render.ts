@@ -10,6 +10,7 @@ import { themeBackground } from './utils';
 import { gatherU16 } from './utils';
 import { runSearch, searchColumn } from './search';
 import { buildRadii, buildHistFilterValues } from './colors';
+import { getLayer } from './layers';
 
 export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>): void {
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
@@ -43,6 +44,16 @@ export function render(atlas: Atlas): void {
   if (!atlas.renderer || !atlas.anchorXY || !atlas.colorsAnchors || !atlas.prepared) {
     return;
   }
+  // A2: check base layer visibility.
+  const baseLayer = getLayer(atlas.layers, 'base');
+  if (baseLayer && !baseLayer.visible) {
+    atlas.renderer.setPointSets([], []);
+    atlas._renderTick++;
+    return;
+  }
+  const baseLO = baseLayer ? baseLayer.opacity : 1;
+  const baseLB = baseLayer ? baseLayer.blending : 'normal';
+
   const nA = atlas.prepared.nAnchors;
   let sets: import('../render/renderer').PointSet[];
   let filters: (FilterAttribute | null)[];
@@ -87,8 +98,8 @@ export function render(atlas: Atlas): void {
     const radiiAll = buildRadii(atlas, placed, 0);
     const radiiAnchors = buildRadii(atlas, nA - first, first);
     sets = [
-      { id: 'all', positions: atlas.allXY.subarray(0, placed * nd), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, positionStride: nd, radii: radiiAll ?? undefined },
-      { id: 'anchors', positions: atlas.anchorXY.subarray(first * nd), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, positionStride: nd, radii: radiiAnchors ?? undefined },
+      { id: 'all', layerId: 'base', positions: atlas.allXY.subarray(0, placed * nd), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, positionStride: nd, radii: radiiAll ?? undefined, layerOpacity: baseLO, layerBlending: baseLB },
+      { id: 'anchors', layerId: 'base', positions: atlas.anchorXY.subarray(first * nd), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, positionStride: nd, radii: radiiAnchors ?? undefined, layerOpacity: baseLO, layerBlending: baseLB },
     ];
     filters = [
       filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null, histAll),
@@ -97,7 +108,7 @@ export function render(atlas: Atlas): void {
   } else {
     const histAll = buildHistFilterValues(atlas, nA, 0);
     const radiiAnchors = buildRadii(atlas, nA, 0);
-    sets = [{ id: 'anchors', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, positionStride: nd, radii: radiiAnchors ?? undefined }];
+    sets = [{ id: 'anchors', layerId: 'base', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, positionStride: nd, radii: radiiAnchors ?? undefined, layerOpacity: baseLO, layerBlending: baseLB }];
     filters = [filterForCodes(
       atlas.colorValues instanceof Uint16Array
         ? (atlas.prepared.needsProjection && atlas.anchorPos ? gatherU16(atlas.colorValues, atlas.anchorPos) : atlas.colorValues)

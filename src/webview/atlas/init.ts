@@ -10,6 +10,7 @@ import { DEFAULT_LABELS } from './labels-defaults';
 import { runPrepare } from './prepare.svelte';
 import { detectTitleColumn, detectLinkColumn, detectImageUrlColumn } from '../hover/texts';
 import { detectCoordsColumns } from './coords';
+import { restoreLayers } from './layers';
 
 export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
   atlas.describe = d;
@@ -208,6 +209,8 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   if (state?.colorByCluster === true) {
     atlas.colorByCluster = true;
   }
+  // Restore layer state (A2).
+  atlas.layers = restoreLayers(state?.layers as any);
   // Restore 3D mode (T2).
   if (state?.dims === 3) {
     atlas.dims = 3;

@@ -167,10 +167,17 @@ import {
   rebuild3DHitIndex as rebuild3DHitIndexImpl,
   type CameraPreset,
 } from './atlas/view3d';
+import {
+  createInitialLayers,
+  updateLayer as updateLayerImpl,
+  reorderLayer as reorderLayerImpl,
+  type LayerState,
+} from './atlas/layers';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
 export { MAX_LABELS } from './atlas/types';
+export type { LayerState } from './atlas/layers';
 export { DEFAULT_LABELS };
 export { DEFAULT_UMAP };
 export { contrastText, labelTextColor, themeBackground, dominantNames } from './atlas/utils';
@@ -257,6 +264,8 @@ export class Atlas {
     title?: string;
     linkValue?: string;
     imageUri?: string;
+    /** Layer the hovered point belongs to (A2). 'base' for the main map; B3 extends this. */
+    layerId?: string;
   } | null>(null);
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
@@ -274,6 +283,10 @@ export class Atlas {
   layoutMode = $state<'umap' | 'columns'>('umap');
   /** True when 3D auto-rotate is active (T3). */
   autoRotate = $state(false);
+
+  // ---- A2: layer model ---------------------------------------------------------
+  /** Point-layer list: base layer (and future overlay-frame layers).  Persisted. */
+  layers = $state<LayerState[]>(createInitialLayers());
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
 
@@ -304,6 +317,8 @@ export class Atlas {
     linkValue?: string;
     imageUri?: string;
     preparedIdx: number;
+    /** Layer the pinned point belongs to (A2). 'base' for the main map; B3 extends this. */
+    layerId?: string;
   } | null>(null);
   /** Column/field settings for the hover tooltip (H6). */
   tooltipOpts = $state<TooltipOptions>({
@@ -771,6 +786,20 @@ export class Atlas {
   setCameraPreset(preset: CameraPreset): void { setCameraPresetImpl(this, preset); }
   /** Rebuild the screen-space hit index for 3D hover (T4). */
   rebuild3DHitIndex(): void { rebuild3DHitIndexImpl(this); }
+
+  // ---- A2 layer model ----------------------------------------------------------
+  /** Update a point layer (visibility, opacity, blending, order). */
+  updateLayer(id: string, patch: Partial<LayerState>): void {
+    this.layers = updateLayerImpl(this.layers, id, patch);
+    this.render();
+    this.persist();
+  }
+  /** Reorder a point layer by moving it to `newIndex`. */
+  reorderLayer(id: string, newIndex: number): void {
+    this.layers = reorderLayerImpl(this.layers, id, newIndex);
+    this.render();
+    this.persist();
+  }
 
   // ---- sidebar -----------------------------------------------------------------
   setTab(tab: SidebarTab): void { this.ui.tab = tab; }

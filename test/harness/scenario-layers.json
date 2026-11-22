@@ -1,0 +1,93 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 5000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = [f'g{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "verify default base layer state",
+      "assert": [
+        "a.layers.length === 1",
+        "a.layers[0].id === 'base'",
+        "a.layers[0].visible === true",
+        "a.layers[0].opacity === 1",
+        "a.layers[0].blending === 'normal'"
+      ],
+      "report": "{ layers: a.layers }"
+    },
+    {
+      "name": "count drawn pixels before hiding",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsBefore = n",
+      "until": "window.__pixelsBefore !== undefined",
+      "screenshot": "layers-visible.png",
+      "assert": "window.__pixelsBefore > 500",
+      "report": "{ pixelsBefore: window.__pixelsBefore }"
+    },
+    {
+      "name": "hide base layer, wait one animation frame, then count pixels",
+      "eval": "a.updateLayer('base', { visible: false }); await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsHidden = n",
+      "until": "window.__pixelsHidden !== undefined",
+      "screenshot": "layers-hidden.png",
+      "assert": "window.__pixelsHidden === 0",
+      "report": "{ pixelsHidden: window.__pixelsHidden, layerVisible: a.layers.find(l => l.id === 'base').visible }"
+    },
+    {
+      "name": "restore base layer visibility, wait one frame, then count pixels",
+      "eval": "a.updateLayer('base', { visible: true }); await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsRestored = n",
+      "until": "window.__pixelsRestored !== undefined",
+      "screenshot": "layers-restored.png",
+      "assert": "window.__pixelsRestored > 500",
+      "report": "{ pixelsRestored: window.__pixelsRestored, pixelsBefore: window.__pixelsBefore }"
+    },
+    {
+      "name": "set opacity to 0.3",
+      "eval": "a.updateLayer('base', { opacity: 0.3 })",
+      "until": "a.layers.find(l => l.id === 'base').opacity === 0.3",
+      "timeout": 3000
+    },
+    {
+      "name": "verify points are still drawn at reduced opacity",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 20) n++; window.__pixelsDimmed = n",
+      "until": "window.__pixelsDimmed !== undefined",
+      "screenshot": "layers-opacity-30pct.png",
+      "assert": "window.__pixelsDimmed > 50",
+      "report": "{ pixelsDimmed: window.__pixelsDimmed }"
+    },
+    {
+      "name": "set blending to additive",
+      "eval": "a.updateLayer('base', { opacity: 1, blending: 'additive' })",
+      "until": "a.layers.find(l => l.id === 'base').blending === 'additive'",
+      "timeout": 3000,
+      "screenshot": "layers-additive.png",
+      "assert": [
+        "a.layers.find(l => l.id === 'base').blending === 'additive'",
+        "a.layers.find(l => l.id === 'base').opacity === 1"
+      ]
+    },
+    {
+      "name": "reset to defaults",
+      "eval": "a.updateLayer('base', { blending: 'normal', opacity: 1, visible: true })",
+      "until": "a.layers.find(l => l.id === 'base').blending === 'normal'",
+      "timeout": 3000,
+      "assert": [
+        "a.layers[0].visible === true",
+        "a.layers[0].opacity === 1",
+        "a.layers[0].blending === 'normal'"
+      ]
+    },
+    {
+      "name": "reorder: no-op reorder on single layer does not throw",
+      "eval": "a.reorderLayer('base', 0)",
+      "until": "a.layers[0].id === 'base'",
+      "timeout": 1000,
+      "assert": "a.layers.length === 1"
+    }
+  ]
+}

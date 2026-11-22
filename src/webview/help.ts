@@ -1140,6 +1140,39 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Layers (A2) ------------------------------------------------------------
+
+  'layers.visibility': {
+    title: 'Layer visibility',
+    what: 'Show or hide a layer on the map.',
+    intuition:
+      'Click the eye icon to toggle a layer on or off. ' +
+      'Hiding the base map removes all data points from the view, leaving only overlays (labels, outlines). ' +
+      'Useful for checking that overlays are positioned correctly against a blank background.',
+    cost: 'none',
+  },
+
+  'layers.opacity': {
+    title: 'Layer opacity',
+    what: 'Multiplies the layer opacity on top of the global point-opacity setting.',
+    intuition:
+      'At 1.0 (the default) the layer renders at the opacity set by the Display → Opacity slider. ' +
+      'Lower values fade the layer without changing the global opacity. ' +
+      'Setting a layer to 0.5 and the global opacity to 0.8 gives an effective opacity of 0.4 for that layer.',
+    cost: 'none',
+  },
+
+  'layers.blending': {
+    title: 'Layer blending',
+    what: 'How the layer is composited over the layers behind it.',
+    intuition:
+      '"Normal" (default) draws points with standard alpha compositing: each point covers what is behind it. ' +
+      '"Additive" adds point colours together — dense areas become brighter and saturate toward white, ' +
+      'which makes it easy to see where many points pile up.',
+    when: 'Use "Additive" when many points overlap and you want density to show up as brightness rather than a uniform mass.',
+    cost: 'none',
+  },
+
   // ---- Plot toolbar ------------------------------------------------------------
 
   'toolbar.pan': {

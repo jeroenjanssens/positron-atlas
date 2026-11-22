@@ -7,6 +7,7 @@
   import Select from './controls/Select.svelte';
   import TooltipSection from './TooltipSection.svelte';
   import Histogram from './Histogram.svelte';
+  import LayerList from './LayerList.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
   import { formatCount, formatPercent, formatStat } from '../logic';
 
@@ -285,6 +286,14 @@
       </div>
     {/if}
   {/if}
+</Section>
+
+<Section {atlas} id="layers" title="Layers">
+  <div class="hint muted">
+    Drag the handle to reorder layers (bottom of list = drawn first).
+    <Info id="layers.visibility" />
+  </div>
+  <LayerList {atlas} />
 </Section>
 
 <TooltipSection {atlas} />

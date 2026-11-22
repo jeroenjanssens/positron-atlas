@@ -343,6 +343,16 @@ export interface PanelState {
   sizeColumn?: number | null;
   /** Active histogram brush range for the filter (A13): [lo, hi] of the column value. */
   histFilter?: { column: number; range: [number, number] } | null;
+  /** Point-layer visibility and display overrides (A2). */
+  layers?: {
+    id: string;
+    kind: 'base' | 'overlay-frame';
+    name: string;
+    visible: boolean;
+    opacity: number;
+    blending: 'normal' | 'additive';
+    order: number;
+  }[];
 }
 
 export type ToWebview =

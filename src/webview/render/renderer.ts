@@ -31,6 +31,18 @@ export interface PointSet {
   positionStride?: 2 | 3;
   /** Per-point radius in pixels (A10). When omitted the uniform pointSize is used. */
   radii?: Float32Array;
+  /**
+   * Layer opacity multiplier (A2): 0–1, applied on top of the global style.opacity.
+   * Default 1 (no change).
+   */
+  layerOpacity?: number;
+  /**
+   * Per-layer blending mode (A2): 'normal' (default) or 'additive'.
+   * Overrides the global density/additive logic for this point set.
+   */
+  layerBlending?: 'normal' | 'additive';
+  /** Id of the layer this point set belongs to (A2). Used by picking to identify the layer. */
+  layerId?: string;
 }
 
 /** A text label on the map (world coordinates, size in pixels). */
@@ -428,6 +440,13 @@ export class ScatterRenderer {
       // the layer exists does not rebuild its shaders, which hid every point.
       const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
       const sf = this.searchFilters[si] ?? null;
+      // A2: per-layer opacity multiplier and blending override.
+      const layerOpacity = s.layerOpacity ?? 1;
+      const effectiveOpacity = opacity * layerOpacity;
+      const layerBlending = s.layerBlending;
+      const setParams = layerBlending === 'additive'
+        ? ADDITIVE
+        : (is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL));
 
       // Build a data attributes object to support optional per-point radii (A10).
       const makeAttrs = (filterValue: Float32Array): Record<string, any> => {
@@ -459,9 +478,9 @@ export class ScatterRenderer {
           stroked: false,
           filled: true,
           antialiasing: !density,
-          opacity: density ? Math.max(0.02, opacity * 0.03) : opacity * 0.18,
+          opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
           pickable: false,
-          parameters: baseParams as any,
+          parameters: setParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
@@ -478,9 +497,9 @@ export class ScatterRenderer {
           stroked: false,
           filled: true,
           antialiasing: !density,
-          opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
+          opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
           pickable: false,
-          parameters: baseParams as any,
+          parameters: setParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
@@ -498,9 +517,9 @@ export class ScatterRenderer {
           stroked: false,
           filled: true,
           antialiasing: !density,
-          opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
+          opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
           pickable: false,
-          parameters: baseParams as any,
+          parameters: setParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
           extensions: [this.dataFilter],
