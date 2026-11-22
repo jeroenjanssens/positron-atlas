@@ -461,16 +461,12 @@ export class AtlasPanel {
         this.post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
         void vscode.window.showInformationMessage(`Created ${r.variable} with ${r.rows.toLocaleString('en-US')} selected rows.`);
         // Open the new frame in the Data Explorer (S1-Q4: %view is the stable path for in-session variables).
-        await this.ctx.positron.runtime.executeCode(
-          'python',
-          `%view ${r.variable}`,
-          false,
-          false,
-          undefined,
-          undefined,
-          undefined,
-          this.state.sessionId,
-        );
+        // The frame exists either way, so a failure here is only logged.
+        try {
+          await this.ctx.positron.runtime.executeCode('python', `%view ${r.variable}`, false, false, undefined, undefined, undefined, this.state.sessionId);
+        } catch (e) {
+          this.ctx.log.warn(`could not open ${r.variable} in the Data Explorer: ${e instanceof Error ? e.message : String(e)}`);
+        }
         break;
       }
       case 'row': {

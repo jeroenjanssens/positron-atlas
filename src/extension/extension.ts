@@ -215,10 +215,6 @@ async function pickDataFrame(p: PositronApi, ctx: AtlasContext, preset?: string)
 // "Atlas: Open example" command helpers
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// "Atlas: Open example" command helpers
-// ---------------------------------------------------------------------------
-
 /** Metadata for one example dataset shown in the quick pick. */
 interface ExampleEntry {
   id: string;
