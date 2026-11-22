@@ -1,9 +1,16 @@
 {
   "variable": "df",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(1)\nk = rng.integers(0, 4, 8000)\ncenters = rng.normal(0, 5, (4, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (8000, 10)), columns=[f'x{i}' for i in range(10)])\ndf['label'] = [f'cluster_{v}' for v in k]\n",
-  "settings": { "maxAnchorsCpu": 2000 },
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
   "screenshot": "native-dark.png",
   "steps": [
+    {
+      "name": "the codicon font loads under the webview's CSP (icons are not empty squares)",
+      "until": "[...document.fonts].some((f) => f.family.replace(/\"/g, '') === 'codicon' && f.status === 'loaded')",
+      "timeout": 5000
+    },
     {
       "name": "codicons load: toolbar uses codicon classes",
       "assert": [

@@ -1,3 +1,4 @@
+import { webviewCsp } from '../shared/csp';
 import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -917,15 +918,7 @@ export class AtlasPanel {
     const script = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'main.js'));
     const style = webview.asWebviewUri(vscode.Uri.joinPath(dist, 'main.css'));
     const nonce = crypto.randomBytes(16).toString('base64');
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} data: blob:`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `font-src ${webview.cspSource}`,
-      `script-src 'nonce-${nonce}' 'wasm-unsafe-eval'`,
-      `worker-src blob:`,
-      `connect-src ${webview.cspSource} data: blob:`,
-    ].join('; ');
+    const csp = webviewCsp(webview.cspSource, nonce);
     return `<!DOCTYPE html>
 <html lang="en">
 <head>

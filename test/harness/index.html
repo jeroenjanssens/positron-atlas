@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Same policy as the extension host (src/shared/csp.ts; checked by test/csp.test.ts). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'nonce-harness' 'wasm-unsafe-eval'; worker-src blob:; connect-src 'self' data: blob:">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Atlas harness</title>
 <link rel="stylesheet" href="/dist/main.css">
 <!-- Theme variables VS Code/Positron injects into webviews. Loaded from JSON dumps (N1/N2). -->
-<script>
+<script nonce="harness">
   // ?theme=light-modern|dark-modern|hc-dark selects the theme (dark-modern by default).
   // Also supports legacy ?theme=light and ?theme=dark aliases.
   (function() {
@@ -64,10 +66,10 @@
       });
   })();
 </script>
-<script src="/harness/host.js"></script>
+<script nonce="harness" src="/harness/host.js"></script>
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="/dist/main.js"></script>
+<script type="module" nonce="harness" src="/dist/main.js"></script>
 </body>
 </html>
