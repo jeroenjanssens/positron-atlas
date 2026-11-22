@@ -293,6 +293,8 @@
         break;
       }
       case 'texts': {
+        // Scenarios can delay the titles (h.delayTextsMs) to test cards opened before they arrive.
+        if (harness.delayTextsMs) await sleep(harness.delayTextsMs);
         const r = await call('texts', jobId, m.column, m.maxChars);
         if (r.ok && r.utf8File && r.offsetsFile) {
           post({

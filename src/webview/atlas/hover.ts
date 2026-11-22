@@ -167,7 +167,21 @@ export function onTexts(
   atlas: Atlas,
   msg: { type: 'texts'; column: number; uri: string; offsetsUri: string; count: number },
 ): void {
-  void atlas.textsStore.load(msg.uri, msg.offsetsUri);
+  void atlas.textsStore.load(msg.uri, msg.offsetsUri).then((ok) => {
+    if (!ok) return;
+    // The titles can arrive after a point was hovered or pinned: fill in what is open now,
+    // so its card doesn't keep "Row n" until the pointer moves to another point.
+    const hovered = atlas.pendingHover?.prepIdx;
+    if (atlas.tooltip && !atlas.tooltip.title && hovered !== undefined && hovered >= 0) {
+      const title = atlas.textsStore.get(hovered);
+      if (title) atlas.tooltip = { ...atlas.tooltip, title };
+    }
+    const card = atlas.pinnedCard;
+    if (card && !card.title && card.preparedIdx >= 0) {
+      const title = atlas.textsStore.get(card.preparedIdx);
+      if (title) atlas.pinnedCard = { ...card, title };
+    }
+  });
 }
 
 // ---- handle `imageUri` message (H8) ----------------------------------------------

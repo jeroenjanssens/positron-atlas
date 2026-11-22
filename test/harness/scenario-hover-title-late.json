@@ -1,0 +1,37 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 6, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'cluster_{v}' for v in k]\ndf['title'] = [f'Point {i}' for i in range(n)]\ndf['url'] = ['https://example.com/' + str(i) for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && a.anchorXY && a.renderer",
+      "timeout": 120000
+    },
+    {
+      "name": "hover before the titles have loaded",
+      "eval": "h.delayTextsMs = 2500; const xy = a.anchorXY; const [sx, sy] = a.renderer.projectWorld ? a.renderer.projectWorld(xy[0], xy[1]) : [400, 300]; a.onPointer({ x: sx, y: sy, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 20000,
+      "assert": []
+    },
+    {
+      "name": "row details arrive while the titles are still loading",
+      "until": "a.tooltip && a.rowCache.get(a.pendingHover.prepIdx) && !a.textsStore.ready",
+      "timeout": 20000,
+      "assert": [
+        "!a.tooltip.title"
+      ]
+    },
+    {
+      "name": "title fills in when the titles arrive, without moving the pointer",
+      "until": "a.textsStore.ready && a.tooltip && !!a.tooltip.title",
+      "timeout": 15000,
+      "report": "{ title: a.tooltip.title }"
+    }
+  ],
+  "screenshot": false
+}
