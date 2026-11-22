@@ -149,18 +149,24 @@
       "report": "{ clampToAnchor: [...a.annotations.values()][0].clampToAnchor }"
     },
     {
-      "name": "Q12: zoom out far so world offset exceeds 200px; box clamp keeps it within 200px",
-      "eval": "(async () => { a.setView({ zoom: -6 }); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const ann = [...a.annotations.values()][0]; const sc = a.renderer.projectWorld(ann.worldX, ann.worldY, ann.worldZ ?? 0); const box = a.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0) ?? sc; const rawDist = Math.sqrt((box[0]-sc[0])**2+(box[1]-sc[1])**2); const overlay = document.querySelector('.callout'); const rect = overlay?.getBoundingClientRect(); const plotRect = document.querySelector('canvas')?.getBoundingClientRect(); const domDist = overlay && plotRect ? Math.sqrt(((rect.left+rect.width/2 - plotRect.left) - sc[0])**2 + ((rect.top+rect.height/2 - plotRect.top) - sc[1])**2) : null; window.__q12clamp = { rawDist, domDist, sc, box }; })()",
+      "name": "Q12: set a large world-unit offset so the unclamped box would be far away",
+      "eval": "const ann = [...a.annotations.values()][0]; a.updateAnnotationOffset(ann.id, 20, 20);",
+      "assert": "[...a.annotations.values()][0].offsetX === 20"
+    },
+    {
+      "name": "Q12: zoom in so the large offset projects to > 200 css-px; clamp keeps DOM box near anchor",
+      "eval": "(async () => { a.setView({ zoom: 3 }); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const ann = [...a.annotations.values()][0]; const sc = a.renderer.projectWorld(ann.worldX, ann.worldY, ann.worldZ ?? 0); if (!sc) { window.__q12clamp = null; return; } const rawBox = a.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0); const rawDist = rawBox ? Math.sqrt((rawBox[0]-sc[0])**2+(rawBox[1]-sc[1])**2) : 0; const overlay = document.querySelector('.callout'); const rect = overlay?.getBoundingClientRect(); const plotRect = document.querySelector('canvas')?.getBoundingClientRect(); const domDist = overlay && plotRect ? Math.sqrt(((rect.left - plotRect.left) - sc[0])**2 + ((rect.top - plotRect.top) - sc[1])**2) : null; window.__q12clamp = { rawDist, domDist, sc }; })()",
       "until": "window.__q12clamp !== undefined",
       "timeout": 5000,
       "assert": [
-        "window.__q12clamp.rawDist > 200 || window.__q12clamp.domDist === null || window.__q12clamp.domDist <= 220"
+        "window.__q12clamp !== null",
+        "window.__q12clamp.rawDist > 200 ? window.__q12clamp.domDist <= 220 : true"
       ],
       "report": "{ clamp: window.__q12clamp }"
     },
     {
-      "name": "Q12: disable clampToAnchor",
-      "eval": "const ann = [...a.annotations.values()][0]; a.updateAnnotationClamp(ann.id, false); a.setView({ zoom: 1 });",
+      "name": "Q12: disable clampToAnchor and restore zoom",
+      "eval": "const ann0 = [...a.annotations.values()][0]; a.updateAnnotationClamp(ann0.id, false); a.setView({ zoom: 1 });",
       "assert": [
         "[...a.annotations.values()][0].clampToAnchor === false"
       ],
