@@ -241,3 +241,15 @@ Base map: 1,000,000 × 50 Polars frame, 100,000 anchors.  Overlay: 100,000 × 50
 - The overlay's neighbour cache is NOT stored (overlays are transient and may be replaced);
   re-projecting after a UMAP change therefore re-runs the neighbour search.
 - For a 1M-row overlay onto the same 1M-row base: prepare < 0.5 s, project ~1.4 s.
+
+## Time-filter column (2026-11-22)
+
+`time_values()` reads one float64 column, normalises it to [0, 1], and writes a
+`time_values_*.f32` file.  Measured with the harness on the development Mac (Apple M4 Pro).
+
+| Rows | Column type | `time_values()` |
+|---:|---|---:|
+| 1,000,000 | float64 | < 0.1 s |
+
+The GPU filter (`DataFilterExtension`) recomputes in every render frame; changing the animate
+window position or size has no visible lag at any dataset size that Atlas supports.
