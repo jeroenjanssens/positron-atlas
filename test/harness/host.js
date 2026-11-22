@@ -280,8 +280,24 @@
           } else {
             const r = await call('selection_frame', jobId, maskPath);
             harness.log.push(`info: Created ${r.variable} with ${r.rows} selected rows.`);
-            post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
-            // Mirror the %view call that the real extension host makes (S1-Q4).
+            // B3: also create overlay selection frames.
+            const overlayFrames = [];
+            if (m.overlayMasks?.length) {
+              for (const om of m.overlayMasks) {
+                const ovName = `ov_sel_${Date.now()}.bits`;
+                const ovPath = await writeJobFile(ovName, om.mask);
+                try {
+                  const ovr = await call('overlay_selection_frame', jobId, om.layerId, ovPath).catch(() => null);
+                  if (ovr?.ok) {
+                    overlayFrames.push({ variable: ovr.variable, rows: ovr.rows });
+                    harness.log.push(`info: Created overlay selection ${ovr.variable} with ${ovr.rows} rows.`);
+                  }
+                } finally {
+                  await rmJobFile(ovName);
+                }
+              }
+            }
+            post({ type: 'selectionFrame', variable: r.variable, rows: r.rows, overlayFrames: overlayFrames.length ? overlayFrames : undefined });
             harness.log.push(`view: ${r.variable}`);
           }
         } finally {

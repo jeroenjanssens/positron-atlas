@@ -426,6 +426,11 @@ export class Atlas {
   overlayHoverSeq = 0;
   /** Cached row values for overlay points, keyed by layerId+':'+posIdx. Non-reactive. */
   overlayRowCache = new Map<string, [string, string][]>();
+  /**
+   * B3: Per-overlay lasso selection bitmask (packed bits over overlay position indices).
+   * Populated by applyLasso when the lasso intersects overlay points.
+   */
+  overlaySelection = new Map<string, Uint8Array>();
 
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.

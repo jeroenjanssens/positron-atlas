@@ -464,7 +464,7 @@ export type ToWebview =
   | { type: 'groupNames'; seq: number; names: string[] }
   | { type: 'labelsWritten'; variable: string; column: string; rows: number; describe: DescribeResult }
   | { type: 'comparison'; seq: number; result: SelectionComparison }
-  | { type: 'selectionFrame'; variable: string; rows: number }
+  | { type: 'selectionFrame'; variable: string; rows: number; overlayFrames?: { variable: string; rows: number }[] }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
   | { type: 'rows'; seq: number; values: Record<number, [string, string][]>; images?: Record<number, (number | null)[]> }
   | { type: 'texts'; column: number; uri: string; offsetsUri: string; count: number }
@@ -576,7 +576,12 @@ export type ToHost =
       description: string;
     }
   | { type: 'compareSelection'; seq: number; mask: Uint8Array /* packed bits, least significant first */ }
-  | { type: 'selectionFrame'; mask: Uint8Array /* packed bits */ }
+  | {
+      type: 'selectionFrame';
+      mask: Uint8Array /* packed bits over base rows */;
+      /** B3: per-overlay-layer selection masks (packed bits over overlay rows). */
+      overlayMasks?: { layerId: string; variable: string; mask: Uint8Array }[];
+    }
   | { type: 'row'; i: number; imageColumns?: number[] }
   | { type: 'rows'; seq: number; indices: number[]; columns?: number[]; imageColumns?: number[] }
   | { type: 'texts'; column: number; maxChars: number }

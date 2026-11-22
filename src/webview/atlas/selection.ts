@@ -11,6 +11,17 @@ import { formatCount } from '../logic';
 import { plotBackground } from './render';
 import { notifySelectionChanged } from './api';
 
+/** Build a packed-bits bitmask for overlay points inside a world-space polygon. */
+function overlayPointsInPolygon(xy: Float32Array, nFilled: number, poly: Float64Array): Uint8Array {
+  const hits = pointsInPolygon(xy, nFilled, poly);
+  const nBytes = Math.ceil(nFilled / 8);
+  const mask = new Uint8Array(nBytes);
+  for (const idx of hits) {
+    mask[idx >> 3] |= 1 << (idx & 7);
+  }
+  return mask;
+}
+
 /**
  * Select the points inside a lasso drawn on the plot (CSS pixels relative to the plot).
  * Before all rows are placed, only the anchors on screen can be selected.
@@ -61,17 +72,75 @@ export function applyLasso(atlas: Atlas, screen: [number, number][], mode: Selec
     add: 'Add to selection (lasso)',
     remove: 'Remove from selection (lasso)',
   };
-  atlas.recordHistory({
-    label: modeLabels[mode] ?? 'Lasso selection',
-    undo: () => {
-      atlas.selectionOnAnchors = beforeOnAnchors;
-      setSelection(atlas, beforeMask ? new Uint8Array(beforeMask) : null);
-    },
-    redo: () => {
-      atlas.selectionOnAnchors = afterOnAnchors;
-      setSelection(atlas, afterMask ? new Uint8Array(afterMask) : null);
-    },
-  });
+
+  // B3: also select overlay rows that fall within the lasso polygon (2D only).
+  if (atlas.dims === 2) {
+    const polyWorld = new Float64Array(screen.length * 2);
+    screen.forEach(([x, y], i) => {
+      const [wx, wy] = atlas.renderer!.unproject(x, y);
+      polyWorld[2 * i] = wx;
+      polyWorld[2 * i + 1] = wy;
+    });
+    const prevOverlaySelection = new Map(atlas.overlaySelection);
+    for (const layer of atlas.layers) {
+      if (layer.kind !== 'point-overlay' || !layer.visible) continue;
+      const ovXY = atlas.overlayXY.get(layer.id);
+      const nFilled = atlas.overlayFilled.get(layer.id) ?? 0;
+      if (!ovXY || nFilled === 0) continue;
+      const newMask = overlayPointsInPolygon(ovXY.subarray(0, nFilled * 2), nFilled, polyWorld);
+      const hasAny = newMask.some((b) => b !== 0);
+      if (mode === 'replace') {
+        if (hasAny) atlas.overlaySelection.set(layer.id, newMask);
+        else atlas.overlaySelection.delete(layer.id);
+      } else if (mode === 'add') {
+        if (hasAny) {
+          const existing = atlas.overlaySelection.get(layer.id);
+          if (existing) {
+            const merged = new Uint8Array(Math.max(existing.length, newMask.length));
+            merged.set(existing);
+            for (let i = 0; i < newMask.length; i++) merged[i] |= newMask[i];
+            atlas.overlaySelection.set(layer.id, merged);
+          } else {
+            atlas.overlaySelection.set(layer.id, newMask);
+          }
+        }
+      } else if (mode === 'remove') {
+        const existing = atlas.overlaySelection.get(layer.id);
+        if (existing) {
+          const cleared = new Uint8Array(existing.length);
+          for (let i = 0; i < existing.length; i++) cleared[i] = existing[i] & ~newMask[i];
+          if (cleared.some((b) => b !== 0)) atlas.overlaySelection.set(layer.id, cleared);
+          else atlas.overlaySelection.delete(layer.id);
+        }
+      }
+    }
+    const afterOverlaySelection = new Map(atlas.overlaySelection);
+    atlas.recordHistory({
+      label: modeLabels[mode] ?? 'Lasso selection',
+      undo: () => {
+        atlas.selectionOnAnchors = beforeOnAnchors;
+        setSelection(atlas, beforeMask ? new Uint8Array(beforeMask) : null);
+        atlas.overlaySelection = new Map(prevOverlaySelection);
+      },
+      redo: () => {
+        atlas.selectionOnAnchors = afterOnAnchors;
+        setSelection(atlas, afterMask ? new Uint8Array(afterMask) : null);
+        atlas.overlaySelection = new Map(afterOverlaySelection);
+      },
+    });
+  } else {
+    atlas.recordHistory({
+      label: modeLabels[mode] ?? 'Lasso selection',
+      undo: () => {
+        atlas.selectionOnAnchors = beforeOnAnchors;
+        setSelection(atlas, beforeMask ? new Uint8Array(beforeMask) : null);
+      },
+      redo: () => {
+        atlas.selectionOnAnchors = afterOnAnchors;
+        setSelection(atlas, afterMask ? new Uint8Array(afterMask) : null);
+      },
+    });
+  }
 }
 
 export function setSelection(atlas: Atlas, mask: Uint8Array | null): void {
@@ -79,6 +148,7 @@ export function setSelection(atlas: Atlas, mask: Uint8Array | null): void {
   atlas.selectedCount = mask ? countSelected(mask) : 0;
   if (!mask) {
     atlas.selectionOnAnchors = false;
+    atlas.overlaySelection.clear(); // B3: clear overlay selections when base selection is cleared
   }
   atlas.comparison = null;
   atlas.comparing = false;
@@ -131,7 +201,19 @@ export function compareSelection(atlas: Atlas): void {
 
 export function selectionToFrame(atlas: Atlas): void {
   if (!atlas.selection) return;
-  vscode.post({ type: 'selectionFrame', mask: packBits(atlas.selection) });
+  // B3: include overlay row selections when present.
+  const overlayMasks: { layerId: string; variable: string; mask: Uint8Array }[] = [];
+  for (const [layerId, mask] of atlas.overlaySelection) {
+    if (!mask.some((b) => b !== 0)) continue;
+    const layer = atlas.layers.find((l) => l.id === layerId);
+    if (!layer) continue;
+    overlayMasks.push({ layerId, variable: layer.sourceName ?? layer.name, mask: packBits(mask) });
+  }
+  vscode.post({
+    type: 'selectionFrame',
+    mask: packBits(atlas.selection),
+    overlayMasks: overlayMasks.length > 0 ? overlayMasks : undefined,
+  });
 }
 
 /** Recolor with selection fade. Called by recolor() in colors.ts. */

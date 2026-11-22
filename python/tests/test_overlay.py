@@ -321,6 +321,45 @@ def test_overlay_rows_unknown_layer(ns, tmp_path):
     assert "error" in r
 
 
+def test_overlay_selection_frame(ns, tmp_path):
+    """overlay_selection_frame creates a new variable from selected overlay rows."""
+    x, _ = make_blobs(200, 6)
+    jid, layer_id = _prepare_and_project_overlay(ns, tmp_path, x)
+
+    overlay = pak._JOBS[jid].overlays[layer_id]
+    n_kept = len(overlay.kept_idx)
+
+    # Select first 10 rows.
+    bits = bytearray((n_kept + 7) // 8)
+    for i in range(min(10, n_kept)):
+        bits[i >> 3] |= 1 << (i & 7)
+    mask_path = str(tmp_path / "ov_sel.bits")
+    with open(mask_path, "wb") as f:
+        f.write(bits)
+
+    r = J(pak.overlay_selection_frame(jid, layer_id, mask_path))
+    assert r["ok"], r.get("error")
+    assert r["rows"] == min(10, n_kept)
+    assert r["variable"] in ns
+    # The created frame has the same columns as the overlay.
+    df = ns["ov"]
+    sel = ns[r["variable"]]
+    import pandas as pd
+    assert isinstance(sel, pd.DataFrame)
+    assert list(sel.columns) == list(df.columns)
+
+
+def test_overlay_selection_frame_unknown_layer(ns, tmp_path):
+    """overlay_selection_frame returns ok=False for an unknown layer."""
+    x, _ = make_blobs(100, 6)
+    jid, _ = _do_prepare(ns, tmp_path, x)
+    mask_path = str(tmp_path / "empty.bits")
+    with open(mask_path, "wb") as f:
+        f.write(b"\x00")
+    r = J(pak.overlay_selection_frame(jid, "nonexistent", mask_path))
+    assert not r["ok"]
+
+
 def test_overlay_rows_out_of_bounds(ns, tmp_path):
     """Out-of-bounds position indices are silently skipped."""
     x, _ = make_blobs(200, 6)

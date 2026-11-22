@@ -581,8 +581,27 @@ export class AtlasPanel {
       }
       case 'selectionFrame': {
         const r = await this.withMask(m.mask, (p) => this.bridge.call<{ variable: string; rows: number }>('selection_frame', this.requireJob(), p));
-        this.post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
-        void vscode.window.showInformationMessage(`Created ${r.variable} with ${r.rows.toLocaleString('en-US')} selected rows.`);
+        // B3: also create selection frames for overlay layers.
+        const overlayFrames: { variable: string; rows: number }[] = [];
+        if (m.overlayMasks?.length) {
+          for (const om of m.overlayMasks) {
+            try {
+              const ovr = await this.withMask(om.mask, (p) =>
+                this.bridge.call<{ ok: boolean; variable: string; rows: number }>(
+                  'overlay_selection_frame', this.requireJob(), om.layerId, p,
+                ),
+              );
+              if (ovr.ok) overlayFrames.push({ variable: ovr.variable, rows: ovr.rows });
+            } catch (e) {
+              this.ctx.log.warn(`overlay_selection_frame for ${om.layerId} failed: ${e}`);
+            }
+          }
+        }
+        this.post({ type: 'selectionFrame', variable: r.variable, rows: r.rows, overlayFrames: overlayFrames.length ? overlayFrames : undefined });
+        const totalMsg = overlayFrames.length
+          ? `Created ${r.variable} (${r.rows.toLocaleString('en-US')}) and ${overlayFrames.map((f) => `${f.variable} (${f.rows.toLocaleString('en-US')})`).join(', ')}.`
+          : `Created ${r.variable} with ${r.rows.toLocaleString('en-US')} selected rows.`;
+        void vscode.window.showInformationMessage(totalMsg);
         // Open the new frame in the Data Explorer (S1-Q4: %view is the stable path for in-session variables).
         // The frame exists either way, so a failure here is only logged.
         try {

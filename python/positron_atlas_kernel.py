@@ -3014,6 +3014,46 @@ def selection_frame(job_id: str, mask_path: str, base_name: str = "") -> str:
     return _json({"ok": True, "variable": name, "rows": int(len(rows))})
 
 
+@_guard
+def overlay_selection_frame(job_id: str, layer_id: str, mask_path: str) -> str:
+    """Create a new variable from the selected rows of an overlay layer.
+
+    mask_path: packed-bits file over overlay position indices (nKept rows).
+    Returns {ok, variable, rows} like selection_frame.
+    """
+    job = _get(job_id)
+    overlay = job.overlays.get(layer_id)
+    if overlay is None:
+        return _json({"ok": False, "error": f"Overlay layer '{layer_id}' not found."})
+    n = len(overlay.kept_idx)
+    packed = np.fromfile(mask_path, dtype=np.uint8)
+    if len(packed) != (n + 7) // 8:
+        return _json({"ok": False, "error": f"Mask has {len(packed) * 8} bits for {n} overlay rows."})
+    mask = np.unpackbits(packed, bitorder="little")[:n].astype(bool)
+    orig_indices = np.sort(overlay.kept_idx[mask])
+    if len(orig_indices) == 0:
+        return _json({"ok": False, "error": "Nothing is selected in this overlay."})
+    try:
+        ov_obj = _resolve(overlay.name)
+        ov_frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": f"Cannot load overlay variable '{overlay.name}': {e}"})
+    ns = _user_ns()
+    base = overlay.name if overlay.name.isidentifier() else "atlas_selection"
+    name = _unique_name(f"{base}_selection", ns)
+    if ov_frame.kind == "pandas":
+        ns[name] = ov_obj.iloc[orig_indices].copy()
+    elif ov_frame.kind == "polars":
+        ns[name] = ov_obj[orig_indices]
+    else:
+        try:
+            native = ov_frame.obj.to_native()
+            ns[name] = native[orig_indices.tolist()]
+        except Exception:  # noqa: BLE001
+            ns[name] = ov_frame.obj[orig_indices.tolist()].to_native()
+    return _json({"ok": True, "variable": name, "rows": int(len(orig_indices))})
+
+
 def _probe_generic(v: Any) -> dict[str, Any] | None:
     """Return frame metadata for a non-pandas, non-polars object, or None if unrecognised."""
     # Polars LazyFrame: list as lazy, shape unknown without collecting.
