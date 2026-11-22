@@ -171,6 +171,7 @@ import {
   createInitialLayers,
   updateLayer as updateLayerImpl,
   reorderLayer as reorderLayerImpl,
+  deckLayerDescriptors,
   type LayerState,
 } from './atlas/layers';
 
@@ -788,15 +789,27 @@ export class Atlas {
   rebuild3DHitIndex(): void { rebuild3DHitIndexImpl(this); }
 
   // ---- A2 layer model ----------------------------------------------------------
-  /** Update a point layer (visibility, opacity, blending, order). */
+
+  /**
+   * Push the current sorted deck.gl overlay descriptors to the renderer.
+   * Call after any change to atlas.layers so the renderer rebuilds its layer array
+   * in the right order and with the right visibility/opacity for outlines and labels.
+   */
+  syncOverlayDescriptors(): void {
+    this.renderer?.setOverlayDescriptors(deckLayerDescriptors(this.layers));
+  }
+
+  /** Update a layer (visibility, opacity, blending, order). */
   updateLayer(id: string, patch: Partial<LayerState>): void {
     this.layers = updateLayerImpl(this.layers, id, patch);
+    this.syncOverlayDescriptors();
     this.render();
     this.persist();
   }
-  /** Reorder a point layer by moving it to `newIndex`. */
+  /** Reorder a layer by moving it to `newIndex`. */
   reorderLayer(id: string, newIndex: number): void {
     this.layers = reorderLayerImpl(this.layers, id, newIndex);
+    this.syncOverlayDescriptors();
     this.render();
     this.persist();
   }

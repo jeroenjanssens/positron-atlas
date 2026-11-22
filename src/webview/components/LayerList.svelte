@@ -3,6 +3,7 @@
   import Info from './controls/Info.svelte';
   import Select from './controls/Select.svelte';
   import Slider from './Slider.svelte';
+  import { DECK_LAYER_IDS } from '../atlas/layers';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -77,20 +78,20 @@
 
       <span class="layer-name" title={layer.name}>{layer.name}</span>
 
-      {#if layer.kind === 'base' || layer.kind === 'overlay-frame'}
-        <span class="layer-controls">
-          <span class="opacity-wrap">
-            <Slider
-              label="Opacity"
-              value={layer.opacity}
-              min={0}
-              max={1}
-              step={0.01}
-              tag="live"
-              infoId="layers.opacity"
-              onchange={(v) => setOpacity(layer, v)}
-            />
-          </span>
+      <span class="layer-controls">
+        <span class="opacity-wrap">
+          <Slider
+            label="Opacity"
+            value={layer.opacity}
+            min={0}
+            max={1}
+            step={0.01}
+            tag="live"
+            infoId="layers.opacity"
+            onchange={(v) => setOpacity(layer, v)}
+          />
+        </span>
+        {#if DECK_LAYER_IDS.has(layer.id)}
           <Select
             value={layer.blending}
             ariaLabel="Blending"
@@ -100,8 +101,11 @@
             <option value="additive">Additive</option>
           </Select>
           <Info id="layers.blending" />
-        </span>
-      {/if}
+        {:else}
+          <span style="display: contents"></span>
+          <Info id="layers.visibility" />
+        {/if}
+      </span>
     </div>
   {/each}
 </div>

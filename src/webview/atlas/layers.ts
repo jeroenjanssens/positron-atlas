@@ -2,15 +2,32 @@
  * Layer model (A2): point-layer abstraction and overlay registry.
  *
  * Point layers hold positions, colours and radii (the base map is one point layer).
- * Overlay layers (outlines, labels, shapes, boxes, …) register through a lightweight
- * descriptor so they appear in the Layers list and can be reordered without touching
- * renderer.ts.  B3 will add overlay-frame layers here.
+ * Overlay layers (outlines, labels, shapes, boxes, …) are registered here with an id,
+ * name, visibility, opacity, blending and draw order so the renderer and HTML components
+ * can respect them.
+ *
+ * Layer ids and their rendering zone:
+ *   'base'          – ScatterplotLayers inside deck.gl (always first by default)
+ *   'outlines'      – PolygonLayer inside deck.gl (cluster boundary rings)
+ *   'labels'        – TextLayers inside deck.gl (cluster / column labels + badges)
+ *   'glow'          – HTML canvas overlay (A12 blurred halo, z-index ~20)
+ *   'annotations'   – HTML overlay (callout boxes + SVG leader lines, A4, z-index ~21)
+ *   'around-labels' – HTML overlay (labels ring + leaders, A11, z-index ~22)
+ *
+ * System layers (not persisted, always rendered, non-reorderable):
+ *   hover/pin ring  – always last in the deck.gl layer array
+ *   search highlight – rendered as an extra pass within the base ScatterplotLayers
+ *
+ * Justification for system status:
+ *   The hover/pin ring must be on top of everything so it is always visible; allowing
+ *   users to draw it behind points or labels would make it disappear. The search
+ *   highlight re-colours the base point set and therefore cannot be detached from it.
  */
 
 export type LayerKind = 'base' | 'overlay-frame';
 export type LayerBlending = 'normal' | 'additive';
 
-/** Persistent state for a point layer.  Serialised into PanelState. */
+/** Persistent state for a point or overlay layer.  Serialised into PanelState. */
 export interface LayerState {
   id: string;
   kind: LayerKind;
@@ -23,20 +40,21 @@ export interface LayerState {
   order: number;
 }
 
-/** Lightweight registry entry for a non-point overlay layer.
- *  Stored only in memory; visibility is wired to the controlling atlas state field. */
-export interface OverlayLayerDescriptor {
-  id: string;
-  name: string;
-  visible: boolean;
-  order: number;
-}
-
 // ---------------------------------------------------------------------------
-// Helpers for the point-layer list
+// Well-known layer ids and their rendering zones
 // ---------------------------------------------------------------------------
 
-/** Returns the initial layer list (just the base map layer). */
+/** Layer ids that are rendered as deck.gl layers (WebGL canvas). */
+export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels']);
+
+/** Layer ids that are rendered as HTML canvas/SVG overlays. */
+export const HTML_LAYER_IDS = new Set(['glow', 'annotations', 'around-labels']);
+
+// ---------------------------------------------------------------------------
+// Helpers for the layer list
+// ---------------------------------------------------------------------------
+
+/** Returns the initial layer list (base map + all built-in overlay layers). */
 export function createInitialLayers(): LayerState[] {
   return [
     {
@@ -47,6 +65,51 @@ export function createInitialLayers(): LayerState[] {
       opacity: 1,
       blending: 'normal',
       order: 0,
+    },
+    {
+      id: 'outlines',
+      kind: 'overlay-frame',
+      name: 'Cluster outlines',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 10,
+    },
+    {
+      id: 'labels',
+      kind: 'overlay-frame',
+      name: 'Labels',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 20,
+    },
+    {
+      id: 'glow',
+      kind: 'overlay-frame',
+      name: 'Glow',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 30,
+    },
+    {
+      id: 'annotations',
+      kind: 'overlay-frame',
+      name: 'Annotations',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 40,
+    },
+    {
+      id: 'around-labels',
+      kind: 'overlay-frame',
+      name: 'Around-map labels',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 50,
     },
   ];
 }
@@ -91,4 +154,36 @@ export function restoreLayers(saved: LayerState[] | undefined): LayerState[] {
       order: typeof s.order === 'number' ? s.order : d.order,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Renderer helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Sorted overlay descriptors for the deck.gl renderer.
+ * Only includes layers whose id is in DECK_LAYER_IDS, sorted by order.
+ */
+export function deckLayerDescriptors(
+  layers: LayerState[],
+): { id: string; visible: boolean; opacity: number }[] {
+  return [...layers]
+    .filter((l) => DECK_LAYER_IDS.has(l.id))
+    .sort((a, b) => a.order - b.order)
+    .map((l) => ({ id: l.id, visible: l.visible, opacity: l.opacity }));
+}
+
+/**
+ * Compute the CSS z-index for an HTML overlay layer.
+ * Layers are ranked within the HTML_LAYER_IDS set only; the base z-index is 20
+ * so they don't conflict with deck.gl (auto/0) or other fixed elements.
+ *
+ * @param baseZ Base z-index (default 20). Adjacent HTML overlays get baseZ, baseZ+1, …
+ */
+export function htmlOverlayZIndex(layers: LayerState[], id: string, baseZ = 20): number {
+  const sorted = [...layers]
+    .filter((l) => HTML_LAYER_IDS.has(l.id))
+    .sort((a, b) => a.order - b.order);
+  const idx = sorted.findIndex((l) => l.id === id);
+  return baseZ + (idx < 0 ? 0 : idx);
 }

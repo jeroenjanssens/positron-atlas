@@ -10,6 +10,7 @@
   import { onMount } from 'svelte';
   import type { Atlas } from '../atlas.svelte';
   import { renderGlow } from '../atlas/glow';
+  import { getLayer, htmlOverlayZIndex } from '../atlas/layers';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -19,11 +20,17 @@
   // Track which glowVersion we last rendered.
   let lastVersion = -1;
 
+  // A2: reactive layer visibility and z-index from the layer registry.
+  const glowLayer = $derived(getLayer(atlas.layers, 'glow'));
+  const glowLayerVisible = $derived(glowLayer?.visible ?? true);
+  const glowLayerOpacity = $derived(glowLayer?.opacity ?? 1);
+  const zIndex = $derived(htmlOverlayZIndex(atlas.layers, 'glow'));
+
   $effect(() => {
     // Reactive: re-render whenever glowVersion changes.
     const version = atlas.glowVersion;
     const enabled = atlas.view.glow;
-    if (!enabled || canvas === undefined) return;
+    if (!enabled || !glowLayerVisible || canvas === undefined) return;
     if (version === lastVersion) return;
     lastVersion = version;
     renderGlowNow();
@@ -68,11 +75,11 @@
   });
 </script>
 
-<!-- z-index: 2 places the glow above the deck.gl canvas (z-index: auto) so it is
-     always visible.  Pointer events are disabled; opacity/blend modes are handled
-     by the canvas rendering itself (globalAlpha = strength). -->
-<div class="glow-container" bind:this={container} aria-hidden="true">
-  {#if atlas.view.glow}
+<!-- A2: z-index from layer registry (htmlOverlayZIndex). Pointer events are disabled;
+     opacity is applied as CSS opacity on top of the glow's internal globalAlpha. -->
+<div class="glow-container" bind:this={container} aria-hidden="true"
+  style="z-index: {zIndex}; opacity: {glowLayerOpacity}; display: {(!atlas.view.glow || !glowLayerVisible) ? 'none' : ''}">
+  {#if atlas.view.glow && glowLayerVisible}
     <canvas bind:this={canvas} class="glow-canvas" aria-hidden="true"></canvas>
   {/if}
 </div>
@@ -83,7 +90,6 @@
     inset: 0;
     pointer-events: none;
     overflow: hidden;
-    z-index: 2;
   }
   .glow-canvas {
     position: absolute;

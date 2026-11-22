@@ -14,6 +14,7 @@
   import type { AnnotationData } from '../../shared/protocol';
   import PixelImage from './PixelImage.svelte';
   import { resolveInvert } from '../logic';
+  import { getLayer, htmlOverlayZIndex } from '../atlas/layers';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -128,11 +129,18 @@
   }
 
   const annotationList = $derived([...atlas.annotations.values()]);
+
+  // A2: layer visibility, opacity and z-index from the registry.
+  const annLayer = $derived(getLayer(atlas.layers, 'annotations'));
+  const annVisible = $derived(annLayer?.visible ?? true);
+  const annOpacity = $derived(annLayer?.opacity ?? 1);
+  const leaderZIndex = $derived(htmlOverlayZIndex(atlas.layers, 'annotations'));
+  const calloutZIndex = $derived(leaderZIndex + 1);
 </script>
 
-<!-- SVG layer for leader lines (below callout boxes) -->
-{#if annotationList.length}
-  <svg class="leader-svg" aria-hidden="true">
+<!-- SVG layer for leader lines (below callout boxes). A2: hidden when layer invisible. -->
+{#if annotationList.length && annVisible}
+  <svg class="leader-svg" aria-hidden="true" style="z-index: {leaderZIndex}; opacity: {annOpacity}">
     {#each annotationList as ann (ann.id)}
       {@const ll = leaderLine(ann)}
       {#if ll}
@@ -152,7 +160,7 @@
     {/each}
   </svg>
 
-  <!-- Callout boxes -->
+  <!-- Callout boxes (A2: z-index and opacity from layer registry) -->
   {#each annotationList as ann (ann.id)}
     {@const bp = boxPos(ann)}
     {#if bp}
@@ -161,7 +169,7 @@
         class="callout"
         class:badge={ann.style === 'badge'}
         class:draggable={editingId !== ann.id}
-        style="left:{bp.left}; top:{bp.top}; {ann.style === 'badge' && ann.color ? `--badge-color: ${ann.color};` : ''}"
+        style="left:{bp.left}; top:{bp.top}; z-index:{calloutZIndex}; opacity:{annOpacity}; {ann.style === 'badge' && ann.color ? `--badge-color: ${ann.color};` : ''}"
         role="note"
         aria-label="Annotation: {ann.style === 'image' ? 'Image row ' + ann.row : (ann.text || 'Row ' + ann.row)}"
         onmousedown={(e) => onBoxMouseDown(e, ann)}
@@ -218,12 +226,12 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
-    z-index: 6;
     overflow: visible;
+    /* z-index set inline via layer registry */
   }
   .callout {
     position: absolute;
-    z-index: 7;
+    /* z-index set inline via layer registry */
     background: var(--vscode-editorWidget-background, #252526);
     border: 1px solid var(--vscode-editorWidget-border, #454545);
     color: var(--vscode-editor-foreground, #cccccc);

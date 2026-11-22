@@ -11,6 +11,7 @@ import { dataMapPlotSnippet, formatCount, polarsUmapSnippet, pythonSnippet } fro
 import { plotBackground } from './render';
 import { computeAroundLabels } from '../labels/around';
 import { renderGlow } from './glow';
+import { getLayer, createInitialLayers } from './layers';
 
 export function addCoordinates(atlas: Atlas): void {
   if (atlas.layoutMode === 'columns') {
@@ -37,9 +38,10 @@ export function savePng(atlas: Atlas): void {
   const cssW = renderer['container']?.clientWidth ?? 800;
   const cssH = renderer['container']?.clientHeight ?? 600;
 
-  // A11: compute around-labels for PNG export.
+  // A11: compute around-labels for PNG export (respects around-labels layer visibility).
   let aroundLabels: OverlayState['aroundLabels'];
-  if ((atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups?.length) {
+  const aroundLabelsLayerVisible = getLayer(atlas.layers, 'around-labels')?.visible ?? true;
+  if (aroundLabelsLayerVisible && (atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups?.length) {
     aroundLabels = computeAroundLabels(
       atlas.aroundLabelGroups,
       (wx, wy) => renderer.projectWorld(wx, wy),
@@ -55,9 +57,10 @@ export function savePng(atlas: Atlas): void {
     );
   }
 
-  // A12: render glow to an offscreen canvas for export.
+  // A12: render glow to an offscreen canvas for export (respects glow layer visibility).
   let glowCanvas: HTMLCanvasElement | undefined;
-  if (atlas.view.glow && atlas.anchorXY && atlas.nAnchors > 0) {
+  const glowLayerVisible = getLayer(atlas.layers, 'glow')?.visible ?? true;
+  if (glowLayerVisible && atlas.view.glow && atlas.anchorXY && atlas.nAnchors > 0) {
     const gCanvas = document.createElement('canvas');
     // Use per-anchor RGBA colors directly for maximum fidelity.
     const rgbaPerPoint = atlas.colorsAnchors ?? null;
@@ -70,9 +73,12 @@ export function savePng(atlas: Atlas): void {
     glowCanvas = gCanvas;
   }
 
+  // Annotations layer: include callouts in export only when layer is visible.
+  const annotationsLayerVisible = getLayer(atlas.layers, 'annotations')?.visible ?? true;
+
   const overlay: OverlayState = {
     titleOverlay: atlas.titleOverlay,
-    annotations: atlas.annotations,
+    annotations: annotationsLayerVisible ? atlas.annotations : new Map(),
     aroundLabels,
     leaderStyle: atlas.labels.leaderStyle,
     leaderColor: atlas.labels.leaderColor,
@@ -182,10 +188,18 @@ export function persist(atlas: Atlas): void {
     histFilter: atlas.histFilter ?? undefined,
     dims: atlas.dims !== 2 ? atlas.dims : undefined,
     layoutMode: atlas.layoutMode !== 'umap' ? atlas.layoutMode : undefined,
-    // A2: persist non-default layer settings only.
-    layers: atlas.layers.some((l) => !l.visible || l.opacity !== 1 || l.blending !== 'normal')
-      ? ($state.snapshot(atlas.layers) as import('../../shared/protocol').PanelState['layers'])
-      : undefined,
+    // A2: persist non-default layer settings only.  Also save when order differs from defaults.
+    layers: ((): import('../../shared/protocol').PanelState['layers'] => {
+      const defaults = createInitialLayers();
+      const hasChanges = atlas.layers.some((l) => {
+        const def = defaults.find((d) => d.id === l.id);
+        if (!def) return true;
+        return l.visible !== def.visible || l.opacity !== def.opacity || l.blending !== def.blending || l.order !== def.order;
+      });
+      return hasChanges
+        ? ($state.snapshot(atlas.layers) as import('../../shared/protocol').PanelState['layers'])
+        : undefined;
+    })(),
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

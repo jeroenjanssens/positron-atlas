@@ -209,8 +209,9 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   if (state?.colorByCluster === true) {
     atlas.colorByCluster = true;
   }
-  // Restore layer state (A2).
+  // Restore layer state (A2) and sync the renderer's overlay descriptors.
   atlas.layers = restoreLayers(state?.layers as any);
+  atlas.syncOverlayDescriptors();
   // Restore 3D mode (T2).
   if (state?.dims === 3) {
     atlas.dims = 3;

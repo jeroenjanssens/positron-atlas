@@ -290,7 +290,7 @@
 
 <Section {atlas} id="layers" title="Layers">
   <div class="hint muted">
-    Drag the handle to reorder layers (bottom of list = drawn first).
+    Drag to reorder layers (bottom = drawn first). Eye to toggle visibility; opacity and blending per layer.
     <Info id="layers.visibility" />
   </div>
   <LayerList {atlas} />

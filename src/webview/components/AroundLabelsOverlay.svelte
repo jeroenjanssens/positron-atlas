@@ -15,6 +15,7 @@
   import type { Atlas } from '../atlas.svelte';
   import { computeAroundLabels } from '../labels/around';
   import type { AroundLabel } from '../labels/around';
+  import { getLayer, htmlOverlayZIndex } from '../atlas/layers';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -134,10 +135,19 @@
 
   const leaderW = $derived(atlas.labels.leaderWidth ?? 1.5);
   const isWedge = $derived((atlas.labels.leaderStyle ?? 'straight') === 'wedge');
+
+  // A2: layer visibility, opacity and z-index from the registry.
+  const aroundLayer = $derived(getLayer(atlas.layers, 'around-labels'));
+  const aroundVisible = $derived(aroundLayer?.visible ?? true);
+  const aroundOpacity = $derived(aroundLayer?.opacity ?? 1);
+  const aroundZIndex = $derived(htmlOverlayZIndex(atlas.layers, 'around-labels'));
 </script>
 
-<!-- Overlay container: fills the plot area, pointer-events none except on labels -->
-<div class="around-overlay" bind:this={container} aria-hidden="true">
+<!-- Overlay container: fills the plot area, pointer-events none except on labels.
+     A2: visibility, opacity and z-index from layer registry. -->
+<div class="around-overlay" bind:this={container} aria-hidden="true"
+  style="z-index: {aroundZIndex}; opacity: {aroundOpacity}; {!aroundVisible ? 'display: none;' : ''}"
+>
   <!-- SVG leader lines (below labels) -->
   <svg class="leader-svg" bind:this={svgEl}>
     {#each rendered as al (al.key)}
@@ -196,7 +206,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 8;
+    /* z-index set inline via layer registry */
     overflow: visible;
   }
   .leader-svg {

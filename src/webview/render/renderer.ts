@@ -110,6 +110,19 @@ const NORMAL = { depthWriteEnabled: false, depthCompare: 'always' } as const;
 /** Height of the plot toolbar plus the search box, kept free when fitting the view. */
 const FIT_TOP_PX = 76;
 
+/**
+ * Overlay descriptor for the sorted registry (A2).
+ * Controls whether a named overlay bucket is visible in the deck.gl layer array and at what opacity.
+ * Ids: 'base' (ScatterplotLayers), 'outlines' (PolygonLayer), 'labels' (TextLayers).
+ * The hover/pin ring is not in this list — it is always rendered last (system layer).
+ */
+export interface OverlayDescriptor {
+  id: string;
+  visible: boolean;
+  /** Opacity multiplier (0–1). */
+  opacity: number;
+}
+
 /** deck.gl scatter renderer with binary attributes and a controlled orthographic or orbit view. */
 export class ScatterRenderer {
   private deck: Deck<OrthographicView | OrbitView>;
@@ -129,6 +142,16 @@ export class ScatterRenderer {
   /** Per-outline RGBA colors (A6). Overrides outlineColor when set. */
   private outlineColors: [number, number, number, number][] | null = null;
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
+  /**
+   * Sorted overlay descriptors (A2): control draw order, visibility and opacity for
+   * the deck.gl overlay buckets.  Set by setOverlayDescriptors(); defaults give the
+   * original hard-coded order (base → outlines → labels).
+   */
+  private overlayDescs: OverlayDescriptor[] = [
+    { id: 'base', visible: true, opacity: 1 },
+    { id: 'outlines', visible: true, opacity: 1 },
+    { id: 'labels', visible: true, opacity: 1 },
+  ];
   private readonly collision = new CollisionFilterExtension();
   private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
   /** Prepared-row index of the hovered point (for the ring), or -1. */
@@ -354,6 +377,16 @@ export class ScatterRenderer {
     this.render();
   }
 
+  /**
+   * Update the sorted overlay descriptors (A2).
+   * Called whenever atlas.layers changes (via atlas.updateLayer / atlas.reorderLayer).
+   * Only 'base', 'outlines' and 'labels' ids are acted on; unknown ids are ignored.
+   */
+  setOverlayDescriptors(descs: OverlayDescriptor[]): void {
+    this.overlayDescs = descs;
+    this.render();
+  }
+
   /** Replace the text labels (an empty list removes them). */
   setLabels(labels: MapLabel[], style?: Partial<LabelStyle>): void {
     this.labels = labels;
@@ -425,109 +458,117 @@ export class ScatterRenderer {
     const is3D = this.dims === 3;
     // In 3D mode use depth testing so closer points occlude farther ones.
     const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-equal' } as const;
-    const baseParams = is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL);
     const searchActive = this.searchFilters.some((sf) => sf !== null);
     const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = [];
-    for (let si = 0; si < this.sets.length; si++) {
-      const s = this.sets[si];
-      if (s.length === 0) continue;
-      const nd = s.positionStride ?? 2;
-      const filter = this.filters[si] ?? null;
-      // A precomputed histogram filter must also be applied even when hidden.size === 0.
-      const hasFilter = filter !== null && (filter.hidden.size > 0 || !!filter.precomputed);
-      // Always attach the DataFilterExtension and a filter value per point (1 = visible,
-      // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
-      // the layer exists does not rebuild its shaders, which hid every point.
-      const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
-      const sf = this.searchFilters[si] ?? null;
-      // A2: per-layer opacity multiplier and blending override.
-      const layerOpacity = s.layerOpacity ?? 1;
-      const effectiveOpacity = opacity * layerOpacity;
-      const layerBlending = s.layerBlending;
-      const setParams = layerBlending === 'additive'
-        ? ADDITIVE
-        : (is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL));
 
-      // Build a data attributes object to support optional per-point radii (A10).
-      const makeAttrs = (filterValue: Float32Array): Record<string, any> => {
-        const attrs: Record<string, any> = {
-          getPosition: { value: s.positions, size: nd },
-          getFillColor: { value: s.colors, size: 4, normalized: true },
-          getFilterValue: { value: filterValue, size: 1 },
+    // --- build helpers ---
+
+    /** Push ScatterplotLayers for the base point-set bucket. */
+    const pushBaseLayers = (): void => {
+      for (let si = 0; si < this.sets.length; si++) {
+        const s = this.sets[si];
+        if (s.length === 0) continue;
+        const nd = s.positionStride ?? 2;
+        const filter = this.filters[si] ?? null;
+        // A precomputed histogram filter must also be applied even when hidden.size === 0.
+        const hasFilter = filter !== null && (filter.hidden.size > 0 || !!filter.precomputed);
+        // Always attach the DataFilterExtension and a filter value per point (1 = visible,
+        // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
+        // the layer exists does not rebuild its shaders, which hid every point.
+        const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
+        const sf = this.searchFilters[si] ?? null;
+        // A2: per-layer opacity multiplier and blending override.
+        const layerOpacity = s.layerOpacity ?? 1;
+        const effectiveOpacity = opacity * layerOpacity;
+        const layerBlending = s.layerBlending;
+        const setParams = layerBlending === 'additive'
+          ? ADDITIVE
+          : (is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL));
+
+        // Build a data attributes object to support optional per-point radii (A10).
+        const makeAttrs = (filterValue: Float32Array): Record<string, any> => {
+          const attrs: Record<string, any> = {
+            getPosition: { value: s.positions, size: nd },
+            getFillColor: { value: s.colors, size: 4, normalized: true },
+            getFilterValue: { value: filterValue, size: 1 },
+          };
+          if (s.radii) attrs['getRadius'] = { value: s.radii, size: 1 };
+          return attrs;
         };
-        if (s.radii) attrs['getRadius'] = { value: s.radii, size: 1 };
-        return attrs;
-      };
 
-      if (searchActive && sf !== null) {
-        // Two-pass: faded base layer for all legend-visible points, bright highlight for matches.
-        // The highlight pass only shows points that BOTH match the search AND are legend-visible.
-        const searchAndVisible = new Float32Array(sf.length);
-        for (let i = 0; i < sf.length; i++) {
-          searchAndVisible[i] = Math.min(sf[i], legendValues[i]);
+        if (searchActive && sf !== null) {
+          // Two-pass: faded base layer for all legend-visible points, bright highlight for matches.
+          // The highlight pass only shows points that BOTH match the search AND are legend-visible.
+          const searchAndVisible = new Float32Array(sf.length);
+          for (let i = 0; i < sf.length; i++) {
+            searchAndVisible[i] = Math.min(sf[i], legendValues[i]);
+          }
+          // Base pass: all legend-visible points at reduced opacity.
+          layers.push(new ScatterplotLayer({
+            id: `points-${s.id}-base`,
+            data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
+            radiusUnits: 'pixels',
+            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+            billboard: is3D,
+            getRadius: s.radii ? 1 : pointSize / 2,
+            radiusMinPixels: 0.5,
+            stroked: false,
+            filled: true,
+            antialiasing: !density,
+            opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
+            pickable: false,
+            parameters: setParams as any,
+            updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+            extensions: [this.dataFilter],
+            filterRange: [0.5, 1.5] as [number, number],
+          }));
+          // Highlight pass: only matching & legend-visible points at full opacity.
+          layers.push(new ScatterplotLayer({
+            id: `points-${s.id}-highlight`,
+            data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
+            radiusUnits: 'pixels',
+            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+            billboard: is3D,
+            getRadius: s.radii ? 1 : pointSize / 2,
+            radiusMinPixels: 0.5,
+            stroked: false,
+            filled: true,
+            antialiasing: !density,
+            opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
+            pickable: false,
+            parameters: setParams as any,
+            updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+            extensions: [this.dataFilter],
+            filterRange: [0.5, 1.5] as [number, number],
+          }));
+        } else {
+          // No search: single layer with combined legend+histogram filter.
+          layers.push(new ScatterplotLayer({
+            id: `points-${s.id}`,
+            data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
+            radiusUnits: 'pixels',
+            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+            billboard: is3D,
+            getRadius: s.radii ? 1 : pointSize / 2,
+            radiusMinPixels: 0.5,
+            stroked: false,
+            filled: true,
+            antialiasing: !density,
+            opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
+            pickable: false,
+            parameters: setParams as any,
+            updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+            // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
+            extensions: [this.dataFilter],
+            filterRange: [0.5, 1.5] as [number, number],
+          }));
         }
-        // Base pass: all legend-visible points at reduced opacity.
-        layers.push(new ScatterplotLayer({
-          id: `points-${s.id}-base`,
-          data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
-          radiusUnits: 'pixels',
-          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-          billboard: is3D,
-          getRadius: s.radii ? 1 : pointSize / 2,
-          radiusMinPixels: 0.5,
-          stroked: false,
-          filled: true,
-          antialiasing: !density,
-          opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
-          pickable: false,
-          parameters: setParams as any,
-          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-          extensions: [this.dataFilter],
-          filterRange: [0.5, 1.5] as [number, number],
-        }));
-        // Highlight pass: only matching & legend-visible points at full opacity.
-        layers.push(new ScatterplotLayer({
-          id: `points-${s.id}-highlight`,
-          data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
-          radiusUnits: 'pixels',
-          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-          billboard: is3D,
-          getRadius: s.radii ? 1 : pointSize / 2,
-          radiusMinPixels: 0.5,
-          stroked: false,
-          filled: true,
-          antialiasing: !density,
-          opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
-          pickable: false,
-          parameters: setParams as any,
-          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-          extensions: [this.dataFilter],
-          filterRange: [0.5, 1.5] as [number, number],
-        }));
-      } else {
-        // No search: single layer with combined legend+histogram filter.
-        layers.push(new ScatterplotLayer({
-          id: `points-${s.id}`,
-          data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
-          radiusUnits: 'pixels',
-          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-          billboard: is3D,
-          getRadius: s.radii ? 1 : pointSize / 2,
-          radiusMinPixels: 0.5,
-          stroked: false,
-          filled: true,
-          antialiasing: !density,
-          opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
-          pickable: false,
-          parameters: setParams as any,
-          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-          // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
-          extensions: [this.dataFilter],
-          filterRange: [0.5, 1.5] as [number, number],
-        }));
       }
-    }
-    if (this.outlines.length) {
+    };
+
+    /** Push the PolygonLayer for cluster outlines at the given opacity. */
+    const pushOutlinesLayer = (layerOpacity: number): void => {
+      if (!this.outlines.length) return;
       const [r, g, b] = this.outlineColor;
       const perColors = this.outlineColors;
       layers.push(
@@ -537,6 +578,7 @@ export class ScatterRenderer {
           getPolygon: (d: [number, number][]) => d,
           stroked: true,
           filled: true,
+          opacity: layerOpacity,
           getFillColor: perColors
             ? (_d: [number, number][], { index }: any) => { const c = perColors[index] ?? [r, g, b, 14]; return [c[0], c[1], c[2], 14] as [number,number,number,number]; }
             : [r, g, b, 14],
@@ -550,38 +592,11 @@ export class ScatterRenderer {
           updateTriggers: { getFillColor: this.version, getLineColor: this.version },
         } as any),
       );
-    }
-    // Hover ring (A5): draw a ring around the hovered and/or pinned point.
-    const ringIndices: { idx: number; pinned: boolean }[] = [];
-    if (this.hoveredIdx >= 0) ringIndices.push({ idx: this.hoveredIdx, pinned: false });
-    if (this.pinnedIdx >= 0 && this.pinnedIdx !== this.hoveredIdx) ringIndices.push({ idx: this.pinnedIdx, pinned: true });
-    for (const { idx, pinned } of ringIndices) {
-      // Find the point position in the last set that covers this index.
-      const pos = this.findPointPosition(idx);
-      if (pos) {
-        layers.push(
-          new ScatterplotLayer({
-            id: `ring-${pinned ? 'pin' : 'hover'}-${idx}`,
-            data: [pos],
-            getPosition: (d: number[]) => d as [number, number] | [number, number, number],
-            radiusUnits: 'pixels',
-          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-          billboard: is3D,
-            getRadius: (this.style.pointSize / 2) + 3,
-            radiusMinPixels: 4,
-            stroked: true,
-            filled: false,
-            getLineColor: pinned ? [255, 200, 50, 220] : [255, 255, 255, 180],
-            lineWidthUnits: 'pixels',
-            getLineWidth: pinned ? 2.5 : 1.5,
-            pickable: false,
-            parameters: NORMAL as any,
-            updateTriggers: { getPosition: idx },
-          } as any),
-        );
-      }
-    }
-    if (this.labels.length) {
+    };
+
+    /** Push TextLayers for cluster/column labels at the given opacity. */
+    const pushLabelsLayers = (layerOpacity: number): void => {
+      if (!this.labels.length) return;
       const { outline, fontFamily, fontWeight: baseFontWeight = 600, haloWidth: haloW = 10, lineHeight: lh = 0.95, maxWidth: mw = 9 } = this.labelStyle;
       // Split into badge labels and normal labels; group normal by weight bucket for per-label weight variation.
       const badgeLabels = this.labels.filter((l) => l.badge);
@@ -608,6 +623,7 @@ export class ScatterRenderer {
         getCollisionPriority: (d: MapLabel) => d.priority,
         collisionTestProps: { sizeScale: 1.4 },
         parameters: NORMAL as any,
+        opacity: layerOpacity,
         // T3: billboard=true makes labels face the camera in 3D; collision still works in screen space.
         ...(is3D ? { billboard: true } : {}),
       } as const;
@@ -651,7 +667,55 @@ export class ScatterRenderer {
           } as any),
         );
       }
+    };
+
+    // --- build the deck.gl layer array in descriptor order ---
+    // The overlay descriptors control draw order, visibility and opacity for the named
+    // buckets.  Any id not recognised is silently skipped.  The hover/pin ring is always
+    // appended last (system layer, non-reorderable, always visible on top).
+    for (const desc of this.overlayDescs) {
+      if (!desc.visible) continue;
+      if (desc.id === 'base') {
+        pushBaseLayers();
+      } else if (desc.id === 'outlines') {
+        pushOutlinesLayer(desc.opacity);
+      } else if (desc.id === 'labels') {
+        pushLabelsLayers(desc.opacity);
+      }
+      // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
+
+    // --- hover / pin ring (system layer, always last) ---
+    const ringIndices: { idx: number; pinned: boolean }[] = [];
+    if (this.hoveredIdx >= 0) ringIndices.push({ idx: this.hoveredIdx, pinned: false });
+    if (this.pinnedIdx >= 0 && this.pinnedIdx !== this.hoveredIdx) ringIndices.push({ idx: this.pinnedIdx, pinned: true });
+    for (const { idx, pinned } of ringIndices) {
+      // Find the point position in the last set that covers this index.
+      const pos = this.findPointPosition(idx);
+      if (pos) {
+        layers.push(
+          new ScatterplotLayer({
+            id: `ring-${pinned ? 'pin' : 'hover'}-${idx}`,
+            data: [pos],
+            getPosition: (d: number[]) => d as [number, number] | [number, number, number],
+            radiusUnits: 'pixels',
+            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+            billboard: is3D,
+            getRadius: (this.style.pointSize / 2) + 3,
+            radiusMinPixels: 4,
+            stroked: true,
+            filled: false,
+            getLineColor: pinned ? [255, 200, 50, 220] : [255, 255, 255, 180],
+            lineWidthUnits: 'pixels',
+            getLineWidth: pinned ? 2.5 : 1.5,
+            pickable: false,
+            parameters: NORMAL as any,
+            updateTriggers: { getPosition: idx },
+          } as any),
+        );
+      }
+    }
+
     this.deck.setProps({ layers });
   }
 
