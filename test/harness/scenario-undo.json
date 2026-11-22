@@ -39,8 +39,8 @@
       "report": "{ undoLabel: a.undoLabel, canRedo: a.history.canRedo }"
     },
     {
-      "name": "undo restores hidden categories",
-      "eval": "a.undo()",
+      "name": "undo (the host's command message, as from Cmd/Ctrl+Z) restores hidden categories",
+      "eval": "window.postMessage({ type: 'command', id: 'edit.undo' }, '*')",
       "until": "!a.isCategoryHidden(0)",
       "timeout": 3000,
       "assert": [
@@ -52,8 +52,8 @@
       "report": "{ redoLabel: a.redoLabel, anyHidden: a.anyHidden }"
     },
     {
-      "name": "redo re-hides the category",
-      "eval": "a.redo()",
+      "name": "redo (the host's command message) re-hides the category",
+      "eval": "window.postMessage({ type: 'command', id: 'edit.redo' }, '*')",
       "until": "a.isCategoryHidden(0)",
       "timeout": 3000,
       "assert": [

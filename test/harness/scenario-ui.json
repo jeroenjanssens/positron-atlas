@@ -60,8 +60,10 @@
       "name": "fit to view from toolbar",
       "eval": "a.renderer.viewState.zoom -= 2; a.fitView()",
       "assert": [
-        "document.querySelectorAll('.plot-toolbar .tool').length === 5"
-      ]
+        "JSON.stringify([...document.querySelectorAll('.plot-toolbar .tool')].map((b) => b.getAttribute('aria-label').split(':')[0])) === JSON.stringify(['Pan and zoom', 'Lasso select', 'Fit to view', 'Annotate', 'Undo', 'Redo', 'Full screen'])"
+      ],
+      "report": "[...document.querySelectorAll('.plot-toolbar .tool')].map((b) => b.getAttribute('aria-label'))",
+      "screenshot": "ui-toolbar.png"
     },
     {
       "name": "export tab",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CommandStack, MAX_HISTORY } from '../src/webview/atlas/history';
+import { CommandStack, MAX_HISTORY, COALESCE_MS } from '../src/webview/atlas/history';
 
 function makeEntry(label: string, undo: () => void, redo: () => void, coalesceKey?: string) {
   return { label, undo, redo, coalesceKey };
@@ -111,6 +111,27 @@ describe('CommandStack', () => {
     // Now there should be 3 entries
     s.undo(); s.undo(); s.undo();
     expect(s.canUndo).toBe(false);
+  });
+
+  it('edits far apart in time are separate steps even with the same key', () => {
+    const s = new CommandStack();
+    s.record(makeEntry('title a', () => {}, () => {}, 'title'), 0);
+    s.record(makeEntry('title b', () => {}, () => {}, 'title'), COALESCE_MS + 1);
+    s.undo();
+    expect(s.canUndo).toBe(true);
+  });
+
+  it('an edit after an undo clears redo and does not merge into the older entry', () => {
+    const s = new CommandStack();
+    let state = 'x';
+    s.record(makeEntry('set a', () => { state = 'x'; }, () => { state = 'a'; }, 'title'), 0);
+    s.record(makeEntry('set b', () => { state = 'a'; }, () => { state = 'b'; }, 'other'), 10);
+    s.undo(); // back to 'a'; 'set b' is on the redo stack
+    s.record(makeEntry('set c', () => { state = 'a'; }, () => { state = 'c'; }, 'title'), 20);
+    expect(s.canRedo).toBe(false);
+    s.undo();
+    expect(state).toBe('a'); // only 'set c' was undone, 'set a' is still a separate step
+    expect(s.canUndo).toBe(true);
   });
 
   it('enforces MAX_HISTORY limit', () => {

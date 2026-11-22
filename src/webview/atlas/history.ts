@@ -25,10 +25,13 @@ export interface HistoryEntry {
 }
 
 export const MAX_HISTORY = 200;
+/** Edits with the same coalesceKey closer together than this become one undo step. */
+export const COALESCE_MS = 1000;
 
 export class CommandStack {
   private past: HistoryEntry[] = [];
   private future: HistoryEntry[] = [];
+  private lastRecordAt = -Infinity;
 
   get canUndo(): boolean { return this.past.length > 0; }
   get canRedo(): boolean { return this.future.length > 0; }
@@ -36,24 +39,26 @@ export class CommandStack {
   get redoLabel(): string { return this.future.at(-1)?.label ?? ''; }
 
   /**
-   * Record a new entry.  Clears the redo stack unless coalescing with the
-   * previous entry (same coalesceKey).
+   * Record a new entry and clear the redo stack. An entry with the same coalesceKey as
+   * the previous one, recorded within COALESCE_MS of it and with nothing undone in
+   * between, is merged into it (a drag or typing in one field becomes one step).
    */
-  record(entry: HistoryEntry): void {
+  record(entry: HistoryEntry, now = Date.now()): void {
     const last = this.past.at(-1);
-    if (entry.coalesceKey !== undefined && last?.coalesceKey === entry.coalesceKey) {
-      // Merge: keep the original undo closure, update redo and label.
-      this.past[this.past.length - 1] = {
-        label: entry.label,
-        undo: last.undo,
-        redo: entry.redo,
-        coalesceKey: entry.coalesceKey,
-      };
+    const merge =
+      entry.coalesceKey !== undefined &&
+      last?.coalesceKey === entry.coalesceKey &&
+      this.future.length === 0 &&
+      now - this.lastRecordAt < COALESCE_MS;
+    if (merge && last) {
+      // Keep the original undo closure, update redo and label.
+      this.past[this.past.length - 1] = { label: entry.label, undo: last.undo, redo: entry.redo, coalesceKey: entry.coalesceKey };
     } else {
       if (this.past.length >= MAX_HISTORY) this.past.shift();
       this.past.push(entry);
-      this.future = [];
     }
+    this.future = [];
+    this.lastRecordAt = now;
   }
 
   /** Apply undo. Returns true when there was something to undo. */
