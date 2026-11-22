@@ -182,6 +182,8 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>The kernel side (prepare, placement, colours, rows, write-back)</td><td><code>python/positron_atlas_kernel.py</code></td></tr>
     <tr><td>Built-in example dataset loaders (MNIST, Fashion MNIST, Covertype)</td><td><code>python/positron_atlas_examples.py</code></td></tr>
     <tr><td>The webview's state and logic</td><td><code>src/webview/atlas.svelte.ts</code> (state) and <code>src/webview/atlas/*.ts</code> (one module per area)</td></tr>
+    <tr><td>Keyboard/pointer dispatch and navigation presets</td><td><code>src/webview/input/bindings.ts</code> (binding registry), <code>dispatcher.ts</code> (action routing); <code>src/webview/render/controller.ts</code> (NavController for custom pointer and wheel)</td></tr>
+    <tr><td>Controls cheat sheet</td><td><code>src/webview/components/CheatSheet.svelte</code> (preset dropdown, sections, platform notation, user keybinding overrides)</td></tr>
     <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
     <tr><td>Keyboard and mouse</td><td><code>src/webview/input/</code> (<code>bindings.ts</code>: every action and its default keys; <code>dispatcher.ts</code>: runs them). Keys are contributed keybindings scoped to <code>positronAtlas.webviewFocused</code>; the host forwards them to the focused tab as <code>command</code> messages</td></tr>
     <tr><td>Undo and redo</td><td><code>src/webview/atlas/history.ts</code> (the command stack) and <code>atlas/undo.ts</code> (which edits are recorded)</td></tr>

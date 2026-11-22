@@ -71,9 +71,26 @@ UMAP runs in the browser on the *anchors*, a random subset of the (sampled) rows
 
 The **Anchors** slider in the Data section changes it per tab, within the last two limits. When every row is an anchor, no placement is needed.
 
+### Navigation presets
+
+Atlas ships four navigation presets, selectable in Settings (`positronAtlas.navigation.preset`) or directly in the Controls cheat sheet:
+
+| Preset | Left-drag (2D) | Right-drag (2D) | Left-drag (3D) |
+|---|---|---|---|
+| **Data map** (default) | Pan | Rotate | Orbit |
+| **Molecular** | Pan | — | Orbit |
+| **3D / CAD** | Lasso | — | Middle-drag orbit |
+| **Design** | Select | Rotate | — |
+
+Additional settings: `scrollGesture` (`zoom` / `pan`), `zoomToCursor`, `invertZoom`, `emulateMiddleButton`. The preset also applies to the exported HTML viewer.
+
+### Controls cheat sheet
+
+Press **`?`** (or the keyboard button in the toolbar, or **Atlas: Show Controls** in the Command Palette) to open a panel at the bottom of the map listing all mouse and keyboard controls for the active preset. It stays open while you try controls. The preset dropdown lets you switch presets live. Key notation uses macOS glyphs (⌘ ⌥ ⇧) or Windows/Linux words depending on your OS.
+
 ### Controls
 
-The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Annotate**, **Fit to view** and **Full screen** (plus the camera buttons in 3D), with a **search box** below it. Every setting has an ⓘ with an explanation.
+The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Annotate**, **Fit to view**, **Full screen** and **Show controls** (plus the camera buttons in 3D), with a **search box** below it. Every setting has an ⓘ with an explanation.
 
 | Tab | Section | Control | Effect |
 |---|---|---|---|

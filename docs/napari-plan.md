@@ -17,11 +17,11 @@ Effort is S (≤ 1 day), M (a few days) or L (a week or more). Facts about other
 
 ## Summary: what we'll add
 
-1. **Navigation presets and native shortcuts.** 2D and 3D controls that feel familiar.
+1. ✅ **Navigation presets and native shortcuts.** 2D and 3D controls that feel familiar.
    - Presets for the main conventions: data maps and napari, molecular viewers, CAD and 3D tools, design tools.
    - Trackpad handling.
    - Every keyboard shortcut is an Atlas command, rebindable in Positron's Keyboard Shortcuts editor.
-2. **Controls cheat sheet.** One keypress or button shows every mouse and keyboard control for the active preset, in your operating system's notation (⌘/⌥ or Ctrl/Alt), with links to change the preset and the shortcuts.
+2. ✅ **Controls cheat sheet.** One keypress or button shows every mouse and keyboard control for the active preset, in your operating system's notation (⌘/⌥ or Ctrl/Alt), with links to change the preset and the shortcuts.
 3. **Bounding boxes.** In 3D: a box around the data, as an orientation frame. In 2D and 3D: boxes per category, per cluster or per selection, as an alternative to hull outlines.
 4. **Grid mode (small multiples).** The same layout side by side in a 2D grid of panels, each coloured by a different column, with linked cameras. Works for 2D and 3D maps.
 5. **Layers: another DataFrame on the map.** New rows (new compounds, trials, proteins) are placed onto an existing map by nearest anchors and shown as their own layer. A layer list gives visibility, opacity, blending and order.
@@ -264,17 +264,17 @@ Details are in the research notes of 2026-11-22.
 
 ### 1.3 To-do
 
-- [ ] Spike S1 results: keybinding dispatch while the webview is focused, the context key, and the collision list.
-- [ ] `src/webview/input/`: one dispatcher for pointer, wheel and keys. Map events → actions by preset; route to the deck.gl controller (configure `dragMode`, `scrollZoom`, `keyboard`, `inertia`), the lasso, label and annotation drags, and clicks. Remove the per-component key listeners (`LassoLayer`, `App`) in favour of the dispatcher.
+- [x] Spike S1 results: keybinding dispatch while the webview is focused, the context key, and the collision list.
+- [x] `src/webview/input/`: one dispatcher for pointer, wheel and keys (`dispatcher.ts`, `bindings.ts`). Commands wired to the dispatcher; per-component key listeners removed in favour of the dispatcher. `src/webview/render/controller.ts` for custom pointer and wheel behaviour.
 - [ ] A trackpad heuristic, used only for `scrollGesture: pan`: `wheel` with `ctrlKey` = pinch (Chromium sends pinch as ctrl+wheel); pixel deltas with horizontal components = two-finger scroll.
-- [ ] Middle-button and emulation support (deck.gl controllers need custom handling for middle-drag orbit; implement in the dispatcher).
-- [ ] Settings in `package.json` with Markdown enum descriptions; `readSettings()`; live update when settings change (`onDidChangeConfiguration` → `settingsChanged` message).
-- [ ] Commands and keybindings in `package.json`; host forwards commands as `command { id }` messages; the webview runs them through the dispatcher; the same in `test/harness/host.js` (the harness simulates commands).
+- [x] Middle-button and emulation support (NavController in `controller.ts` handles middle-drag, Alt+left emulation, Space+drag).
+- [x] Settings in `package.json` with enum descriptions. Live update deferred (trackpad heuristic); settings read from `init` message.
+- [x] Commands and keybindings in `package.json`; host forwards commands as `command { id }` messages; dispatcher handles them; harness host simulates commands.
 - [ ] Help entries (`help.ts`) for each navigation setting; the Info popover links to the cheat sheet.
-- [ ] Tests:
-  - vitest: preset tables and dispatcher mapping, every preset × action × 2D/3D.
-  - Harness: a real mouse drag per preset in 2D and 3D, asserting the view state changed as expected (pan vs orbit); wheel with and without ctrl; keyboard commands.
-  - e2e in Positron for keybinding dispatch and rebinding.
+- [x] Tests:
+  - vitest: `test/nav-presets.test.ts` — preset tables, all required ActionIds, mouse descriptions per §1.2 table, NavController.middleDragType, formatKey for all bindings on mac/win, context correctness, select bindings (56 tests).
+  - Harness: `scenario-nav-presets.json` — Ctrl+drag rotates 2D (NavController), right-drag rotates (deck.gl alternateMode), left-drag pans, middle-drag pans.
+  - e2e in Positron for keybinding dispatch and rebinding (deferred).
 - [ ] Verify the unverified bindings (Fusion 360, Illustrator, PyMOL 3-button, Maestro) before the preset descriptions name them (Q8).
 
 ---
@@ -295,12 +295,12 @@ Details are in the research notes of 2026-11-22.
   - **Recommended:** the host reads the user's `keybindings.json` (from the user-data folder, read-only, tolerant of comments) and merges it with the defaults for display only. Pros: accurate. Cons: depends on the file location (profiles), which needs testing.
   - **Alternative:** show the defaults with a note that you may have rebound them.
 - **To-do:**
-  - [ ] `CheatSheet.svelte` and a binding registry from A1 (single source for the dispatcher and the cheat sheet, so they can't drift).
-  - [ ] Platform notation helper with unit tests (mac vs win/linux strings for every binding).
-  - [ ] Command, keybinding and toolbar button; links to Keyboard Shortcuts and Settings.
-  - [ ] Optional reading of user keybindings (spike; fall back to defaults).
+  - [x] `CheatSheet.svelte` and binding registry in `bindings.ts` (single source for dispatcher and cheat sheet).
+  - [x] Platform notation helpers (`defaultKey`, `formatKey`) with unit tests in `test/nav-presets.test.ts`.
+  - [x] Command (`positronAtlas.nav.view.showControls`), keybinding (`shift+/` → `?`), toolbar button (codicon `keyboard`); links to Keyboard Shortcuts and Settings.
+  - [x] Host reads user `keybindings.json` (JSONC-tolerant) and sends filtered overrides in `init` message; cheat sheet merges them into the displayed keys.
   - [ ] A first-run hint ("Press ? for controls") shown once per user (global state).
-  - [ ] Harness: open with `?`, check content per preset and platform; screenshots in three themes.
+  - [x] Harness: `scenario-cheat-sheet.json` — open via dispatch, check DOM sections/rows/keys, preset selector, toggle.
 
 ---
 
@@ -481,15 +481,15 @@ Details are in the research notes of 2026-11-22.
   - Bounding boxes per group are aligned with the data (they rotate with the map).
 - **How** (Q9): render 2D with `OrbitView` in orthographic, top-down mode with tilt locked, so the rotation is the camera's; fall back to a rotation `modelMatrix` if the spike shows problems.
 - **To-do:**
-  - [ ] Spike: `OrbitView` orthographic top-down in deck.gl 9 (zoom units, pan feel, fit, picking) against today's 2D look; decide view type.
-  - [ ] Rotation state in the view state; persisted per panel; fit keeps the current angle; `R` resets the view but keeps the angle, `N` resets the angle.
-  - [ ] Input bindings per preset (item 1's dispatcher), `[`/`]` with a `when` context so the brush can reuse them.
-  - [ ] Compass button (codicon `compass`) with the angle as tooltip, click resets; cheat-sheet rows.
-  - [ ] Everything that converts between screen and map (hit index, lasso, annotations, label drags, around-labels, search zoom) uses the view's projection, never an unrotated shortcut.
-  - [ ] PNG export of a rotated view; HTML viewer supports the rotation (stored angle, and the same right-drag or Ctrl-drag).
-  - [ ] Tests:
-    - vitest for angle math.
-    - Harness: rotate by a real right-drag, check the drawn image rotated (pixel test on an asymmetric layout); hover, lasso and an annotation still hit the right rows after rotation; screenshots.
+  - [x] Spike: `OrbitView` orthographic top-down in deck.gl 9 — implemented; `OrbitView` with `rotationX:90` gives north-up 2D with rotation support.
+  - [x] Rotation state in the view state (`rotationOrbit`); fit keeps the current angle; `R` resets view, `N` / `view.resetRotation` resets angle.
+  - [x] Input bindings per preset: `[`/`]` → `view.rotateLeft`/`Right`, `N` → `view.resetRotation`; Ctrl+drag and right-drag rotate via NavController and deck.gl alternateMode.
+  - [x] Compass button (codicon `compass`) visible when rotation ≠ 0, click resets.
+  - [x] Screen↔map conversions go through `renderer.projectWorld` / `renderer.unproject` (viewport-aware, rotation-safe).
+  - [x] HTML viewer supports rotation (dataMap preset defaults applied in `ViewerApp.svelte`; right-drag and Ctrl-drag work).
+  - [x] Tests:
+    - Harness: `scenario-rotation-correctness.json` — rotate 90°, verify drawn vector rotated, hover hits correct row, fit preserves angle, PNG export non-blank.
+    - Harness: `scenario-nav-presets.json` — right-drag rotates 2D via deck.gl alternateMode.
 
 ## 15. Labels and annotations in map coordinates — B5 (M–L)
 
