@@ -200,6 +200,7 @@ export function persist(atlas: Atlas): void {
         ? ($state.snapshot(atlas.layers) as import('../../shared/protocol').PanelState['layers'])
         : undefined;
     })(),
+    rotation2D: atlas.rotation2D !== 0 ? atlas.rotation2D : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

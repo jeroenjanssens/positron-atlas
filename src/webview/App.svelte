@@ -13,6 +13,7 @@
   import GlowOverlay from './components/GlowOverlay.svelte';
   import { formatCount, formatSeconds, placeTooltip, resolveInvert } from './logic';
   import SearchBox from './components/SearchBox.svelte';
+  import { vscode } from './vscode';
 
   const atlas = new Atlas();
   // Exposed for end-to-end tests (test/e2e).
@@ -51,6 +52,11 @@
       e.preventDefault();
     }
   }
+
+  // Track whether the webview has keyboard focus so the host can set/clear the
+  // positronAtlas.webviewFocused context key (item 1).
+  function onWindowFocus() { vscode.post({ type: 'webviewFocused' }); }
+  function onWindowBlur() { vscode.post({ type: 'webviewBlurred' }); }
 
   const statusText = $derived.by(() => {
     if (atlas.phase === 'loading') return 'Connecting to the kernel…';
@@ -96,7 +102,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window onkeydown={onKeyDown} onfocus={onWindowFocus} onblur={onWindowBlur} />
 
 <div class="app" class:collapsed>
   <aside>

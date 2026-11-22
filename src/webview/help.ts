@@ -1210,6 +1210,67 @@ export const HELP: Record<string, HelpEntry> = {
       'Drag the callout to reposition it; double-click the text to edit it.',
     cost: 'none',
   },
+
+  'toolbar.compass': {
+    title: 'Compass / Rotation reset',
+    what: 'Shows the current map rotation and resets it to north-up (0°) on click.',
+    intuition:
+      'The compass needle rotates with the map. ' +
+      'Only visible when the map has been rotated away from the default north-up orientation. ' +
+      'Click it to snap back to 0°. Use the [ and ] keys to rotate by 15° steps, or right-drag to rotate freely.',
+    cost: 'none',
+  },
+
+  // ---- Navigation settings (item 1) --------------------------------------------
+
+  'nav.preset': {
+    title: 'Navigation preset',
+    what: 'Sets the mouse and gesture control scheme.',
+    intuition:
+      '"Data map" (default): scroll to zoom, drag to pan, right-drag to rotate (2D). ' +
+      '"Molecular viewer": same as Data map; intended for 3D point clouds. ' +
+      '"3D / CAD": middle-drag to pan, left-drag to rotate, scroll to zoom. ' +
+      '"Design": Space+drag to pan, Ctrl+scroll to zoom; mimics Figma/Sketch.',
+    when: 'Change when the default drag-to-pan conflicts with your workflow, or when you prefer CAD/design conventions.',
+    cost: 'none',
+  },
+
+  'nav.scrollGesture': {
+    title: 'Scroll gesture',
+    what: 'What happens when you scroll (or use a two-finger trackpad swipe) over the map.',
+    intuition:
+      '"Zoom" (default) zooms in and out. ' +
+      '"Pan" scrolls the map vertically, with horizontal two-finger swipe panning horizontally.',
+    when: 'Set to "Pan" if your workflow involves a lot of vertical scrolling rather than zooming.',
+    cost: 'none',
+  },
+
+  'nav.zoomToCursor': {
+    title: 'Zoom to cursor',
+    what: 'When enabled, zooming keeps the point under the cursor stationary.',
+    intuition:
+      'With "Zoom to cursor" on (default) the map zooms into the spot where your mouse is, like a geographic map. ' +
+      'With it off, the map always zooms toward the view center.',
+    cost: 'none',
+  },
+
+  'nav.invertZoom': {
+    title: 'Invert zoom direction',
+    what: 'Reverses the scroll-to-zoom direction.',
+    intuition:
+      'By default, scrolling up / pinching out zooms in. ' +
+      'Enable this to reverse that so scrolling up zooms out, matching some CAD or mapping applications.',
+    cost: 'none',
+  },
+
+  'nav.emulateMiddleButton': {
+    title: 'Emulate middle button',
+    what: 'Treats Alt + left-drag as a middle-button drag.',
+    intuition:
+      'Useful with the "3D / CAD" preset on a laptop trackpad where there is no physical middle button. ' +
+      'Enable this and Alt+drag will pan instead of rotate in that preset.',
+    cost: 'none',
+  },
 };
 
 /** Look up a help entry by its dot-separated id.  Returns undefined when not found. */

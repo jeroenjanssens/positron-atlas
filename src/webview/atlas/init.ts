@@ -220,6 +220,17 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     atlas.dims = 2;
     atlas.renderer?.setDims(2);
   }
+  // Restore 2D rotation (item 14).
+  if (typeof state?.rotation2D === 'number' && state.dims !== 3) {
+    atlas.rotation2D = state.rotation2D;
+    atlas.renderer?.setRotation2D(state.rotation2D);
+  } else {
+    atlas.rotation2D = 0;
+  }
+  // Apply navigation settings from the host's init message (item 1).
+  if (settings.nav) {
+    atlas.navSettings = settings.nav;
+  }
   // Reset hover state from prior session.
   atlas.rowCache.clear();
   atlas.hoverInflight = 0;

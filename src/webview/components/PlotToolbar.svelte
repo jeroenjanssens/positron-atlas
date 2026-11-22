@@ -98,6 +98,24 @@
     </button>
   {/if}
 
+  <!-- Compass: 2D rotation indicator + reset (item 14, hidden in 3D) -->
+  {#if atlas.dims !== 3 && atlas.rotation2D !== 0}
+    <button class="tool compass" aria-label="Reset rotation" disabled={!atlas.prepared}
+      title="Rotation: {atlas.rotation2D.toFixed(0)}°. Click to reset to north-up."
+      onclick={() => atlas.resetRotation2D()}>
+      <!-- Compass needle SVG, rotated by rotation2D degrees -->
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"
+        style="transform: rotate({atlas.rotation2D}deg); transform-origin: 50% 50%;">
+        <!-- North arrow (red tip pointing up) -->
+        <polygon points="8,2 10,10 8,8.5 6,10" fill="var(--vscode-charts-red, #f14c4c)" />
+        <!-- South arrow (grey) -->
+        <polygon points="8,14 10,6 8,7.5 6,6" fill="currentColor" opacity="0.5" />
+        <!-- Center dot -->
+        <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+      </svg>
+    </button>
+  {/if}
+
   <!-- Annotate tool (A4): codicon-pin; hidden in 3D (T5) -->
   {#if atlas.dims !== 3}
     <button class="tool" class:active={atlas.tool === 'annotate'} aria-pressed={atlas.tool === 'annotate'} aria-label="Annotate"

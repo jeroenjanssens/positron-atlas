@@ -11,6 +11,7 @@ import type {
   ColorMeta,
   ExactEngine,
   LabelOptions,
+  NavigationSettings,
   SelectionComparison,
   PanelState,
   PrepareOptions,
@@ -174,6 +175,8 @@ import {
   deckLayerDescriptors,
   type LayerState,
 } from './atlas/layers';
+import { InputDispatcher } from './input/dispatcher';
+import type { ActionId } from './input/bindings';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
@@ -290,6 +293,18 @@ export class Atlas {
   layers = $state<LayerState[]>(createInitialLayers());
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
+
+  // ---- navigation / input state (item 1, item 14) --------------------------------
+  /** Current 2D map rotation angle in degrees (0 = north-up). Kept in sync with renderer. */
+  rotation2D = $state(0);
+  /** Active navigation settings received from the host (item 1). */
+  navSettings = $state<NavigationSettings>({
+    preset: 'dataMap',
+    scrollGesture: 'zoom',
+    zoomToCursor: true,
+    invertZoom: false,
+    emulateMiddleButton: false,
+  });
 
   // ---- overlay / annotation state (A1, A4) ------------------------------------
   titleOverlay = $state<TitleOptions>({ ...DEFAULT_TITLE });
@@ -420,6 +435,9 @@ export class Atlas {
   /** Lazy UTF-8 title decoder (H3). */
   textsStore = new TextsStore();
 
+  // ---- input dispatcher (item 1) -----------------------------------------------
+  dispatcher: InputDispatcher | null = null;
+
   // ---- lifecycle ---------------------------------------------------------------
   attach(container: HTMLElement): void {
     // D11 + A1: initialise the font module once; bridge vscode.post → postMessage interface.
@@ -447,6 +465,7 @@ export class Atlas {
       if (this.dims === 3) on3DViewChangeImpl(this);
     });
     createWorkerImpl(this);
+    this.dispatcher = new InputDispatcher(this);
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
       this.inbox = this.inbox
         .then(() => this.handle(ev.data))
@@ -463,6 +482,7 @@ export class Atlas {
     this.clusterFinder?.destroy();
     this.worker?.terminate();
     this.renderer?.destroy();
+    this.dispatcher?.destroy();
   }
 
   // ---- computed properties -----------------------------------------------------
@@ -627,6 +647,14 @@ export class Atlas {
       case 'htmlExportSaved':
         this.htmlExportOpen = false;
         if (msg.path) this.flash(`HTML export saved to ${msg.path}`);
+        break;
+      // --- Navigation command forwarded from VS Code (item 1) ---
+      case 'command':
+        this.dispatcher?.dispatch(msg.id as ActionId);
+        break;
+      // --- Navigation settings changed (item 1) ---
+      case 'settingsChanged':
+        this.navSettings = msg.nav;
         break;
     }
   }
@@ -874,5 +902,19 @@ export class Atlas {
    *  the browser Fullscreen API instead (PlotToolbar.svelte checks isPositron). */
   setFullscreen(on: boolean): void {
     vscode.post({ type: 'fullscreen', on });
+  }
+
+  // ---- 2D rotation (item 14) ---------------------------------------------------
+
+  /** Set the 2D rotation angle in degrees (0 = north-up). */
+  setRotation2D(angleDeg: number): void {
+    this.renderer?.setRotation2D(angleDeg);
+    this.rotation2D = angleDeg % 360;
+    this.persist();
+  }
+
+  /** Reset the 2D rotation to north-up (0°). */
+  resetRotation2D(): void {
+    this.setRotation2D(0);
   }
 }
