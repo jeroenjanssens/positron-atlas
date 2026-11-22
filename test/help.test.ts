@@ -158,9 +158,6 @@ describe('Info component cross-references (I3)', () => {
       'toolbar.pan', 'toolbar.lasso', 'toolbar.fitView', 'toolbar.annotate',
       'toolbar.compass', 'toolbar.undo', 'toolbar.redo',
       'nav.preset', 'nav.scrollGesture', 'nav.zoomToCursor', 'nav.invertZoom', 'nav.emulateMiddleButton',
-      // B4 brush/shapes UI panel not yet wired to <Info> popovers
-      'brush.size', 'brush.class', 'brush.fill', 'brush.write',
-      'shapes.type', 'shapes.style', 'shapes.tag',
     ]);
     for (const id of Object.keys(HELP)) {
       if (toolbarExempt.has(id)) continue;

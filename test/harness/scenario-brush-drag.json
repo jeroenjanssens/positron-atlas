@@ -1,0 +1,111 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 10, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 1000
+  },
+  "theme": "dark",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "activate brush tool via PlotToolbar",
+      "eval": "document.querySelector('button[aria-label=\"Brush\"]').click()",
+      "until": "a.annotateTool === 'brush'",
+      "timeout": 3000,
+      "assert": ["a.annotateTool === 'brush'", "h.annotateTool === 'brush'"],
+      "screenshot": "brush-drag-active.png"
+    },
+    {
+      "name": "compute screen coordinates of several anchor points for dragging",
+      "eval": "const canvas = document.querySelector('canvas'); const r = canvas.getBoundingClientRect(); const sc = a.renderer.projectWorld(a.anchorXY[0], a.anchorXY[1]); window.__brushX0 = Math.round(r.left + (sc ? sc[0] : r.width * 0.4)); window.__brushY0 = Math.round(r.top + (sc ? sc[1] : r.height * 0.4));",
+      "until": "window.__brushX0 !== undefined"
+    },
+    {
+      "name": "drag brush over anchor points to paint them",
+      "drag": "(() => { const x0 = window.__brushX0; const y0 = window.__brushY0; return [[x0, y0], [x0+8, y0+4], [x0+16, y0+8], [x0+24, y0+4], [x0+32, y0]]; })()",
+      "until": "a.pendingBrushCodes !== null && Array.from(a.pendingBrushCodes).some(v => v !== 65535)",
+      "timeout": 5000,
+      "assert": [
+        "a.pendingBrushCodes !== null",
+        "Array.from(a.pendingBrushCodes).some(v => v !== 65535)",
+        "a.history.canUndo"
+      ],
+      "report": "{ nTagged: Array.from(a.pendingBrushCodes).filter(v => v !== 65535).length, undoLabel: a.undoLabel }",
+      "screenshot": "brush-drag-painted.png"
+    },
+    {
+      "name": "brush overlay has non-background pixels",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let nBright = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 100) nBright++; window.__paintedPixels = nBright",
+      "until": "window.__paintedPixels !== undefined",
+      "assert": "window.__paintedPixels > 100",
+      "report": "{ paintedPixels: window.__paintedPixels }"
+    },
+    {
+      "name": "[ key decreases brush size (brush tool is active)",
+      "eval": "const before = a.brush.sizePx; a.adjustBrushSize(-5); window.__sizeAfterDecrease = a.brush.sizePx; window.__sizeBefore = before;",
+      "until": "window.__sizeAfterDecrease !== undefined",
+      "assert": ["window.__sizeAfterDecrease <= window.__sizeBefore"],
+      "report": "{ before: window.__sizeBefore, after: window.__sizeAfterDecrease }"
+    },
+    {
+      "name": "] key increases brush size",
+      "eval": "a.adjustBrushSize(5);",
+      "assert": ["a.brush.sizePx >= 5"]
+    },
+    {
+      "name": "erase via Alt+drag: set erasing and drag again",
+      "eval": "a.brush = { ...a.brush, erasing: true };",
+      "drag": "(() => { const x0 = window.__brushX0; const y0 = window.__brushY0; return [[x0+5, y0+2], [x0+20, y0+8], [x0+35, y0+5]]; })()",
+      "until": "a.pendingBrushCodes !== null",
+      "timeout": 3000,
+      "assert": ["a.pendingBrushCodes !== null"],
+      "report": "{ erasing: a.brush.erasing, nTagged: Array.from(a.pendingBrushCodes).filter(v => v !== 65535).length }"
+    },
+    {
+      "name": "reset erasing mode",
+      "eval": "a.brush = { ...a.brush, erasing: false };"
+    },
+    {
+      "name": "undo erase stroke",
+      "eval": "a.undo()",
+      "until": "a.history.canRedo || true",
+      "timeout": 1000
+    },
+    {
+      "name": "undo paint stroke",
+      "eval": "a.undo()",
+      "until": "a.history.canRedo || a.pendingBrushCodes === null || Array.from(a.pendingBrushCodes ?? []).every(v => v === 65535)",
+      "timeout": 2000,
+      "assert": [
+        "a.pendingBrushCodes === null || Array.from(a.pendingBrushCodes).every(v => v === 65535)"
+      ]
+    },
+    {
+      "name": "paint several points then write to DataFrame",
+      "eval": "a.brush = { ...a.brush, erasing: false, currentClass: 0 }; for (let i = 0; i < 3; i++) a.applyBrushStroke(a.anchorXY[2*i], a.anchorXY[2*i+1]);",
+      "until": "a.pendingBrushCodes !== null && Array.from(a.pendingBrushCodes).some(v => v !== 65535)",
+      "timeout": 3000
+    },
+    {
+      "name": "commit brush — writeLabels message posted",
+      "eval": "a.commitBrush('brush_col')",
+      "until": "h.log.some(l => l.includes('writeLabels') || l.includes('confirm'))",
+      "timeout": 5000,
+      "assert": ["h.log.some(l => l.includes('confirm'))"],
+      "report": "{ logTail: h.log.slice(-3) }"
+    },
+    {
+      "name": "deactivate brush via toolbar",
+      "eval": "document.querySelector('button[aria-label=\"Brush\"]').click()",
+      "until": "a.annotateTool === null",
+      "timeout": 2000,
+      "assert": ["a.annotateTool === null", "h.annotateTool === null"],
+      "screenshot": "brush-drag-done.png"
+    }
+  ]
+}

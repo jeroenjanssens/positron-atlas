@@ -1,0 +1,124 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 1000\nk = rng.integers(0, 2, n)\ncenters = rng.normal(0, 8, (2, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['label'] = [f'cls_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 1000
+  },
+  "theme": "dark",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "activate shapes tool via PlotToolbar",
+      "eval": "document.querySelector('button[aria-label=\"Shapes\"]').click()",
+      "until": "a.annotateTool === 'shapes'",
+      "timeout": 3000,
+      "assert": ["a.annotateTool === 'shapes'", "h.annotateTool === 'shapes'"],
+      "screenshot": "shapes-drag-active.png"
+    },
+    {
+      "name": "compute screen coordinates of an anchor point for drawing",
+      "eval": "const canvas = document.querySelector('canvas'); const r = canvas.getBoundingClientRect(); const sc = a.renderer.projectWorld(a.anchorXY[0], a.anchorXY[1]); window.__sx0 = Math.round(r.left + (sc ? sc[0] : r.width * 0.4)); window.__sy0 = Math.round(r.top + (sc ? sc[1] : r.height * 0.4));",
+      "until": "window.__sx0 !== undefined"
+    },
+    {
+      "name": "draw a rectangle by dragging over data",
+      "eval": "window.__rectId = null;",
+      "drag": "(() => { const x0 = window.__sx0 - 60; const y0 = window.__sy0 - 50; return [[x0, y0], [x0+120, y0+100]]; })()",
+      "until": "a.shapes.some(s => s.kind === 'rect')",
+      "timeout": 5000,
+      "assert": ["a.shapes.some(s => s.kind === 'rect')"],
+      "report": "{ nShapes: a.shapes.length, kinds: a.shapes.map(s => s.kind) }",
+      "screenshot": "shapes-drag-rect.png"
+    },
+    {
+      "name": "rectangle was recorded as undoable",
+      "assert": ["a.history.canUndo"]
+    },
+    {
+      "name": "move the rectangle by patching x,y",
+      "eval": "const rect = a.shapes.find(s => s.kind === 'rect'); if (rect) { window.__rectId = rect.id; const delta = a.renderer.worldPerPixel() * 5; a.updateShape(rect.id, { x: rect.x + delta, y: rect.y + delta }); }",
+      "until": "a.shapes.find(s => s.kind === 'rect') !== undefined",
+      "timeout": 1000,
+      "assert": ["a.shapes.length === 1", "a.history.canUndo"]
+    },
+    {
+      "name": "undo move",
+      "eval": "a.undo()",
+      "until": "a.history.canRedo",
+      "timeout": 1000
+    },
+    {
+      "name": "redo move",
+      "eval": "a.redo()",
+      "timeout": 1000
+    },
+    {
+      "name": "shapes survive fitView",
+      "eval": "a.fitView()",
+      "assert": ["a.shapes.length === 1"],
+      "screenshot": "shapes-drag-after-fit.png"
+    },
+    {
+      "name": "shapes survive 2D rotation by 30 degrees",
+      "eval": "a.renderer.setRotation2D(30); a.rotation2D = 30;",
+      "assert": [
+        "a.shapes.length === 1",
+        "a.rotation2D === 30"
+      ],
+      "screenshot": "shapes-drag-rotated.png"
+    },
+    {
+      "name": "reset rotation",
+      "eval": "a.renderer.setRotation2D(0); a.rotation2D = 0;"
+    },
+    {
+      "name": "check pixels at projected rect position after pan and rotation",
+      "eval": "const rect = a.shapes[0]; const wx = rect.x + rect.w / 2; const wy = rect.y + rect.h / 2; const sc = a.renderer.projectWorld(wx, wy); window.__rectScreenPos = sc;",
+      "until": "window.__rectScreenPos !== undefined",
+      "report": "{ rectScreenPos: window.__rectScreenPos, nShapes: a.shapes.length }"
+    },
+    {
+      "name": "tag points inside rectangle shape",
+      "eval": "const rect = a.shapes.find(s => s.kind === 'rect'); if (rect) a.tagPointsInShape(rect.id, 'shape_col')",
+      "until": "h.log.some(l => l.includes('confirm'))",
+      "timeout": 5000,
+      "assert": ["h.log.some(l => l.includes('confirm'))"],
+      "report": "{ logTail: h.log.slice(-3) }"
+    },
+    {
+      "name": "shapes JSON export and re-import",
+      "eval": "const json = a.exportShapes(); const nBefore = a.shapes.length; a.shapes = []; a.renderer.setShapes([]); a.importShapes(json);",
+      "until": "a.shapes.length >= 1",
+      "timeout": 2000,
+      "assert": ["a.shapes.length >= 1"],
+      "report": "{ nShapesAfterRoundTrip: a.shapes.length, kinds: a.shapes.map(s => s.kind) }"
+    },
+    {
+      "name": "shapes present in PNG export",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let nBright = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) nBright++; window.__shapePixels = nBright",
+      "until": "window.__shapePixels !== undefined",
+      "assert": "window.__shapePixels > 100",
+      "report": "{ shapePixels: window.__shapePixels }"
+    },
+    {
+      "name": "delete shape via removeShape",
+      "eval": "const id = a.shapes[0]?.id; if (id) a.removeShape(id);",
+      "until": "a.shapes.length === 0",
+      "timeout": 2000,
+      "assert": ["a.shapes.length === 0"]
+    },
+    {
+      "name": "deactivate shapes tool",
+      "eval": "document.querySelector('button[aria-label=\"Shapes\"]').click()",
+      "until": "a.annotateTool === null",
+      "timeout": 2000,
+      "assert": ["a.annotateTool === null"],
+      "screenshot": "shapes-drag-done.png"
+    }
+  ]
+}
