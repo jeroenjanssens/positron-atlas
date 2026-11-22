@@ -1,0 +1,86 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 7, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = pd.Categorical([f'C{v+1}' for v in k])\ndf.shape",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.colorMeta.categories.length === 4",
+      "timeout": 15000
+    },
+    {
+      "name": "baseline brightness without glow",
+      "eval": "const url = a.renderer.toDataURL('#111111'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let total = 0; for (let k = 0; k < d.length; k += 4) total += d[k] + d[k+1] + d[k+2]; window.__noGlowBrightness = total",
+      "until": "window.__noGlowBrightness !== undefined",
+      "assert": "window.__noGlowBrightness > 0",
+      "report": "{ brightnessNoGlow: window.__noGlowBrightness }"
+    },
+    {
+      "name": "explore tab → enable glow",
+      "click": "#tab-explore",
+      "until": "a.ui.tab === 'explore'"
+    },
+    {
+      "name": "enable glow toggle",
+      "eval": "const display = Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Glow')); if (display) { const cb = display.querySelector('input[type=checkbox]'); cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }",
+      "until": "a.view.glow === true",
+      "timeout": 5000,
+      "assert": [
+        "a.view.glow === true",
+        "a.glowVersion >= 0"
+      ]
+    },
+    {
+      "name": "glow canvas is rendered",
+      "eval": "window.__glowCanvas = document.querySelector('.glow-canvas')",
+      "until": "window.__glowCanvas !== null",
+      "assert": "document.querySelector('.glow-canvas') !== null",
+      "report": "{ hasGlowCanvas: document.querySelector('.glow-canvas') !== null }",
+      "screenshot": "glow-dark.png"
+    },
+    {
+      "name": "adjust glow radius",
+      "eval": "a.setView({ glowRadius: 60 })",
+      "until": "a.view.glowRadius === 60",
+      "timeout": 3000
+    },
+    {
+      "name": "adjust glow strength",
+      "eval": "a.setView({ glowStrength: 0.6 })",
+      "until": "a.view.glowStrength === 0.6",
+      "timeout": 3000,
+      "screenshot": "glow-strong.png"
+    },
+    {
+      "name": "png export with glow",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000"
+    },
+    {
+      "name": "disable glow",
+      "eval": "a.setView({ glow: false })",
+      "until": "a.view.glow === false",
+      "timeout": 3000,
+      "assert": [
+        "a.view.glow === false"
+      ]
+    },
+    {
+      "name": "glow canvas removed after disable",
+      "eval": "window.__glowCanvasAfter = document.querySelector('.glow-canvas')",
+      "until": "window.__glowCanvasAfter !== undefined",
+      "assert": "document.querySelector('.glow-canvas') === null",
+      "report": "{ hasGlowCanvas: document.querySelector('.glow-canvas') !== null }"
+    }
+  ]
+}

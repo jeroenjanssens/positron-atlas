@@ -1,12 +1,13 @@
 /**
  * PNG export compositing: draws the title overlay, leader lines and annotation
- * callout boxes on top of the deck.gl canvas (A1, A4).
+ * callout boxes on top of the deck.gl canvas (A1, A4, A11).
  *
  * All coordinates are in CSS pixels; we multiply by devicePixelRatio when drawing
  * on the physical-pixel output canvas.
  */
 
 import type { TitleOptions, AnnotationData } from '../../shared/protocol';
+import type { AroundLabel } from '../labels/around';
 import { imageToRgba } from '../logic';
 
 export interface CompositeOptions {
@@ -19,6 +20,14 @@ export interface CompositeOptions {
   title?: TitleOptions;
   /** Annotations with their current screen positions. */
   annotations?: Array<{ ann: AnnotationData; screenX: number; screenY: number }>;
+  /** A11 around-the-map labels with screen positions (computed by computeAroundLabels). */
+  aroundLabels?: AroundLabel[];
+  /** A11 leader line settings. */
+  leaderStyle?: 'straight' | 'curved' | 'wedge';
+  leaderColor?: 'cluster' | 'grey';
+  leaderWidth?: number;
+  /** A11 label font family for drawing text. */
+  labelFontFamily?: string;
 }
 
 /**
@@ -222,6 +231,99 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 2 * dpr;
       ctx.fillText(label, bx + pad, by + pad + fontSize);
+      ctx.restore();
+    }
+  }
+
+  // ---- A11 Around-the-map labels + leader lines --------------------------------
+  const aroundLabels = opts.aroundLabels ?? [];
+  if (aroundLabels.length) {
+    const lw = (opts.leaderWidth ?? 1.5) * dpr;
+    const fontFamily = opts.labelFontFamily || 'sans-serif';
+    const leaderStyle = opts.leaderStyle ?? 'straight';
+
+    for (const al of aroundLabels) {
+      const ax = al.anchorX * dpr;
+      const ay = al.anchorY * dpr;
+      const lx = al.screenX * dpr;
+      const ly = al.screenY * dpr;
+      const fontSize = al.size * dpr;
+
+      const lineColor = opts.leaderColor === 'grey'
+        ? 'rgba(170,170,170,0.85)'
+        : (al.clusterColor ? al.clusterColor + 'cc' : 'rgba(170,170,170,0.85)');
+
+      // ---- Leader line ----
+      ctx.save();
+      ctx.strokeStyle = lineColor;
+      ctx.fillStyle = lineColor;
+      ctx.lineWidth = lw;
+
+      if (leaderStyle === 'wedge') {
+        // Filled isoceles triangle / wedge.
+        const dx = lx - ax;
+        const dy = ly - ay;
+        const len = Math.hypot(dx, dy);
+        if (len > 1) {
+          const nx = -dy / len;
+          const ny = dx / len;
+          const tailW = lw * 2.2;
+          ctx.beginPath();
+          ctx.moveTo(ax + nx * tailW, ay + ny * tailW);
+          ctx.lineTo(lx, ly);
+          ctx.lineTo(ax - nx * tailW, ay - ny * tailW);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (leaderStyle === 'curved') {
+        const mx = (ax + lx) / 2;
+        const my = (ay + ly) / 2;
+        const dx = lx - ax;
+        const dy = ly - ay;
+        const len = Math.hypot(dx, dy);
+        const perp = len > 0 ? 0.2 : 0;
+        const cpx = mx - dy * perp;
+        const cpy = my + dx * perp;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.quadraticCurveTo(cpx, cpy, lx, ly);
+        ctx.stroke();
+      } else {
+        // Straight line.
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(lx, ly);
+        ctx.stroke();
+      }
+      // Anchor dot.
+      ctx.beginPath();
+      ctx.arc(ax, ay, lw * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // ---- Label text ----
+      ctx.save();
+      ctx.font = `${al.weight ?? 600} ${fontSize}px '${fontFamily}', sans-serif`;
+      const tw = ctx.measureText(al.text).width;
+      const pad = 5 * dpr;
+
+      // Background halo / badge.
+      if (al.badge) {
+        const [br, bg, bb, ba] = al.badge;
+        ctx.fillStyle = `rgba(${br},${bg},${bb},${ba / 255})`;
+        roundRect(ctx, lx - tw / 2 - pad, ly - fontSize / 2 - pad / 2, tw + pad * 2, fontSize + pad, 3 * dpr);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255,255,255,1)`;
+      } else {
+        // Soft shadow as halo.
+        ctx.shadowColor = 'rgba(0,0,0,0.75)';
+        ctx.shadowBlur = 3 * dpr;
+        const [r, g, b, a] = al.color;
+        ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(al.text, lx, ly);
       ctx.restore();
     }
   }

@@ -218,6 +218,16 @@ export interface LabelOptions {
   // ---- A9 highlighted label badges ----
   /** Group names to show as filled badges (cluster color background, white bold text). */
   highlightGroups?: string[];
+
+  // ---- A11 labels around the map ----
+  /** Where to place labels: 'over' (default, inside the cloud) or 'around' (outside with leader lines). */
+  labelStyle?: 'over' | 'around';
+  /** Leader line style for around-the-map labels. */
+  leaderStyle?: 'straight' | 'curved' | 'wedge';
+  /** Leader line color: 'cluster' matches the group color, 'grey' is a neutral grey. */
+  leaderColor?: 'cluster' | 'grey';
+  /** Leader line width in CSS pixels. */
+  leaderWidth?: number;
 }
 
 /** Tooltip/hover settings (Explore → Tooltip section). */
@@ -299,6 +309,10 @@ export interface PanelState {
     imageWidth?: number;
     imageInvert?: boolean;
     palette?: 'map' | 'tableau' | 'cvd';
+    // A12 glow
+    glow?: boolean;
+    glowStrength?: number;
+    glowRadius?: number;
   };
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */

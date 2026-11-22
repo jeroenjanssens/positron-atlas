@@ -15,6 +15,7 @@ export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>)
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
   const paletteChanged = v.palette !== undefined && v.palette !== atlas.view.palette;
   const backgroundChanged = v.background !== undefined && v.background !== atlas.view.background;
+  const glowChanged = v.glow !== undefined || v.glowStrength !== undefined || v.glowRadius !== undefined;
   if (v.images !== undefined && v.images !== atlas.view.images) {
     atlas.tooltip = null;
   }
@@ -28,6 +29,9 @@ export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>)
   }
   if (cmapChanged || paletteChanged || backgroundChanged) {
     atlas.recolor();
+  }
+  if (glowChanged) {
+    atlas.glowVersion++;
   }
 }
 
@@ -107,6 +111,8 @@ export function render(atlas: Atlas): void {
     if (col !== null) runSearch(atlas, atlas.searchQuery, col);
   }
   atlas._renderTick++;
+  // A12: invalidate glow when point data changes.
+  if (atlas.view.glow) atlas.glowVersion++;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth());

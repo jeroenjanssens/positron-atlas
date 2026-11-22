@@ -30,4 +30,9 @@ export const DEFAULT_LABELS: LabelOptions = {
   multiLevel: false,
   // A9 highlighted
   highlightGroups: [],
+  // A11 labels around the map
+  labelStyle: 'over',
+  leaderStyle: 'straight',
+  leaderColor: 'cluster',
+  leaderWidth: 1.5,
 };

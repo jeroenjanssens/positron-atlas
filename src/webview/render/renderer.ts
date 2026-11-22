@@ -4,11 +4,20 @@ import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensio
 import { compositeOverlay } from './composite';
 import { ensureFont } from '../fonts';
 import type { AnnotationData, TitleOptions } from '../../shared/protocol';
+import type { AroundLabel } from '../labels/around';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
 export interface OverlayState {
   titleOverlay: TitleOptions;
   annotations: Map<string, AnnotationData>;
+  /** A11 around-the-map labels for export (optional). */
+  aroundLabels?: AroundLabel[];
+  leaderStyle?: 'straight' | 'curved' | 'wedge';
+  leaderColor?: 'cluster' | 'grey';
+  leaderWidth?: number;
+  labelFontFamily?: string;
+  /** A12 glow canvas for export (pre-rendered, optional). */
+  glowCanvas?: HTMLCanvasElement | null;
 }
 
 export interface PointSet {
@@ -663,6 +672,12 @@ export class ScatterRenderer {
     const g = out.getContext('2d')!;
     g.fillStyle = background;
     g.fillRect(0, 0, out.width, out.height);
+
+    // A12: draw glow *under* the deck.gl canvas.
+    if (overlay.glowCanvas && overlay.glowCanvas.width > 0) {
+      g.drawImage(overlay.glowCanvas, 0, 0, out.width, out.height);
+    }
+
     g.drawImage(canvas, 0, 0);
 
     // Build annotation screen positions for compositing.
@@ -679,6 +694,11 @@ export class ScatterRenderer {
       dpr,
       title: overlay.titleOverlay,
       annotations: annotationsWithPos,
+      aroundLabels: overlay.aroundLabels,
+      leaderStyle: overlay.leaderStyle,
+      leaderColor: overlay.leaderColor,
+      leaderWidth: overlay.leaderWidth,
+      labelFontFamily: overlay.labelFontFamily,
     });
 
     return new Promise<Uint8Array>((resolve, reject) => {

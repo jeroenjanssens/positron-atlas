@@ -268,6 +268,17 @@ export class Atlas {
   /** Column index used as the annotation ID key; null = row index. */
   annotateIdColumn = $state<number | null>(null);
 
+  // ---- A11: around-the-map labels ---------------------------------------------
+  /** World-space group data for the AroundLabelsOverlay; null when labelStyle is 'over'. */
+  aroundLabelGroups = $state.raw<import('./labels/around').AroundLabelGroup[] | null>(null);
+
+  // ---- A12: glow overlay -------------------------------------------------------
+  /**
+   * Incremented each time the glow overlay should redraw (view change, settings change,
+   * or new point data).  The GlowOverlay component watches this value.
+   */
+  glowVersion = $state(0);
+
   // ---- hover / legend reactive state (H2–H8, L1) --------------------------------
   /** Pinned hover card: set by onClick, cleared by closePinnedCard (H7). */
   pinnedCard = $state.raw<{
@@ -393,9 +404,10 @@ export class Atlas {
         setDragOffsetImpl(this, key, null);
       },
     });
-    // A8: re-schedule labels when zoom changes.
+    // A8: re-schedule labels when zoom changes.  A12: also invalidate glow.
     this.renderer.onViewChange((_zoom) => {
       scheduleLabelsImpl(this);
+      if (this.view.glow) this.glowVersion++;
     });
     createWorkerImpl(this);
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {

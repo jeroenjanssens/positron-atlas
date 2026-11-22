@@ -1,0 +1,110 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 8, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = pd.Categorical([f'Group{v+1}' for v in k])\ndf.shape",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "annotate tab, label by cluster",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "label by cluster column",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); const sel = document.querySelector('select[aria-label=\"Label by\"]'); sel.value = String(col.index); sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labelCount === 5",
+      "timeout": 30000,
+      "assert": [
+        "a.labelCount === 5"
+      ],
+      "report": "a.renderer.labels.map(l => l.text)"
+    },
+    {
+      "name": "switch to around-the-map mode",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Label style\"]'); sel.value = 'around'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.labelStyle === 'around' && a.aroundLabelGroups !== null && a.aroundLabelGroups.length === 5",
+      "timeout": 10000,
+      "assert": [
+        "a.labels.labelStyle === 'around'",
+        "a.aroundLabelGroups !== null",
+        "a.aroundLabelGroups.length === 5",
+        "a.renderer.labels.length === 0"
+      ],
+      "report": "a.aroundLabelGroups.map(g => g.text)"
+    },
+    {
+      "name": "around-labels HTML overlay is present",
+      "until": "document.querySelectorAll('.around-label').length === 5",
+      "timeout": 5000,
+      "eval": "window.__aroundLabels = document.querySelectorAll('.around-label').length",
+      "assert": "window.__aroundLabels === 5",
+      "report": "{ count: window.__aroundLabels }",
+      "screenshot": "labels-around-dark.png"
+    },
+    {
+      "name": "leader SVG paths are present",
+      "eval": "window.__leaderPaths = document.querySelectorAll('.leader-svg path').length",
+      "until": "window.__leaderPaths !== undefined",
+      "assert": "window.__leaderPaths >= 5",
+      "report": "{ paths: window.__leaderPaths }"
+    },
+    {
+      "name": "leader lines appear between anchors and labels (pixel check)",
+      "eval": "const url = a.renderer.toDataURL('#111111'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let bright = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) bright++; window.__aroundBright = bright",
+      "until": "window.__aroundBright !== undefined",
+      "assert": "window.__aroundBright > 100",
+      "report": "{ brightPoints: window.__aroundBright }"
+    },
+    {
+      "name": "switch to curved leaders",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Leader style\"]'); sel.value = 'curved'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.leaderStyle === 'curved'",
+      "timeout": 5000,
+      "assert": [
+        "a.labels.leaderStyle === 'curved'"
+      ],
+      "screenshot": "labels-around-curved.png"
+    },
+    {
+      "name": "switch to wedge leaders",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Leader style\"]'); sel.value = 'wedge'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.leaderStyle === 'wedge'",
+      "timeout": 5000,
+      "assert": [
+        "a.labels.leaderStyle === 'wedge'"
+      ],
+      "screenshot": "labels-around-wedge.png"
+    },
+    {
+      "name": "switch back to straight leaders, grey color",
+      "eval": "const lsSel = document.querySelector('select[aria-label=\"Leader style\"]'); lsSel.value = 'straight'; lsSel.dispatchEvent(new Event('change', { bubbles: true })); const lcSel = document.querySelector('select[aria-label=\"Leader color\"]'); lcSel.value = 'grey'; lcSel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.leaderStyle === 'straight' && a.labels.leaderColor === 'grey'",
+      "timeout": 5000,
+      "screenshot": "labels-around-grey.png"
+    },
+    {
+      "name": "png export includes around-labels",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000"
+    },
+    {
+      "name": "switch back to over mode",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Label style\"]'); sel.value = 'over'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.labelStyle === 'over' && a.aroundLabelGroups === null && a.labelCount === 5",
+      "timeout": 10000,
+      "assert": [
+        "a.labels.labelStyle === 'over'",
+        "a.aroundLabelGroups === null",
+        "a.renderer.labels.length === 5"
+      ]
+    }
+  ]
+}

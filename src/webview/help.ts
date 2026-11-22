@@ -470,6 +470,35 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Explore → Display → Glow (A12) -----------------------------------------
+
+  'explore.glow': {
+    title: 'Glow',
+    what: 'Adds a soft blurred halo around each cluster in its color, drawn underneath the points.',
+    intuition:
+      'Glow renders the point positions at 1/4 resolution using additive color blending and blurs the result. ' +
+      'The effect is similar to DataMapPlot\'s add_glow (Gaussian kernel) and works well on dark backgrounds. ' +
+      'Recomputed whenever the view changes.',
+    when: 'Enable to emphasize cluster shapes, especially on dark backgrounds.',
+    cost: 'none',
+    dataMapPlot: 'add_glow',
+  },
+
+  'explore.glowStrength': {
+    title: 'Glow strength',
+    what: 'Overall opacity of the glow layer (0 = invisible, 1 = fully opaque).',
+    intuition: 'Lower values produce a subtle ambient halo; higher values create a vivid neon effect.',
+    cost: 'none',
+  },
+
+  'explore.glowRadius': {
+    title: 'Glow radius',
+    what: 'Gaussian blur radius in CSS pixels applied to the glow halo.',
+    intuition: 'A small radius (10–20 px) gives a tight glow close to the clusters. ' +
+      'A large radius (50–100 px) creates a diffuse bloom that covers a wider area.',
+    cost: 'none',
+  },
+
   // ---- Explore → Selection -----------------------------------------------------
 
   'explore.compareSelection': {
@@ -760,6 +789,46 @@ export const HELP: Record<string, HelpEntry> = {
       'Enter each group name exactly as it appears in the label column or cluster names.',
     cost: 'none',
     dataMapPlot: 'highlight_labels',
+  },
+
+  // ---- Annotate → Labels around the map (A11) ---------------------------------
+
+  'labels.labelStyle': {
+    title: 'Label style',
+    what: 'Controls where group labels are placed: on top of the points or around the edge of the cloud.',
+    intuition:
+      '"Over the points" places labels directly on the density centre of each group, like DataMapPlot\'s default. ' +
+      '"Around the map" places labels outside the point cloud in radial order and connects each label to its group anchor with a leader line, like DataMapPlot\'s static output.',
+    cost: 'none',
+    dataMapPlot: 'add_labels',
+  },
+
+  'labels.leaderStyle': {
+    title: 'Leader line style',
+    what: 'Visual style of the lines connecting each around-the-map label to its group anchor.',
+    intuition:
+      '"Straight" draws a simple line. ' +
+      '"Curved" adds a slight quadratic bezier arc (like DataMapPlot\'s arc3 style). ' +
+      '"Wedge" draws a filled isoceles triangle that widens at the anchor end (like DataMapPlot\'s wedge arrowprops).',
+    cost: 'none',
+    dataMapPlot: 'arrowprops',
+  },
+
+  'labels.leaderColor': {
+    title: 'Leader color',
+    what: 'Color of the leader lines in around-the-map mode.',
+    intuition:
+      '"Like the cluster" colors each leader line in the same hue as the cluster it points to, making it easy to match label to region. ' +
+      '"Grey" uses a neutral grey for all leaders, which looks cleaner on dark backgrounds.',
+    cost: 'none',
+  },
+
+  'labels.leaderWidth': {
+    title: 'Leader width',
+    what: 'Stroke width (CSS pixels) of the leader lines in around-the-map mode.',
+    intuition:
+      'Thinner lines (1–2 px) look cleaner. Thicker lines (3–5 px) are more legible on complex backgrounds.',
+    cost: 'none',
   },
 
   // ---- Annotate → Label positions (A3) ----------------------------------------

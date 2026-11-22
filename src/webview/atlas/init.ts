@@ -81,10 +81,22 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
       multiLevel: l.multiLevel === true,
       // A9 highlighted
       highlightGroups: Array.isArray(l.highlightGroups) ? l.highlightGroups.filter((g) => typeof g === 'string') : [],
+      // A11 around labels
+      labelStyle: l.labelStyle === 'around' ? 'around' : 'over',
+      leaderStyle: l.leaderStyle === 'curved' ? 'curved' : l.leaderStyle === 'wedge' ? 'wedge' : 'straight',
+      leaderColor: l.leaderColor === 'grey' ? 'grey' : 'cluster',
+      leaderWidth: typeof l.leaderWidth === 'number' ? Math.min(10, Math.max(0.5, l.leaderWidth)) : 1.5,
     };
   }
   if (state?.view) {
-    atlas.view = { ...atlas.view, ...state.view };
+    atlas.view = {
+      ...atlas.view,
+      ...state.view,
+      // A12: restore glow settings.
+      glow: state.view.glow === true,
+      glowStrength: typeof state.view.glowStrength === 'number' ? Math.min(1, Math.max(0, state.view.glowStrength)) : 0.4,
+      glowRadius: typeof state.view.glowRadius === 'number' ? Math.min(200, Math.max(5, state.view.glowRadius)) : 40,
+    };
     atlas.renderer?.setStyle(atlas.view);
   }
   if (state && 'colorColumn' in state && (state.colorColumn === null || valid.has(state.colorColumn!))) {

@@ -4,10 +4,13 @@
  */
 
 import type { Atlas } from '../atlas.svelte';
+import type { OverlayState } from '../render/renderer';
 import type { PanelState, PrepareOptions, UmapParams } from '../../shared/protocol';
 import { vscode, float32ToBytes } from '../vscode';
 import { dataMapPlotSnippet, formatCount, polarsUmapSnippet, pythonSnippet } from '../logic';
 import { plotBackground } from './render';
+import { computeAroundLabels } from '../labels/around';
+import { renderGlow } from './glow';
 
 export function addCoordinates(atlas: Atlas): void {
   if (!atlas.prepared || !atlas.anchorXY) {
@@ -26,7 +29,51 @@ export function savePng(atlas: Atlas): void {
   if (!atlas.renderer) {
     return;
   }
-  atlas.renderer.toPngBytesWithOverlay(plotBackground(atlas), atlas).then((bytes) => {
+  const renderer = atlas.renderer;
+  const cssW = renderer['container']?.clientWidth ?? 800;
+  const cssH = renderer['container']?.clientHeight ?? 600;
+
+  // A11: compute around-labels for PNG export.
+  let aroundLabels: OverlayState['aroundLabels'];
+  if ((atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups?.length) {
+    aroundLabels = computeAroundLabels(
+      atlas.aroundLabelGroups,
+      (wx, wy) => renderer.projectWorld(wx, wy),
+      cssW, cssH,
+      {
+        leaderStyle: atlas.labels.leaderStyle ?? 'straight',
+        leaderColor: atlas.labels.leaderColor ?? 'cluster',
+      },
+    );
+  }
+
+  // A12: render glow to an offscreen canvas for export.
+  let glowCanvas: HTMLCanvasElement | undefined;
+  if (atlas.view.glow && atlas.anchorXY && atlas.nAnchors > 0) {
+    const gCanvas = document.createElement('canvas');
+    // Use per-anchor RGBA colors directly for maximum fidelity.
+    const rgbaPerPoint = atlas.colorsAnchors ?? null;
+    renderGlow(gCanvas, atlas.anchorXY, atlas.nAnchors, null, [],
+      (wx, wy) => renderer.projectWorld(wx, wy),
+      atlas.view.glowStrength ?? 0.4,
+      atlas.view.glowRadius ?? 40,
+      cssW, cssH,
+      rgbaPerPoint);
+    glowCanvas = gCanvas;
+  }
+
+  const overlay: OverlayState = {
+    titleOverlay: atlas.titleOverlay,
+    annotations: atlas.annotations,
+    aroundLabels,
+    leaderStyle: atlas.labels.leaderStyle,
+    leaderColor: atlas.labels.leaderColor,
+    leaderWidth: atlas.labels.leaderWidth,
+    labelFontFamily: atlas.labels.fontFamily || undefined,
+    glowCanvas,
+  };
+
+  renderer.toPngBytesWithOverlay(plotBackground(atlas), overlay).then((bytes) => {
     vscode.post({ type: 'savePng', bytes });
   });
 }

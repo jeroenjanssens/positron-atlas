@@ -9,6 +9,8 @@
   import HoverCard from './components/HoverCard.svelte';
   import TitleOverlay from './components/TitleOverlay.svelte';
   import AnnotationOverlay from './components/AnnotationOverlay.svelte';
+  import AroundLabelsOverlay from './components/AroundLabelsOverlay.svelte';
+  import GlowOverlay from './components/GlowOverlay.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
   import SearchBox from './components/SearchBox.svelte';
 
@@ -118,9 +120,15 @@
         }
       }}
       onkeydown={(e) => e.key === 'Enter' && (atlas.tool === 'annotate' ? atlas.handleAnnotateClick() : atlas.onClick(e as unknown as MouseEvent))}>
+      <!-- A12: Glow halo behind everything -->
+      <GlowOverlay {atlas} />
       <LassoLayer {atlas} />
       <TitleOverlay {atlas} />
       <AnnotationOverlay {atlas} />
+      <!-- A11: Around-the-map label HTML overlay -->
+      {#if (atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups}
+        <AroundLabelsOverlay {atlas} />
+      {/if}
     </div>
     <Legend {atlas} />
     <HoverCard {atlas} />

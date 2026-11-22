@@ -1,6 +1,7 @@
 /**
  * Label placement: label source, label codes, updateLabels.
- * Implements A2 (typography), A3 (draggable labels), A8 (multi-level), A9 (highlighted badges).
+ * Implements A2 (typography), A3 (draggable labels), A8 (multi-level), A9 (highlighted badges),
+ * A11 (labels around the map with leader lines).
  */
 
 import { clusterOutlines } from './colors';
@@ -15,6 +16,7 @@ import { plotBackground } from './render';
 import { MAX_LABELS, LABEL_INTERVAL_MS } from './types';
 import { ensureFont } from '../fonts';
 import type { MapLabel } from '../render/renderer';
+import { buildAroundLabelGroups } from '../labels/around';
 
 // ---------------------------------------------------------------------------
 // Weight range helpers (A2)
@@ -345,6 +347,61 @@ export function updateLabels(atlas: Atlas): void {
 
   // ---- Apply text case (A2) ----
   const applyCase = (text: string): string => opts.textCase === 'upper' ? text.toUpperCase() : text;
+
+  // ---- A11: around mode ----
+  // When labelStyle === 'around', build world-space group data for the AroundLabelsOverlay
+  // and skip the deck.gl TextLayer.  Fine labels are not shown in around mode.
+  const isAround = opts.labelStyle === 'around';
+  if (isAround) {
+    // Per-label cluster hex color (for leader lines colored like the cluster).
+    const clusterColors: (string | null)[] = placed.map((l) => {
+      const ci = colorIndex?.get(l.text);
+      if (ci !== undefined) return atlas.categoryColor(ci);
+      const gi = groups.names.indexOf(l.text);
+      if (atlas.labels.clusters && atlas.clusterPalette && gi >= 0) {
+        return atlas.clusterPalette[gi] ?? null;
+      }
+      return null;
+    });
+    const rawColors: [number, number, number, number][] = placed.map((l) => {
+      const ci = colorIndex?.get(l.text);
+      return ci !== undefined ? labelTextColor(hexToRgb(atlas.categoryColor(ci)), plain) : plain;
+    });
+    const rawBadges: (([number, number, number, number]) | undefined)[] = placed.map((l) => {
+      const rawText = l.text === '' ? '(empty)' : l.text;
+      const isHighlighted = highlightSet.has(rawText) || highlightSet.has(l.text);
+      if (!isHighlighted) return undefined;
+      const ci = colorIndex?.get(l.text);
+      const gi = groups.names.indexOf(l.text);
+      return ci !== undefined
+        ? [...readableBadge(hexToRgb(atlas.categoryColor(ci))), 230] as [number, number, number, number]
+        : groupColor && gi >= 0 && groupColor[gi]
+          ? [...readableBadge(groupColor[gi]!), 230] as [number, number, number, number]
+          : [...readableBadge([110, 110, 110]), 230] as [number, number, number, number];
+    });
+    atlas.aroundLabelGroups = buildAroundLabelGroups(
+      placed, sizes, rawColors, clusterColors, weights, allPriorities.slice(0, placed.length), rawBadges, applyCase,
+    );
+    atlas.labelCount = placed.length;
+
+    // Clear deck.gl labels (around mode uses the HTML overlay instead).
+    atlas.renderer.setLabels([], undefined);
+
+    // Show outlines as normal.
+    const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
+    const coloured = showOutlines ? clusterOutlines(atlas) : null;
+    if (coloured) {
+      atlas.renderer.setOutlines(coloured.rings, undefined, coloured.colors);
+    } else {
+      atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
+    }
+    return;
+  }
+
+  // ---- 'over' mode: clear around labels if switching back ----
+  if (atlas.aroundLabelGroups !== null) {
+    atlas.aroundLabelGroups = null;
+  }
 
   // ---- Build MapLabel array ----
   const out: MapLabel[] = [];

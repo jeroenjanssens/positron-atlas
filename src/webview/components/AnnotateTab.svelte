@@ -197,6 +197,37 @@
     <div class="hint muted">No column to label by: labels need a text, categorical, boolean or integer column.</div>
   {/if}
   {#if atlas.labels.column !== null || atlas.labels.clusters}
+    <!-- A11: label style (over / around) -->
+    <div class="select">
+      <span>Label style <Info id="labels.labelStyle" /></span>
+      <Select value={atlas.labels.labelStyle ?? 'over'} ariaLabel="Label style"
+        onchange={(e) => atlas.setLabelOptions({ labelStyle: (e.target as HTMLSelectElement).value as 'over' | 'around' })}>
+        <option value="over">Over the points</option>
+        <option value="around">Around the map</option>
+      </Select>
+    </div>
+    {#if (atlas.labels.labelStyle ?? 'over') === 'around'}
+      <div class="select">
+        <span>Leader style <Info id="labels.leaderStyle" /></span>
+        <Select value={atlas.labels.leaderStyle ?? 'straight'} ariaLabel="Leader style"
+          onchange={(e) => atlas.setLabelOptions({ leaderStyle: (e.target as HTMLSelectElement).value as 'straight' | 'curved' | 'wedge' })}>
+          <option value="straight">Straight</option>
+          <option value="curved">Curved</option>
+          <option value="wedge">Wedge</option>
+        </Select>
+      </div>
+      <div class="select">
+        <span>Leader color <Info id="labels.leaderColor" /></span>
+        <Select value={atlas.labels.leaderColor ?? 'cluster'} ariaLabel="Leader color"
+          onchange={(e) => atlas.setLabelOptions({ leaderColor: (e.target as HTMLSelectElement).value as 'cluster' | 'grey' })}>
+          <option value="cluster">Like the cluster</option>
+          <option value="grey">Grey</option>
+        </Select>
+      </div>
+      <Slider label="Leader width" value={atlas.labels.leaderWidth ?? 1.5} min={0.5} max={8} step={0.5}
+        hint="Stroke width of the leader lines in CSS pixels"
+        onchange={(v) => atlas.setLabelOptions({ leaderWidth: v })} infoId="labels.leaderWidth" />
+    {/if}
     <Slider label="Smallest label" bind:value={atlas.labels.minSize} min={6} max={40}
       hint="Font size (pixels) of labels for the smallest groups"
       onchange={(v) => atlas.setLabelOptions({ minSize: v, maxSize: Math.max(v, atlas.labels.maxSize) })}

@@ -171,6 +171,20 @@
         <button class="link" disabled={!atlas.view.background} title="Follow the color theme" onclick={() => atlas.setView({ background: '' })}>Theme</button>
       </span>
     </label>
+    <!-- A12: Glow toggle -->
+    <Checkbox
+      checked={atlas.view.glow ?? false}
+      onchange={(v) => atlas.setView({ glow: v })}>
+      Glow <Info id="explore.glow" />
+    </Checkbox>
+    {#if atlas.view.glow}
+      <Slider label="Strength" value={atlas.view.glowStrength ?? 0.4} min={0.05} max={1} step={0.05}
+        hint="Overall opacity of the glow layer (0 = invisible, 1 = opaque)"
+        onchange={(v) => atlas.setView({ glowStrength: v })} infoId="explore.glowStrength" />
+      <Slider label="Radius" value={atlas.view.glowRadius ?? 40} min={5} max={120} step={5}
+        hint="Gaussian blur radius in CSS pixels"
+        onchange={(v) => atlas.setView({ glowRadius: v })} infoId="explore.glowRadius" />
+    {/if}
     <Checkbox
       checked={atlas.view.images}
       disabled={!atlas.imageColumns}

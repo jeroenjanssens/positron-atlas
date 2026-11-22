@@ -18,6 +18,13 @@ export interface ViewOptions {
   imageInvert: boolean;
   /** Categorical colors: 'map' follows the layout, 'tableau' is Tableau 20, 'cvd' is colour-vision-safer. */
   palette: 'map' | 'tableau' | 'cvd';
+  // ---- A12 glow ----
+  /** Show a blurred density halo around each cluster/category group (A12). */
+  glow?: boolean;
+  /** Glow opacity/strength, 0–1 (default 0.4). */
+  glowStrength?: number;
+  /** Glow blur radius in CSS pixels (default 40). */
+  glowRadius?: number;
 }
 
 export type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
