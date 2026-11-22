@@ -42,30 +42,66 @@ function identityProject(wx: number, wy: number): [number, number] | null {
   return [wx, wy];
 }
 
+/** Returns the half-width and half-height of a label's bounding box. */
+function labelHalf(l: AroundLabel): { hw: number; hh: number } {
+  const hw = l.text.length * l.size * 0.56 / 2 + 5;
+  const hh = (l.size + 4) / 2 + 3;
+  return { hw, hh };
+}
+
+/** True if two axis-aligned boxes overlap. */
+function boxesOverlap(
+  ax: number, ay: number, ahw: number, ahh: number,
+  bx: number, by: number, bhw: number, bhh: number,
+): boolean {
+  return Math.abs(ax - bx) < ahw + bhw && Math.abs(ay - by) < ahh + bhh;
+}
+
+/** True if two line segments (p1→p2) and (p3→p4) properly intersect (interiors only). */
+function segmentsIntersect(
+  x1: number, y1: number, x2: number, y2: number,
+  x3: number, y3: number, x4: number, y4: number,
+): boolean {
+  const d1x = x2 - x1, d1y = y2 - y1;
+  const d2x = x4 - x3, d2y = y4 - y3;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-9) return false; // parallel
+  const t = ((x3 - x1) * d2y - (y3 - y1) * d2x) / denom;
+  const u = ((x3 - x1) * d1y - (y3 - y1) * d1x) / denom;
+  return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
+}
+
+/** Viewport constants matching defaults in around.ts. */
+const VIEW_W = 800;
+const VIEW_H = 600;
+const FIT_TOP_PX = 76;
+const LEGEND_WIDTH = 180;
+const LEGEND_HEIGHT = 300;
+
 // ---- Tests -------------------------------------------------------------------
 
 describe('computeAroundLabels', () => {
   it('returns empty array for empty input', () => {
-    const result = computeAroundLabels([], identityProject, 800, 600);
+    const result = computeAroundLabels([], identityProject, VIEW_W, VIEW_H);
     expect(result).toHaveLength(0);
   });
 
   it('returns empty array when viewW/viewH is 0', () => {
     const groups = [makeGroup('A', 400, 300)];
-    expect(computeAroundLabels(groups, identityProject, 0, 600)).toHaveLength(0);
-    expect(computeAroundLabels(groups, identityProject, 800, 0)).toHaveLength(0);
+    expect(computeAroundLabels(groups, identityProject, 0, VIEW_H)).toHaveLength(0);
+    expect(computeAroundLabels(groups, identityProject, VIEW_W, 0)).toHaveLength(0);
   });
 
   it('returns empty array when all projections return null', () => {
     const groups = [makeGroup('A', 400, 300), makeGroup('B', 200, 200)];
-    const result = computeAroundLabels(groups, () => null, 800, 600);
+    const result = computeAroundLabels(groups, () => null, VIEW_W, VIEW_H);
     expect(result).toHaveLength(0);
   });
 
-  it('places a single label outside the cloud bounding box + padding', () => {
+  it('places a single label outside the cloud extent + padding', () => {
     // Single group at world center (400, 300).
     const groups = [makeGroup('A', 400, 300, 'Group A')];
-    const result = computeAroundLabels(groups, identityProject, 800, 600, { padding: 50, labelMargin: 14 });
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H, { padding: 50 });
     expect(result).toHaveLength(1);
     const lbl = result[0];
     // The label should not be at the anchor.
@@ -80,8 +116,8 @@ describe('computeAroundLabels', () => {
       makeGroup('D', 100, 300),
       makeGroup('E', 700, 300),
     ];
-    const r1 = computeAroundLabels(groups, identityProject, 800, 600);
-    const r2 = computeAroundLabels(groups, identityProject, 800, 600);
+    const r1 = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
+    const r2 = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
     expect(r1).toHaveLength(r2.length);
     for (let i = 0; i < r1.length; i++) {
       expect(r1[i].screenX).toBeCloseTo(r2[i].screenX, 5);
@@ -90,23 +126,22 @@ describe('computeAroundLabels', () => {
     }
   });
 
-  it('order of groups should not change output for radial placement', () => {
+  it('order of groups should not change the set of output keys', () => {
     const groups = [
       makeGroup('A', 200, 150),
       makeGroup('B', 600, 150),
       makeGroup('C', 400, 450),
     ];
     const shuffled = [groups[2], groups[0], groups[1]];
-    const r1 = computeAroundLabels(groups, identityProject, 800, 600);
-    const r2 = computeAroundLabels(shuffled, identityProject, 800, 600);
+    const r1 = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
+    const r2 = computeAroundLabels(shuffled, identityProject, VIEW_W, VIEW_H);
     // Both should produce 3 labels with the same keys.
     const keys1 = r1.map((l) => l.key).sort();
     const keys2 = r2.map((l) => l.key).sort();
     expect(keys1).toEqual(keys2);
   });
 
-  it('no overlapping labels after placement (approximate check)', () => {
-    // Create many groups arranged in a cluster so overlap removal is exercised.
+  it('no two labels overlap after placement (strict)', () => {
     const groups: AroundLabelGroup[] = [];
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
@@ -118,32 +153,115 @@ describe('computeAroundLabels', () => {
         14,
       ));
     }
-    const result = computeAroundLabels(groups, identityProject, 800, 600, { padding: 60, labelMargin: 16 });
-    // For each pair of adjacent labels (sorted by angle), check approximate non-overlap.
-    // A strict no-overlap check is not guaranteed for a simple greedy algorithm with limited
-    // iterations, so we verify that most pairs do not overlap.
-    let overlapCount = 0;
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H, { padding: 60 });
+    expect(result.length).toBeGreaterThan(0);
+
     for (let i = 0; i < result.length; i++) {
-      const j = (i + 1) % result.length;
-      const a = result[i];
-      const b = result[j];
-      const aW = a.text.length * a.size * 0.56 / 2 + 4;
-      const aH = a.size / 2 + 2;
-      const bW = b.text.length * b.size * 0.56 / 2 + 4;
-      const bH = b.size / 2 + 2;
-      if (Math.abs(a.screenX - b.screenX) < aW + bW && Math.abs(a.screenY - b.screenY) < aH + bH) {
-        overlapCount++;
+      for (let j = i + 1; j < result.length; j++) {
+        const a = result[i];
+        const b = result[j];
+        const { hw: ahw, hh: ahh } = labelHalf(a);
+        const { hw: bhw, hh: bhh } = labelHalf(b);
+        expect(
+          boxesOverlap(a.screenX, a.screenY, ahw, ahh, b.screenX, b.screenY, bhw, bhh),
+        ).toBe(false);
       }
     }
-    // Allow at most 1 overlap (greedy algorithm may not resolve all in 10 iterations
-    // for very densely packed groups).
-    expect(overlapCount).toBeLessThanOrEqual(1);
+  });
+
+  it('no label rect intersects the toolbar/search band (top fitTopPx pixels)', () => {
+    const groups: AroundLabelGroup[] = [];
+    // Place all group anchors at the top of the viewport to stress the toolbar avoidance.
+    for (let i = 0; i < 6; i++) {
+      groups.push(makeGroup(`G${i}`, 100 + i * 100, 50, `Label ${i}`, 14));
+    }
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H, {
+      fitTopPx: FIT_TOP_PX,
+    });
+    for (const lbl of result) {
+      const { hh } = labelHalf(lbl);
+      // Top of label must be at or below FIT_TOP_PX.
+      expect(lbl.screenY - hh).toBeGreaterThanOrEqual(FIT_TOP_PX - 0.5);
+    }
+  });
+
+  it('no label rect intersects the legend (top-right corner)', () => {
+    const groups: AroundLabelGroup[] = [];
+    // Anchors at top-right to stress legend avoidance.
+    for (let i = 0; i < 4; i++) {
+      groups.push(makeGroup(`G${i}`, 650 + i * 30, 100 + i * 40, `Long label ${i}`, 14));
+    }
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H, {
+      legendWidth: LEGEND_WIDTH,
+      legendHeight: LEGEND_HEIGHT,
+    });
+    const legendX0 = VIEW_W - LEGEND_WIDTH - 8;
+    for (const lbl of result) {
+      const { hw, hh } = labelHalf(lbl);
+      // A label must NOT be in the top-right forbidden rect.
+      const inLegendX = lbl.screenX + hw > legendX0;
+      const inLegendY = lbl.screenY - hh < LEGEND_HEIGHT;
+      // Should not be simultaneously in both legend X and Y zones.
+      if (inLegendX && inLegendY) {
+        throw new Error(
+          `Label "${lbl.text}" at (${lbl.screenX.toFixed(0)}, ${lbl.screenY.toFixed(0)}) ` +
+          `overlaps the legend forbidden zone (x>${legendX0}, y<${LEGEND_HEIGHT})`,
+        );
+      }
+    }
+  });
+
+  it('no two leader lines cross', () => {
+    const groups: AroundLabelGroup[] = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      groups.push(makeGroup(
+        `G${i}`,
+        400 + Math.cos(angle) * 80,
+        300 + Math.sin(angle) * 80,
+        `Cluster ${i}`,
+        14,
+      ));
+    }
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
+    // Check all pairs of leaders for intersection.
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const a = result[i];
+        const b = result[j];
+        const crosses = segmentsIntersect(
+          a.anchorX, a.anchorY, a.screenX, a.screenY,
+          b.anchorX, b.anchorY, b.screenX, b.screenY,
+        );
+        expect(crosses).toBe(false);
+      }
+    }
+  });
+
+  it('max leader length is bounded below viewW (no extremely long leaders)', () => {
+    const groups: AroundLabelGroup[] = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2;
+      groups.push(makeGroup(
+        `G${i}`,
+        400 + Math.cos(angle) * 100,
+        300 + Math.sin(angle) * 100,
+        `Group ${i}`,
+        14,
+      ));
+    }
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
+    const maxAllowed = Math.max(VIEW_W, VIEW_H) * 0.75; // 450px for 600px viewport
+    for (const lbl of result) {
+      const len = Math.hypot(lbl.screenX - lbl.anchorX, lbl.screenY - lbl.anchorY);
+      expect(len).toBeLessThan(maxAllowed);
+    }
   });
 
   it('returns valid leaderPath strings for all styles', () => {
     const groups = [makeGroup('A', 350, 280), makeGroup('B', 450, 320)];
     for (const style of ['straight', 'curved', 'wedge'] as const) {
-      const result = computeAroundLabels(groups, identityProject, 800, 600, { leaderStyle: style });
+      const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H, { leaderStyle: style });
       for (const lbl of result) {
         expect(typeof lbl.leaderPath).toBe('string');
         expect(lbl.leaderPath.length).toBeGreaterThan(0);
@@ -161,9 +279,8 @@ describe('computeAroundLabels', () => {
 
   it('anchor position matches the projected group position', () => {
     const groups = [makeGroup('A', 200, 100), makeGroup('B', 600, 400)];
-    const result = computeAroundLabels(groups, identityProject, 800, 600);
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
     expect(result).toHaveLength(2);
-    // Sort by key for consistent access.
     const aLabel = result.find((l) => l.key === 'A')!;
     const bLabel = result.find((l) => l.key === 'B')!;
     expect(aLabel).toBeDefined();
@@ -184,9 +301,31 @@ describe('computeAroundLabels', () => {
       if (wx < -100 || wy < -100) return null;
       return [wx, wy];
     };
-    const result = computeAroundLabels(groups, projectFn, 800, 600);
+    const result = computeAroundLabels(groups, projectFn, VIEW_W, VIEW_H);
     // Should include A and C, not B.
     expect(result.map((l) => l.key).sort()).toEqual(['A', 'C'].sort());
+  });
+
+  it('all labels stay inside the viewport', () => {
+    const groups: AroundLabelGroup[] = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      groups.push(makeGroup(
+        `G${i}`,
+        400 + Math.cos(angle) * 200,
+        300 + Math.sin(angle) * 200,
+        `Group ${i}`,
+        14,
+      ));
+    }
+    const result = computeAroundLabels(groups, identityProject, VIEW_W, VIEW_H);
+    for (const lbl of result) {
+      const { hw, hh } = labelHalf(lbl);
+      expect(lbl.screenX - hw).toBeGreaterThan(-1);
+      expect(lbl.screenX + hw).toBeLessThan(VIEW_W + 1);
+      expect(lbl.screenY - hh).toBeGreaterThan(-1);
+      expect(lbl.screenY + hh).toBeLessThan(VIEW_H + 1);
+    }
   });
 });
 

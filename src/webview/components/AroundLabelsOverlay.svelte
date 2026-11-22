@@ -62,6 +62,8 @@
       {
         leaderStyle: opts.leaderStyle ?? 'straight',
         leaderColor: opts.leaderColor ?? 'cluster',
+        fitTopPx: 76,
+        legendWidth: atlas.legendWidth(),
       },
     );
 

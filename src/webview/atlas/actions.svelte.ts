@@ -43,6 +43,8 @@ export function savePng(atlas: Atlas): void {
       {
         leaderStyle: atlas.labels.leaderStyle ?? 'straight',
         leaderColor: atlas.labels.leaderColor ?? 'cluster',
+        fitTopPx: 76,
+        legendWidth: atlas.legendWidth(),
       },
     );
   }

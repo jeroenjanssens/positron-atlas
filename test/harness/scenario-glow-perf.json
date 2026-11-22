@@ -1,0 +1,46 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 3000\nk = rng.integers(0, 8, n)\ncenters = rng.normal(0, 7, (8, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = pd.Categorical([f'C{v+1}' for v in k])\ndf.shape",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "enable glow",
+      "click": "#tab-explore",
+      "until": "a.ui.tab === 'explore'"
+    },
+    {
+      "name": "enable glow toggle",
+      "eval": "const display = Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Glow')); if (display) { const cb = display.querySelector('input[type=checkbox]'); cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }",
+      "until": "a.view.glow === true",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for initial glow render",
+      "until": "document.querySelector('.glow-canvas') !== null",
+      "timeout": 10000
+    },
+    {
+      "name": "baseline glow at 3k points",
+      "eval": "const times3k = []; for (let i = 0; i < 5; i++) { const t0 = performance.now(); a.glowVersion++; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); times3k.push(Math.round(performance.now() - t0)); } window.__glow3kMs = Math.round(times3k.reduce((s,t)=>s+t,0)/times3k.length); window.__glow3kTimes = times3k",
+      "until": "window.__glow3kMs !== undefined",
+      "timeout": 10000,
+      "report": "{ nPoints: a.nAnchors, times_ms: window.__glow3kTimes, avg_ms: window.__glow3kMs }"
+    },
+    {
+      "name": "inject 1M synthetic anchor positions and measure glow time",
+      "eval": "const N = 1_000_000; const xy = new Float32Array(N * 2); for (let i = 0; i < N; i++) { xy[i*2] = (Math.sin(i * 0.00613) * 0.4 + 0.5) * 400 + 200; xy[i*2+1] = (Math.cos(i * 0.00891) * 0.4 + 0.5) * 300 + 150; } const saved = { xy: a.anchorXY, n: a.nAnchors }; a.anchorXY = xy; a.nAnchors = N; const times1M = []; for (let i = 0; i < 5; i++) { const t0 = performance.now(); a.glowVersion++; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); times1M.push(Math.round(performance.now() - t0)); } window.__glow1MMs = Math.round(times1M.reduce((s,t)=>s+t,0)/times1M.length); window.__glow1MTimes = times1M; a.anchorXY = saved.xy; a.nAnchors = saved.n",
+      "until": "window.__glow1MMs !== undefined",
+      "timeout": 60000,
+      "report": "{ nPoints: 1000000, times_ms: window.__glow1MTimes, avg_ms: window.__glow1MMs }"
+    }
+  ]
+}

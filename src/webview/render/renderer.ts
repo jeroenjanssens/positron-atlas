@@ -673,12 +673,13 @@ export class ScatterRenderer {
     g.fillStyle = background;
     g.fillRect(0, 0, out.width, out.height);
 
-    // A12: draw glow *under* the deck.gl canvas.
+    g.drawImage(canvas, 0, 0);
+
+    // A12: draw glow *over* the deck.gl canvas so soft halos are visible in the
+    // exported PNG (matches the live z-index:2 stacking order in GlowOverlay.svelte).
     if (overlay.glowCanvas && overlay.glowCanvas.width > 0) {
       g.drawImage(overlay.glowCanvas, 0, 0, out.width, out.height);
     }
-
-    g.drawImage(canvas, 0, 0);
 
     // Build annotation screen positions for compositing.
     const dpr = window.devicePixelRatio || 1;

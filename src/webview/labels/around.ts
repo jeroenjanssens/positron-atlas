@@ -1,14 +1,18 @@
 /**
- * A11 — Labels around the map: radial placement + overlap removal.
+ * A11 — Labels around the map: ring-based placement + overlap removal.
  *
- * Labels are placed outside the point cloud's bounding box in the radial
- * direction of each group's anchor.  A simple greedy nudge pass removes
- * overlaps by sliding labels along the arc.  The algorithm is deterministic:
- * same inputs → same output.
+ * Labels are placed on a circular ring just outside the point cloud in screen
+ * space.  The ring radius is derived from the max distance from the cloud
+ * centroid to any group anchor.  Labels are sorted by their natural angle so
+ * leaders never cross (anchors are always inside the ring).  A greedy nudge
+ * pass spreads overlapping labels along the ring with minimal angular movement.
+ *
+ * Forbidden zones: toolbar + search box band (top ~76 px) and the legend
+ * in the top-right corner.  Labels are clamped inside the viewport after
+ * nudging.
  *
  * All coordinates are **screen pixels** (CSS px).  The caller supplies a
- * `projectFn` that maps world coordinates to screen coordinates and is called
- * once per group.
+ * `projectFn` that maps world coordinates to screen coordinates.
  */
 
 import type { GroupLabel } from './place';
@@ -41,10 +45,17 @@ export interface AroundLabel extends AroundLabelGroup {
 }
 
 export interface AroundOptions {
-  /** Extra pixels outside the bounding box before placing labels (default 50). */
+  /**
+   * Extra pixels beyond the cloud extent radius before placing labels (default 60).
+   * Total ring radius = max_anchor_distance_from_centroid + padding.
+   */
   padding?: number;
-  /** Additional margin between box edge and label center (default 14). */
-  labelMargin?: number;
+  /** Height of the top toolbar + search-box band to keep labels below (default 76). */
+  fitTopPx?: number;
+  /** Width of the legend panel in the top-right corner to avoid (default 180). */
+  legendWidth?: number;
+  /** Height of the legend panel to treat as forbidden (default 300). */
+  legendHeight?: number;
   /** Leader line style (default 'straight'). */
   leaderStyle?: 'straight' | 'curved' | 'wedge';
   /** Leader line color mode (default 'cluster'). */
@@ -56,29 +67,6 @@ function estimateTextWidth(text: string, size: number): number {
   return text.length * size * 0.56;
 }
 
-/** Intersect a ray from (cx, cy) in direction `angle` with an axis-aligned box. */
-function rayBoxIntersect(
-  cx: number, cy: number, angle: number,
-  x0: number, y0: number, x1: number, y1: number,
-): [number, number] {
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
-  let tMin = Infinity;
-  if (Math.abs(dx) > 1e-9) {
-    const t = dx > 0 ? (x1 - cx) / dx : (x0 - cx) / dx;
-    if (t > 0) tMin = Math.min(tMin, t);
-  }
-  if (Math.abs(dy) > 1e-9) {
-    const t = dy > 0 ? (y1 - cy) / dy : (y0 - cy) / dy;
-    if (t > 0) tMin = Math.min(tMin, t);
-  }
-  if (!isFinite(tMin)) {
-    // Fallback: use a large radius
-    tMin = Math.max(x1 - x0, y1 - y0);
-  }
-  return [cx + tMin * dx, cy + tMin * dy];
-}
-
 /** Build a leader path string for SVG. */
 function buildLeaderPath(
   ax: number, ay: number,
@@ -87,26 +75,24 @@ function buildLeaderPath(
   width: number,
 ): string {
   if (style === 'straight') {
-    return `M${ax},${ay} L${lx},${ly}`;
+    return `M${ax.toFixed(1)},${ay.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)}`;
   }
   if (style === 'curved') {
-    // Mid-point with a slight perpendicular offset for the control point.
     const mx = (ax + lx) / 2;
     const my = (ay + ly) / 2;
     const dx = lx - ax;
     const dy = ly - ay;
-    // Perpendicular to the line, 20% of the length.
     const len = Math.hypot(dx, dy);
     const perp = len > 0 ? 0.2 : 0;
     const cpx = mx - dy * perp;
     const cpy = my + dx * perp;
-    return `M${ax},${ay} Q${cpx},${cpy} ${lx},${ly}`;
+    return `M${ax.toFixed(1)},${ay.toFixed(1)} Q${cpx.toFixed(1)},${cpy.toFixed(1)} ${lx.toFixed(1)},${ly.toFixed(1)}`;
   }
-  // wedge: a filled isoceles triangle from anchor to label
+  // wedge: filled isoceles triangle from anchor to label
   const dx = lx - ax;
   const dy = ly - ay;
   const len = Math.hypot(dx, dy);
-  if (len < 1) return `M${ax},${ay} L${lx},${ly}`;
+  if (len < 1) return `M${ax.toFixed(1)},${ay.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)}`;
   const nx = -dy / len;
   const ny = dx / len;
   const tailW = width * 1.5;
@@ -114,21 +100,26 @@ function buildLeaderPath(
   const p1y = ay + ny * tailW;
   const p2x = ax - nx * tailW;
   const p2y = ay - ny * tailW;
-  return `M${p1x},${p1y} L${lx},${ly} L${p2x},${p2y} Z`;
+  return `M${p1x.toFixed(1)},${p1y.toFixed(1)} L${lx.toFixed(1)},${ly.toFixed(1)} L${p2x.toFixed(1)},${p2y.toFixed(1)} Z`;
 }
 
 /**
  * Compute around-the-map label screen positions from world-space group data.
  *
- * Called every animation frame in the overlay component so labels track the
- * current view during pan/zoom.
+ * Uses a ring-based layout:
+ *   - Labels sit on a circle of radius (max_anchor_distance_from_centroid + padding).
+ *   - Each label's initial position on the ring is at its natural angle (angle from
+ *     centroid to anchor).  Sorting by angle ensures leaders never cross.
+ *   - A greedy nudge pass spreads overlapping labels along the ring.
+ *   - Labels are kept away from the toolbar/search band (top fitTopPx pixels),
+ *     the legend top-right corner, and the viewport edges.
  *
- * @param groups   World-space group data (from updateLabels in around mode).
- * @param projectFn  Maps world (wx, wy) → screen (sx, sy), or null if off-screen.
+ * @param groups   World-space group data.
+ * @param projectFn  Maps world (wx, wy) → screen (sx, sy) or null.
  * @param viewW    Viewport width in CSS pixels.
  * @param viewH    Viewport height in CSS pixels.
  * @param opts     Placement options.
- * @returns        Screen-space labels ready to render, or [] if the view is not ready.
+ * @returns        Screen-space labels ready to render, or [] if view is not ready.
  */
 export function computeAroundLabels(
   groups: AroundLabelGroup[],
@@ -139,129 +130,128 @@ export function computeAroundLabels(
 ): AroundLabel[] {
   if (groups.length === 0 || viewW <= 0 || viewH <= 0) return [];
 
-  const padding = opts.padding ?? 50;
-  const labelMargin = opts.labelMargin ?? 14;
+  const padding     = opts.padding     ?? 60;
+  const FIT_TOP     = opts.fitTopPx    ?? 76;
+  const legendWidth = opts.legendWidth  ?? 180;
+  const legendHeight = opts.legendHeight ?? 300;
   const leaderStyle = opts.leaderStyle ?? 'straight';
-  const leaderColor = opts.leaderColor ?? 'cluster';
 
   // 1. Project all group anchors to screen space.
-  const projected: ([number, number] | null)[] = groups.map(g => projectFn(g.worldX, g.worldY));
+  const pts = groups.map(g => projectFn(g.worldX, g.worldY));
 
-  // 2. Compute cloud bounding box from projected anchor positions.
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const pt of projected) {
-    if (!pt) continue;
-    if (pt[0] < minX) minX = pt[0];
-    if (pt[0] > maxX) maxX = pt[0];
-    if (pt[1] < minY) minY = pt[1];
-    if (pt[1] > maxY) maxY = pt[1];
+  // 2. Compute centroid of all visible anchors.
+  let sumX = 0, sumY = 0, nVisible = 0;
+  for (const p of pts) {
+    if (p) { sumX += p[0]; sumY += p[1]; nVisible++; }
   }
-  if (!isFinite(minX)) return [];
+  if (nVisible === 0) return [];
+  const cx = sumX / nVisible;
+  const cy = sumY / nVisible;
 
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const bx0 = minX - padding;
-  const by0 = minY - padding;
-  const bx1 = maxX + padding;
-  const by1 = maxY + padding;
+  // 3. Ring radius = max anchor distance from centroid + padding.
+  let maxR = 10; // ensure a minimum non-degenerate ring
+  for (const p of pts) {
+    if (p) maxR = Math.max(maxR, Math.hypot(p[0] - cx, p[1] - cy));
+  }
+  const R = maxR + padding;
 
-  // 3. For each group, compute its radial angle and place it at the box exterior.
-  type Candidate = {
-    index: number;
-    angle: number;
-    screenX: number;
-    screenY: number;
-    anchorX: number;
-    anchorY: number;
-    w: number; // estimated half-width
-    h: number; // estimated half-height
+  // 4. Build slots (one per visible group): natural angle + size info.
+  type Slot = {
+    idx: number;
+    angle: number;    // angle on ring, in [0, 2π), adjusted during spread
+    ax: number; ay: number; // anchor in screen coords
+    hw: number; hh: number; // half-width / half-height of label bbox
   };
+  const TWO_PI = 2 * Math.PI;
 
-  const candidates: Candidate[] = [];
+  const slots: Slot[] = [];
   for (let i = 0; i < groups.length; i++) {
-    const pt = projected[i];
-    if (!pt) continue;
-    const [ax, ay] = pt;
-
-    const dx = ax - cx;
-    const dy = ay - cy;
-    // If the anchor is at the cloud center (degenerate case), place it to the right.
-    const angle = Math.abs(dx) + Math.abs(dy) < 1 ? 0 : Math.atan2(dy, dx);
-
-    // Find where this ray exits the padded bounding box.
-    const [ex, ey] = rayBoxIntersect(cx, cy, angle, bx0, by0, bx1, by1);
-
-    // Offset further so the label sits outside the box.
+    const p = pts[i];
+    if (!p) continue;
     const g = groups[i];
-    const tw = estimateTextWidth(g.text, g.size);
-    const th = g.size + 4;
-    // Push the label out so its near edge clears the box.
-    const extra = labelMargin + (leaderStyle === 'wedge' ? 8 : 0);
-    const lx = ex + extra * Math.cos(angle);
-    const ly = ey + extra * Math.sin(angle);
-
-    candidates.push({
-      index: i,
-      angle,
-      screenX: lx,
-      screenY: ly,
-      anchorX: ax,
-      anchorY: ay,
-      w: tw / 2 + 4,
-      h: th / 2 + 2,
+    const rawAngle = Math.atan2(p[1] - cy, p[0] - cx);
+    slots.push({
+      idx: i,
+      angle: ((rawAngle % TWO_PI) + TWO_PI) % TWO_PI, // normalise to [0, 2π)
+      ax: p[0], ay: p[1],
+      hw: estimateTextWidth(g.text, g.size) / 2 + 5,
+      hh: (g.size + 4) / 2 + 3,
     });
   }
+  if (slots.length === 0) return [];
 
-  if (candidates.length === 0) return [];
+  // 5. Sort by angle — this guarantees that labels in angular order won't have
+  //    crossing leaders (anchors are always inside the ring).
+  slots.sort((a, b) => a.angle - b.angle);
 
-  // 4. Sort by angle for deterministic output.
-  candidates.sort((a, b) => a.angle - b.angle);
+  // 6. Helper: compute the clamped screen position for a slot's current angle.
+  //    Keeps the label out of the toolbar/search band, legend, and viewport edges.
+  const footerMargin = 24; // footer bar height
+  const legendX0 = viewW - legendWidth - 8; // left edge of legend forbidden zone
 
-  // 5. Overlap removal: greedy nudge along the arc (up to 10 iterations).
-  const NUDGE_DEG = 0.08; // radians (~4.6°)
-  for (let iter = 0; iter < 10; iter++) {
+  const slotPos = (s: Slot): [number, number] => {
+    let lx = cx + R * Math.cos(s.angle);
+    let ly = cy + R * Math.sin(s.angle);
+
+    // Keep below toolbar + search box band.
+    if (ly - s.hh < FIT_TOP) ly = FIT_TOP + s.hh + 2;
+
+    // Keep away from legend (top-right corner).
+    if (lx + s.hw > legendX0 && ly - s.hh < legendHeight) {
+      lx = legendX0 - s.hw - 2;
+    }
+
+    // Clamp to viewport edges.
+    lx = Math.max(s.hw + 2, Math.min(viewW - s.hw - 2, lx));
+    ly = Math.max(FIT_TOP + s.hh + 2, Math.min(viewH - s.hh - footerMargin, ly));
+
+    return [lx, ly];
+  };
+
+  // 7. Greedy spread: nudge overlapping adjacent labels along the ring.
+  //    30 iterations handles ≤ 15 groups reliably.
+  const STEP = 0.07; // ~4° per nudge step
+  for (let iter = 0; iter < 30; iter++) {
     let changed = false;
-    for (let i = 0; i < candidates.length; i++) {
-      const j = (i + 1) % candidates.length;
+    for (let i = 0; i < slots.length; i++) {
+      const j = (i + 1) % slots.length;
       if (j === i) continue;
-      const a = candidates[i];
-      const b = candidates[j];
-      const overlapX = Math.abs(a.screenX - b.screenX) < a.w + b.w;
-      const overlapY = Math.abs(a.screenY - b.screenY) < a.h + b.h;
+      const a = slots[i];
+      const b = slots[j];
+      const [ax, ay] = slotPos(a);
+      const [bx, by] = slotPos(b);
+
+      // Axis-aligned bounding-box overlap test.
+      const overlapX = Math.abs(ax - bx) < a.hw + b.hw;
+      const overlapY = Math.abs(ay - by) < a.hh + b.hh;
+
       if (overlapX && overlapY) {
-        // Nudge b by increasing its angle (or decreasing for the last→first pair).
-        const dAngle = j === 0 ? -NUDGE_DEG : NUDGE_DEG;
-        b.angle += dAngle;
-        const [ex, ey] = rayBoxIntersect(cx, cy, b.angle, bx0, by0, bx1, by1);
-        b.screenX = ex + labelMargin * Math.cos(b.angle);
-        b.screenY = ey + labelMargin * Math.sin(b.angle);
+        // Push b's angle away from a.  For the wrap-around pair (j===0,
+        // last slot → first slot), push backward to keep order intact.
+        const delta = j === 0 ? -STEP : STEP;
+        b.angle = ((b.angle + delta) % TWO_PI + TWO_PI) % TWO_PI;
         changed = true;
       }
     }
     if (!changed) break;
   }
 
-  // 6. Build the output AroundLabel array.
-  const result: AroundLabel[] = candidates.map(c => {
-    const g = groups[c.index];
-    // Apply drag offset: same key-based lookup as in updateLabels.
-    const leaderPath = buildLeaderPath(
-      c.anchorX, c.anchorY,
-      c.screenX, c.screenY,
-      leaderStyle,
-      opts.leaderColor === 'grey' ? 1 : (g.size * 0.07 + 0.8), // leader width proportional to label size
-    );
+  // 8. Build output AroundLabel array.
+  const leaderW = 1.5; // base leader width; callers can override via leaderWidth
+  return slots.map(s => {
+    const g = groups[s.idx];
+    const [lx, ly] = slotPos(s);
+    const lw = g.size * 0.07 + 0.8;
+    const leaderPath = buildLeaderPath(s.ax, s.ay, lx, ly, leaderStyle, lw);
     return {
       ...g,
-      screenX: c.screenX,
-      screenY: c.screenY,
-      anchorX: c.anchorX,
-      anchorY: c.anchorY,
+      screenX: lx,
+      screenY: ly,
+      anchorX: s.ax,
+      anchorY: s.ay,
       leaderPath,
     };
   });
-
-  return result;
 }
 
 /**

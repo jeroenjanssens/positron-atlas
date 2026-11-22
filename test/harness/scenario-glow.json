@@ -62,9 +62,11 @@
       "screenshot": "glow-strong.png"
     },
     {
-      "name": "png export with glow",
-      "eval": "a.savePng()",
-      "until": "h.png.length > 1000"
+      "name": "png export with glow — pixel brightness assertion",
+      "eval": "const glowCanvas = document.querySelector('.glow-canvas'); const overlay = { titleOverlay: undefined, annotations: new Map(), aroundLabels: undefined, leaderStyle: undefined, leaderColor: undefined, leaderWidth: undefined, labelFontFamily: undefined, glowCanvas: glowCanvas || undefined }; const bytes = await a.renderer.toPngBytesWithOverlay('#111111', overlay); const blob = new Blob([bytes], {type:'image/png'}); const url = URL.createObjectURL(blob); const img = new Image(); await new Promise((r,j) => { img.onload=r; img.onerror=j; img.src=url; }); const c = document.createElement('canvas'); c.width=img.width; c.height=img.height; const gc=c.getContext('2d'); gc.drawImage(img,0,0); const d=gc.getImageData(0,0,c.width,c.height).data; let total=0; for(let k=0;k<d.length;k+=4) total+=d[k]+d[k+1]+d[k+2]; window.__glowPngBrightness=total; URL.revokeObjectURL(url)",
+      "until": "window.__glowPngBrightness !== undefined",
+      "assert": "window.__glowPngBrightness > window.__noGlowBrightness",
+      "report": "{ brightnessNoGlow: window.__noGlowBrightness, brightnessWithGlow: window.__glowPngBrightness, ratio: (window.__glowPngBrightness / window.__noGlowBrightness).toFixed(3) }"
     },
     {
       "name": "disable glow",
