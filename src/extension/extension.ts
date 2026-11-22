@@ -62,7 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     // ---- Navigation commands (item 1) -------------------------------------------
-    // All 24 actionIds forwarded to the active webview panel.
+    // Forwarded to the focused (or active) Atlas tab only.
     ...(([
       'view.reset', 'view.zoomIn', 'view.zoomOut',
       'view.panLeft', 'view.panRight', 'view.panUp', 'view.panDown',
@@ -74,9 +74,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'select.all', 'select.clear',
     ] as ActionId[]).map((actionId) =>
       vscode.commands.registerCommand(`positronAtlas.nav.${actionId}`, () => {
-        for (const panel of AtlasPanel.getAll()) {
-          panel.forwardCommand(actionId);
-        }
+        AtlasPanel.commandTarget()?.forwardCommand(actionId);
       }),
     )),
     // ---- Configuration change listener (item 1) ----------------------------------

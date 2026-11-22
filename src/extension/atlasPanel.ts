@@ -140,9 +140,20 @@ export class AtlasPanel {
     }
   }
 
-  /** Return all open panels (for command forwarding). */
+  /** The panel whose webview has keyboard focus (set from the webview's focus and blur). */
+  private static focused: AtlasPanel | undefined;
+
+  /** Return all open panels. */
   static getAll(): AtlasPanel[] {
     return [...AtlasPanel.panels];
+  }
+
+  /**
+   * The panel a command applies to: the focused one (keyboard shortcuts only fire while an
+   * Atlas webview has focus), else the active Atlas tab (command palette).
+   */
+  static commandTarget(): AtlasPanel | undefined {
+    return AtlasPanel.focused ?? [...AtlasPanel.panels].find((p) => p.panel.active);
   }
 
   private post(msg: ToWebview): void {
@@ -720,9 +731,11 @@ export class AtlasPanel {
       }
       // --- Navigation focus tracking (item 1) ---
       case 'webviewFocused':
+        AtlasPanel.focused = this;
         await vscode.commands.executeCommand('setContext', 'positronAtlas.webviewFocused', true).then(undefined, () => undefined);
         break;
       case 'webviewBlurred':
+        if (AtlasPanel.focused === this) AtlasPanel.focused = undefined;
         await vscode.commands.executeCommand('setContext', 'positronAtlas.webviewFocused', false).then(undefined, () => undefined);
         break;
     }
@@ -936,6 +949,7 @@ export class AtlasPanel {
     this.disposed = true;
     this.busy?.cancel();
     AtlasPanel.panels.delete(this);
+    if (AtlasPanel.focused === this) AtlasPanel.focused = undefined;
     if (this.jobId) {
       void this.bridge.call('cleanup', this.jobId).catch(() => undefined);
     }
