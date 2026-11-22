@@ -364,11 +364,25 @@ export class ScatterRenderer {
 
   /**
    * Convert a screen-pixel drag delta to a world-space delta (B5).
-   * Uses the viewport's unproject so the result is correct under 2D rotation and in 3D.
+   * Uses the viewport's unproject so the result is correct under 2D rotation.
+   * In 3D, pass targetWorldZ so the unproject is at the annotation's depth plane
+   * (otherwise the perspective near-plane gives incorrect XY deltas).
+   *
    * x0, y0 are the drag-start CSS pixel coordinates (relative to the canvas).
    * dx, dy are the screen-pixel displacement.
+   * targetWorldZ (optional) the world Z of the annotation being dragged (3D only).
    */
-  screenDeltaToWorld(x0: number, y0: number, dx: number, dy: number): [number, number] {
+  screenDeltaToWorld(x0: number, y0: number, dx: number, dy: number, targetWorldZ?: number): [number, number] {
+    const vp = (this.deck as any).getViewports?.()[0];
+    if (vp && this.dims === 3 && targetWorldZ !== undefined) {
+      // In 3D perspective mode: unproject at the annotation's depth so the XY delta
+      // is in the correct plane (not the near-plane).
+      const proj0 = vp.project([0, 0, targetWorldZ]);
+      const ndcZ = proj0[2] ?? 0.5;  // NDC depth for this world Z
+      const [wx0, wy0] = vp.unproject([x0, y0, ndcZ]);
+      const [wx1, wy1] = vp.unproject([x0 + dx, y0 + dy, ndcZ]);
+      return [wx1 - wx0, wy1 - wy0];
+    }
     const w0 = this.unproject(x0, y0);
     const w1 = this.unproject(x0 + dx, y0 + dy);
     return [w1[0] - w0[0], w1[1] - w0[1]];

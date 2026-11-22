@@ -58,6 +58,7 @@
   let dragStartClientY = 0;
   let dragStartCanvasX = 0; // canvas-relative start (for renderer.screenDeltaToWorld)
   let dragStartCanvasY = 0;
+  let dragWorldZ: number | undefined; // worldZ of the annotation being dragged (for 3D depth-correct drag)
   let origOffsetX = 0;
   let origOffsetY = 0;
   let isDragging = false;
@@ -73,6 +74,7 @@
     dragStartClientY = e.clientY;
     origOffsetX = ann.offsetX;
     origOffsetY = ann.offsetY;
+    dragWorldZ = ann.worldZ; // B5: used for depth-correct unproject in 3D
     isDragging = false;
     // Record canvas-relative start position for world-delta computation.
     const canvas = document.querySelector('canvas');
@@ -90,8 +92,9 @@
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDragging = true;
     if (isDragging) {
       // Convert screen-pixel delta to world delta (B5: map-coordinate offsets).
+      // In 3D: pass dragWorldZ for depth-correct unproject at the annotation's depth plane.
       const worldDelta = atlas.renderer.screenDeltaToWorld(
-        dragStartCanvasX, dragStartCanvasY, dx, dy,
+        dragStartCanvasX, dragStartCanvasY, dx, dy, dragWorldZ,
       );
       atlas.updateAnnotationOffset(dragId, origOffsetX + worldDelta[0], origOffsetY + worldDelta[1]);
     }
