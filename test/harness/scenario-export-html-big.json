@@ -1,0 +1,45 @@
+{
+  "variable": "mnist",
+  "setup": "import gzip\nimport urllib.request\nfrom pathlib import Path\n\nimport numpy as np\n\nCACHE = Path.home() / \".cache\" / \"positron-atlas\" / \"datasets\"\n\ndef download(url: str, name: str) -> Path:\n    path = CACHE / name\n    if not path.exists():\n        path.parent.mkdir(parents=True, exist_ok=True)\n        tmp = path.with_suffix(path.suffix + '.part')\n        urllib.request.urlretrieve(url, tmp)\n        tmp.rename(path)\n    return path\n\ndef read_idx(path: Path) -> np.ndarray:\n    with gzip.open(path, 'rb') as f:\n        data = f.read()\n    ndim = data[3]\n    shape = tuple(int.from_bytes(data[4 + 4 * i : 8 + 4 * i], 'big') for i in range(ndim))\n    arr = np.frombuffer(data, dtype=np.uint8, offset=4 + 4 * ndim)\n    return arr.reshape(shape[0], -1) if ndim > 1 else arr\n\nBASE = 'https://ossci-datasets.s3.amazonaws.com/mnist/'\nfiles = {name: download(BASE + name, 'mnist-' + name) for name in ['train-images-idx3-ubyte.gz', 'train-labels-idx1-ubyte.gz', 't10k-images-idx3-ubyte.gz', 't10k-labels-idx1-ubyte.gz']}\npixels = np.concatenate([read_idx(files['train-images-idx3-ubyte.gz']), read_idx(files['t10k-images-idx3-ubyte.gz'])])\nlabels = np.concatenate([read_idx(files['train-labels-idx1-ubyte.gz']), read_idx(files['t10k-labels-idx1-ubyte.gz'])])\n\nimport polars as pl\nLABELS = ['0','1','2','3','4','5','6','7','8','9']\nmnist = pl.from_numpy(pixels, schema=[f'px{i}' for i in range(pixels.shape[1])]).with_columns(\n    pl.Series('digit', [LABELS[v] for v in labels], dtype=pl.Enum(LABELS)),\n    pl.Series('label', [f'mnist_{i:05d}' for i in range(len(labels))])\n)\nmnist.shape\n",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 50,
+    "maxAnchorsCpu": 20000
+  },
+  "steps": [
+    {
+      "name": "wait for ready (MNIST UMAP can take >1 min)",
+      "until": "a.phase === 'ready'",
+      "timeout": 300000
+    },
+    {
+      "name": "set color column to digit",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'digit'); a.view.palette = 'default'; a.setColorColumn(col.index);",
+      "until": "a.colorColumn !== null && a.colorMeta !== null && a.colorsAll !== null",
+      "timeout": 30000
+    },
+    {
+      "name": "export html — 70k points, no images",
+      "eval": "const labelCol = a.describe.columns.find(c => c.name === 'label'); const digitCol = a.describe.columns.find(c => c.name === 'digit'); a.htmlExportOpen = true; a.exportHtml({ tooltipColumns: [labelCol.index, digitCol.index], linkColumn: -1, maxChars: 100, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 120000,
+      "assert": ["h.htmlExport.ok === true", "h.htmlExport.nPoints >= 50000"],
+      "report": "{ size: h.htmlExport.size, nPoints: h.htmlExport.nPoints, url: h.htmlExport.url, loadMs: window.__lastViewerLoadMs }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 60000,
+      "openPageScreenshot": "viewer-mnist-70k.png",
+      "checkOpenPagePixels": { "background": "#1e1e1e", "threshold": 20, "minCount": 1000 },
+      "openPageSteps": [
+        {
+          "name": "viewer loaded (70k points)",
+          "assert": "v.nPoints >= 50000",
+          "report": "{ nPoints: v.nPoints, legendCategories: v.legendCategories }"
+        },
+        {
+          "name": "legend has 10 digit categories",
+          "assert": "v.legendCategories >= 10"
+        }
+      ]
+    }
+  ]
+}

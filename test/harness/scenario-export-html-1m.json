@@ -1,0 +1,40 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1_000_000\nk = 10\n# 10-dim synthetic data, k clusters\ncenters = rng.normal(0, 8, (k, 10))\nkids = rng.integers(0, k, n)\ndf = pd.DataFrame(centers[kids] + rng.normal(0, 1, (n, 10)), columns=[f'f{i}' for i in range(10)])\ndf['cluster'] = kids.astype(str)\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 10000
+  },
+  "steps": [
+    {
+      "name": "wait for ready (1M anchor UMAP can be slow)",
+      "until": "a.phase === 'ready'",
+      "timeout": 600000
+    },
+    {
+      "name": "set color column to cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.view.palette = 'default'; a.setColorColumn(col.index);",
+      "until": "a.colorColumn !== null && a.colorMeta !== null && a.colorsAll !== null",
+      "timeout": 30000
+    },
+    {
+      "name": "export html — 1M points, no tooltip text",
+      "eval": "a.htmlExportOpen = true; a.exportHtml({ tooltipColumns: [], linkColumn: -1, maxChars: 0, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 180000,
+      "assert": ["h.htmlExport.ok === true", "h.htmlExport.nPoints >= 100000"],
+      "report": "{ size: h.htmlExport.size, nPoints: h.htmlExport.nPoints, url: h.htmlExport.url, loadMs: window.__lastViewerLoadMs }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 120000,
+      "openPageScreenshot": "viewer-1m.png",
+      "checkOpenPagePixels": { "background": "#1e1e1e", "threshold": 20, "minCount": 2000 },
+      "openPageSteps": [
+        {
+          "name": "viewer loaded (1M points)",
+          "assert": "v.nPoints >= 100000",
+          "report": "{ nPoints: v.nPoints, legendCategories: v.legendCategories }"
+        }
+      ]
+    }
+  ]
+}

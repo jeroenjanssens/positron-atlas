@@ -276,7 +276,7 @@ export async function assembleHtmlExport(
   const b64 = uint8ToBase64(gzipped);
 
   // 5. Build HTML
-  const html = buildViewerHtml(viewerJs, b64, p.variable);
+  const html = buildViewerHtml(viewerJs, b64, p.variable, p.bg);
   const htmlBytes = new TextEncoder().encode(html);
 
   // 6. Post back to host for file write

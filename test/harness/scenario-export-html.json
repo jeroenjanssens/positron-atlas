@@ -12,10 +12,15 @@
       "timeout": 60000
     },
     {
-      "name": "set color column to cluster",
-      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index);",
-      "until": "a.colorColumn !== null && a.colorMeta !== null",
+      "name": "set color column to cluster (default palette for deterministic colours)",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.view.palette = 'default'; a.setColorColumn(col.index);",
+      "until": "a.colorColumn !== null && a.colorMeta !== null && a.colorsAll !== null",
       "timeout": 10000
+    },
+    {
+      "name": "set title and add an annotation",
+      "eval": "a.titleOverlay.title = 'Test Atlas'; a.titleOverlay.subtitle = '3k points'; a.annotations.set('ann1', { id: 'ann1', text: 'grp_0 cluster', style: 'plain', worldX: 0, worldY: 0, offsetX: 20, offsetY: -20, color: '#cccccc' });",
+      "assert": "a.titleOverlay.title === 'Test Atlas'"
     },
     {
       "name": "open html export dialog",
@@ -23,21 +28,21 @@
       "assert": "a.htmlExportOpen === true"
     },
     {
-      "name": "run html export with tooltip columns",
+      "name": "run html export dark",
       "eval": "const titleCol = a.describe.columns.find(c => c.name === 'title'); const clusterCol = a.describe.columns.find(c => c.name === 'cluster'); a.exportHtml({ tooltipColumns: [titleCol.index, clusterCol.index], linkColumn: -1, maxChars: 200, embedImages: false, samplePct: 100 })",
       "until": "h.htmlExport !== undefined",
       "timeout": 30000,
       "screenshot": "export-html.png",
       "assert": [
-        "h.htmlExport !== undefined",
         "h.htmlExport.ok === true",
         "h.htmlExport.nPoints >= 100",
         "h.htmlExport.size > 100000"
       ],
-      "report": "{ export: h.htmlExport }",
+      "report": "{ export: h.htmlExport, loadMs: window.__lastViewerLoadMs }",
       "openPage": "h.htmlExport.url",
       "openPageTimeout": 30000,
       "openPageScreenshot": "viewer-dark.png",
+      "checkOpenPagePixels": { "background": "#1e1e1e", "threshold": 20, "minCount": 200 },
       "openPageSteps": [
         {
           "name": "viewer loaded with correct point count",
@@ -45,7 +50,7 @@
           "report": "{ nPoints: v.nPoints, legendCategories: v.legendCategories }"
         },
         {
-          "name": "legend has 4 categories (grp_0..3 + unlabelled = 5 entries, check >= 4)",
+          "name": "legend has 4 categories (grp_0..3)",
           "assert": "v.legendCategories >= 4"
         },
         {
@@ -58,6 +63,18 @@
         {
           "name": "tooltip title is item_0000",
           "assert": "v.tooltipTitle === 'item_0000'"
+        },
+        {
+          "name": "legend swatches have colours (CSS injected)",
+          "assert": "Array.from(document.querySelectorAll('.legend-sw')).some(s => { const c = getComputedStyle(s).backgroundColor; return c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent' && c !== 'rgb(0, 0, 0)'; })"
+        },
+        {
+          "name": "title overlay is visible",
+          "assert": "document.querySelector('.map-title') !== null && document.querySelector('.map-title').textContent.trim() === 'Test Atlas'"
+        },
+        {
+          "name": "annotation is visible in blob",
+          "assert": "v.annotationCount >= 1"
         },
         {
           "name": "legend toggle hides a category",
@@ -77,7 +94,7 @@
           "assert": "v.searchCount >= 1"
         },
         {
-          "name": "clear search",
+          "name": "clear search restores full display",
           "fill": [".search-input", ""],
           "assert": "true"
         }
@@ -93,9 +110,11 @@
       "until": "h.htmlExport !== undefined",
       "timeout": 30000,
       "assert": ["h.htmlExport.ok === true"],
+      "report": "{ export: h.htmlExport, loadMs: window.__lastViewerLoadMs }",
       "openPage": "h.htmlExport.url",
       "openPageTimeout": 30000,
       "openPageScreenshot": "viewer-light.png",
+      "checkOpenPagePixels": { "background": "#f0f0f0", "threshold": 20, "minCount": 200 },
       "openPageSteps": [
         {
           "name": "light viewer loaded",
@@ -105,6 +124,10 @@
         {
           "name": "light theme detected (bg is light)",
           "assert": "v.bg === '#f0f0f0'"
+        },
+        {
+          "name": "legend swatches have colours in light theme",
+          "assert": "Array.from(document.querySelectorAll('.legend-sw')).some(s => { const c = getComputedStyle(s).backgroundColor; return c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent'; })"
         }
       ]
     }

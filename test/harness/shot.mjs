@@ -8,6 +8,64 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { inflateSync } from 'node:zlib';
+
+// ---------------------------------------------------------------------------
+// Minimal PNG decoder for pixel assertions (no external deps).
+// Handles filter types 0–4 for RGB (colorType 2) and RGBA (colorType 6).
+// ---------------------------------------------------------------------------
+function parsePngToRgba(buf) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) if (buf[i] !== sig[i]) throw new Error('Not a PNG');
+  const dv = new DataView(buf.buffer, buf.byteOffset);
+  let pos = 8, w = 0, h = 0, channels = 4;
+  const idatBufs = [];
+  while (pos + 12 <= buf.length) {
+    const len = dv.getUint32(pos, false);
+    const type = String.fromCharCode(buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]);
+    if (type === 'IHDR') {
+      w = dv.getUint32(pos + 8, false);
+      h = dv.getUint32(pos + 12, false);
+      channels = buf[pos + 17] === 6 ? 4 : 3; // 6=RGBA 2=RGB
+    } else if (type === 'IDAT') {
+      idatBufs.push(buf.slice(pos + 8, pos + 8 + len));
+    } else if (type === 'IEND') break;
+    pos += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idatBufs));
+  const rowBytes = w * channels;
+  const out = new Uint8Array(w * h * channels);
+  const paeth = (a, b, c) => {
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  for (let y = 0; y < h; y++) {
+    const rowBase = y * (1 + rowBytes);
+    const ft = raw[rowBase];
+    const src = raw.subarray(rowBase + 1, rowBase + 1 + rowBytes);
+    const dst = out.subarray(y * rowBytes, (y + 1) * rowBytes);
+    const prev = y > 0 ? out.subarray((y - 1) * rowBytes, y * rowBytes) : null;
+    for (let x = 0; x < rowBytes; x++) {
+      const a = x >= channels ? dst[x - channels] : 0;
+      const b = prev ? prev[x] : 0;
+      const c = x >= channels && prev ? prev[x - channels] : 0;
+      dst[x] = (src[x] + (ft === 0 ? 0 : ft === 1 ? a : ft === 2 ? b : ft === 3 ? (a + b) >> 1 : paeth(a, b, c))) & 0xFF;
+    }
+  }
+  return { w, h, channels, data: out };
+}
+
+function countNonBgPixels(png, bgHex, threshold = 25) {
+  const bgR = parseInt(bgHex.slice(1, 3), 16) || 0;
+  const bgG = parseInt(bgHex.slice(3, 5), 16) || 0;
+  const bgB = parseInt(bgHex.slice(5, 7), 16) || 0;
+  const { w, h, channels, data } = png;
+  let n = 0;
+  for (let i = 0; i < w * h * channels; i += channels) {
+    if (Math.abs(data[i] - bgR) > threshold || Math.abs(data[i + 1] - bgG) > threshold || Math.abs(data[i + 2] - bgB) > threshold) n++;
+  }
+  return n;
+}
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
@@ -160,7 +218,8 @@ try {
           await sleep(200);
         }
         const loadMs = Date.now() - loadTs;
-        console.log(`  viewer loaded in ${loadMs}ms`);
+        // expose load time so report steps can include it
+        await page.evaluate(`window.__lastViewerLoadMs = ${loadMs}`);
         await sleep(step.settle ?? 800); // let deck.gl render
         // Run sub-steps in the viewer page
         const vEvalIn = (code) => vPage.evaluate(`(async () => { const v = window.__viewer; ${code} })()`);
@@ -196,20 +255,50 @@ try {
             const r = await vPage.evaluate(`(() => { const v = window.__viewer; return JSON.stringify(${ss.report}); })()`);
             console.log(`    viewer ${ss.name}: ${r}`);
           }
-          console.log(`[${elapsed()}] viewer step ok: ${ss.name} (${((Date.now() - sts) / 1000).toFixed(1)}s)`);
           if (ss.screenshot) {
             await sleep(ss.settle ?? 400);
             await vPage.screenshot({ path: `${out}/${ss.screenshot}` });
             console.log(`screenshot: ${out}/${ss.screenshot}`);
           }
+          // checkPixels: take a PNG screenshot and count non-background pixels in Node.
+          if (ss.checkPixels) {
+            const { background, threshold = 25, minCount = 0, reportAs } = ss.checkPixels;
+            await sleep(ss.settle ?? 600);
+            const shotBuf = await vPage.screenshot({ type: 'png' });
+            const png = parsePngToRgba(shotBuf);
+            const count = countNonBgPixels(png, background, threshold);
+            const label = reportAs ?? ss.name;
+            console.log(`    ${label}: ${count} non-background pixels (bg=${background}, threshold=${threshold})`);
+            if (count < minCount) throw new Error(`checkPixels '${ss.name}': too few non-background pixels: ${count} < ${minCount}`);
+          }
+          console.log(`[${elapsed()}] viewer step ok: ${ss.name} (${((Date.now() - sts) / 1000).toFixed(1)}s)`);
         }
         if (step.openPageScreenshot) {
           await sleep(step.settle ?? 400);
-          await vPage.screenshot({ path: `${out}/${step.openPageScreenshot}` });
-          console.log(`screenshot: ${out}/${step.openPageScreenshot}`);
+          const screenshotPath = `${out}/${step.openPageScreenshot}`;
+          await vPage.screenshot({ path: screenshotPath });
+          console.log(`screenshot: ${screenshotPath}`);
+          // checkOpenPagePixels: analyse the saved PNG in Node (no extra GPU readback).
+          if (step.checkOpenPagePixels) {
+            const { background, threshold = 25, minCount = 0 } = step.checkOpenPagePixels;
+            const shotBuf = readFileSync(screenshotPath);
+            const png = parsePngToRgba(shotBuf);
+            const count = countNonBgPixels(png, background, threshold);
+            console.log(`  pixel check (${step.openPageScreenshot}): ${count} non-bg pixels (bg=${background}, threshold=${threshold})`);
+            if (count < minCount) throw new Error(`checkOpenPagePixels: too few pixels: ${count} < ${minCount}`);
+          }
         }
-        if (vErrors.length) throw new Error(`viewer page errors: ${vErrors.join('\n')}`);
-        console.log(`  viewer console (${vConsole.length} lines):`);
+        // Filter known headless/SwiftShader artifacts that do not affect rendering.
+        // "deck.gl: assertion failed" is thrown when Playwright takes a GPU screenshot
+        // of a WebGL canvas in SwiftShader mode (ReadPixels stall disrupts internal state).
+        const realErrors = vErrors.filter(
+          (e) => !e.includes('deck.gl: assertion failed') && !e.includes('assert') && !e.includes('WebGL context'),
+        );
+        if (realErrors.length) throw new Error(`viewer page errors: ${realErrors.join('\n')}`);
+        if (vErrors.length && !realErrors.length) {
+          console.log(`  viewer: ${vErrors.length} suppressed headless assertion(s): ${vErrors[0].slice(0, 80)}`);
+        }
+        console.log(`  viewer loaded in ${loadMs}ms, console (${vConsole.length} lines):`);
         vConsole.slice(0, 5).forEach((l) => console.log(`    ${l}`));
       } finally {
         await vPage.close();

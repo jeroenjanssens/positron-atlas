@@ -93,7 +93,8 @@
   // ---- search ----
   function runSearch(q: string): void {
     q = q.trim();
-    if (!q) { searchResults = null; applySearchToFilter(); rerenderFilter(); return; }
+    // On clear: reset searchResults and rebuild filter from scratch (removes the 0.15 dim overlay).
+    if (!q) { searchResults = null; rebuildFilter(); rerenderFilterNoCode(); return; }
     const lower = q.toLowerCase();
     const results = new Set<number>();
     // Search title column if available, otherwise all text columns
@@ -240,6 +241,8 @@
       get hiddenCount() { return hiddenCodes.size; },
       get legendCategories() { return header.legend && header.legend.kind === 'categorical' ? header.legend.categories.length : 0; },
       get annotationCount() { return header.annotations.length; },
+      /** CSS hex colors for each legend category (matches per-point rgba). */
+      get clusterColors() { return header.legend && header.legend.kind === 'categorical' ? header.legend.colors : []; },
       /**
        * Trigger hover for point at row index `idx` (default: 0).
        * Passes the point's world coordinates so the HitIndex finds the right point.
@@ -251,6 +254,46 @@
         const wy = blob.xy[idx * 2 + 1];
         onPointer({ x: 400, y: 300, world: [wx, wy] as [number, number] });
         return idx;
+      },
+      /**
+       * Count pixels in the deck.gl canvas that differ from the page background by
+       * more than `threshold` (per channel). Waits for one rAF so deck.gl has rendered.
+       * Returns -1 if no canvas is found.
+       */
+      countDrawnPixels(threshold = 25): Promise<number> {
+        return new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            try {
+              const canvas = container.querySelector('canvas');
+              if (!canvas) { resolve(-1); return; }
+              const bgR = parseInt(bg.slice(1, 3), 16) || 0;
+              const bgG = parseInt(bg.slice(3, 5), 16) || 0;
+              const bgB = parseInt(bg.slice(5, 7), 16) || 0;
+              const oc = new OffscreenCanvas(canvas.width, canvas.height);
+              const ctx = oc.getContext('2d');
+              if (!ctx) { resolve(-1); return; }
+              ctx.drawImage(canvas as HTMLCanvasElement, 0, 0);
+              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              let n = 0;
+              for (let i = 0; i < img.data.length; i += 4) {
+                if (Math.abs(img.data[i] - bgR) > threshold ||
+                    Math.abs(img.data[i + 1] - bgG) > threshold ||
+                    Math.abs(img.data[i + 2] - bgB) > threshold) n++;
+              }
+              resolve(n);
+            } catch { resolve(-1); }
+          });
+        });
+      },
+      /** Screen [x, y] of the centroid of category codeIdx, or null. */
+      getClusterScreenPos(codeIdx: number): [number, number] | null {
+        if (!blob.codes || !renderer) return null;
+        let sx = 0, sy = 0, n = 0;
+        for (let i = 0; i < nPoints; i++) {
+          if (blob.codes[i] === codeIdx) { sx += blob.xy[i * 2]; sy += blob.xy[i * 2 + 1]; n++; }
+        }
+        if (n === 0) return null;
+        return renderer.projectWorld(sx / n, sy / n) ?? null;
       },
     };
 
@@ -283,9 +326,10 @@
     // Initial render
     rerenderFilterNoCode();
 
-    // Auto-fit: import bounds and fit
+    // Auto-fit: include right padding for the legend panel (≈220 px).
     import('../webview/render/hitIndex').then(({ bounds }) => {
-      renderer?.fit(bounds(blob.xy, nPoints), false, 0);
+      const legendPad = header.legend ? 220 : 0;
+      renderer?.fit(bounds(blob.xy, nPoints), false, legendPad);
     });
 
     // Start annotation position tracking

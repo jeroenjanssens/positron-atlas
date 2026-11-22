@@ -337,10 +337,14 @@ export function escapeHtml(s: string): string {
 /**
  * Assemble the final self-contained HTML string from the viewer JS bundle and
  * the gzip+base64 encoded blob.
+ *
+ * @param bg - Background colour to apply immediately so there is no flash of
+ *             white/dark before the Svelte component mounts. Defaults to dark.
  */
-export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, title: string): string {
+export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, title: string, bg = '#1e1e1e'): string {
   // Prevent </script> from closing the script tag prematurely.
   const safeJs = viewerJs.replace(/<\/script>/gi, '<\\/script>');
+  const safeBg = /^#[0-9a-fA-F]{6}$/.test(bg) ? bg : '#1e1e1e';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -349,8 +353,8 @@ export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, tit
 <title>Atlas: ${escapeHtml(title)}</title>
 <style>
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #1e1e1e; overflow: hidden; }
-#app { width: 100%; height: 100%; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: ${safeBg}; overflow: hidden; }
+#app { position: relative; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
