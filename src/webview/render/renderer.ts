@@ -46,6 +46,8 @@ import {
 } from './boxes';
 import type { Shape } from '../atlas/shapes';
 import { shapeToPolygon } from '../atlas/shapes';
+import type { GridLayout } from '../atlas/grid';
+import { buildGridViews, gridLayerFilter } from './gridViews';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
 export interface OverlayState {
@@ -275,6 +277,17 @@ export class ScatterRenderer {
   // ---- Shapes (item 8, B4) ---
   private shapes: Shape[] = [];
 
+  // ---- C1: Grid mode (item 4) ---
+  /** True when grid (small multiples) mode is active. */
+  private gridEnabled = false;
+  /** Grid layout string (number of columns × rows). */
+  private gridLayout: GridLayout = '2x2';
+  /**
+   * Per-panel RGBA color arrays.  Length == panel count.
+   * When null for a panel, the panel's ScatterplotLayers use the PointSet's own colors.
+   */
+  private gridPanelColors: (Uint8Array | null)[] = [];
+
   // ---- Navigation settings (item 1) ---
   /** Custom pointer + wheel handler for preset-specific navigation. */
   private navController: NavController | null = null;
@@ -320,7 +333,14 @@ export class ScatterRenderer {
         if (interactionState?.isDragging || interactionState?.isZooming || interactionState?.isPanning) {
           this.userMoved = true;
         }
-        this.deck.setProps({ viewState });
+        // C1: in grid mode, propagate the new state to all panel views so cameras stay linked.
+        if (this.gridEnabled && this.gridPanelColors.length > 0) {
+          const keyed: Record<string, any> = {};
+          for (let pi = 0; pi < this.gridPanelColors.length; pi++) keyed[`panel-${pi}`] = viewState;
+          this.deck.setProps({ viewState: keyed as any });
+        } else {
+          this.deck.setProps({ viewState });
+        }
         const zoom = typeof viewState.zoom === 'number' ? viewState.zoom : 0;
         this.viewChangeCallback?.(zoom);
         return viewState;
@@ -377,6 +397,12 @@ export class ScatterRenderer {
       },
       useDevicePixels: true,
       layers: [],
+      // C1: when grid mode is enabled, restrict per-panel layers (id starts with gN-)
+      // to their own panel view; labels, rings etc render in all views.
+      layerFilter: (args: { layer: { id: string }; viewport: { id: string } }) => {
+        if (this.gridEnabled) return gridLayerFilter(args);
+        return true;
+      },
     } as any);
 
     // Also listen for context-menu (right-click) events on the canvas.
@@ -693,10 +719,16 @@ export class ScatterRenderer {
     if (force) {
       this.userMoved = false;
     }
-    const fullW = this.container.clientWidth || 800;
+    // Note: fullW/fullH may already be adjusted for grid mode above.
+    // C1: in grid mode, fit to the first panel's dimensions rather than the whole canvas.
+    let fullW = this.container.clientWidth || 800;
+    let fullH = this.container.clientHeight || 600;
+    if (this.gridEnabled && this.gridPanelColors.length > 0) {
+      const vp = this.viewport();
+      if (vp) { fullW = vp.width; fullH = vp.height; }
+    }
     const pad = fullW - padRight > 200 ? padRight : 0;
     const w = fullW - pad;
-    const fullH = this.container.clientHeight || 600;
     // Keep the band under the plot toolbar and search box (top left) free of data.
     const top = fullH > 300 ? FIT_TOP_PX : 0;
     const h = fullH - top;
@@ -773,8 +805,53 @@ export class ScatterRenderer {
 
     // --- build helpers ---
 
-    /** Push ScatterplotLayers for the base point-set bucket. */
+    /** Push ScatterplotLayers for the base point-set bucket (or per-panel in grid mode). */
     const pushBaseLayers = (): void => {
+      // C1: in grid mode, render one set of layers per panel with per-panel colours.
+      if (this.gridEnabled && this.gridPanelColors.length > 0) {
+        for (let pi = 0; pi < this.gridPanelColors.length; pi++) {
+          const panelColors = this.gridPanelColors[pi];
+          for (let si = 0; si < this.sets.length; si++) {
+            const s = this.sets[si];
+            if (s.length === 0) continue;
+            const nd = s.positionStride ?? 2;
+            const filter = this.filters[si] ?? null;
+            const hasFilter = filter !== null && (filter.hidden.size > 0 || !!filter.precomputed);
+            const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
+            const layerOpacity = s.layerOpacity ?? 1;
+            const effectiveOpacity = opacity * layerOpacity;
+            const layerBlending = s.layerBlending;
+            const setParams = layerBlending === 'additive'
+              ? ADDITIVE
+              : (is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL));
+            // Use per-panel colors when available; fall back to the set's own colors.
+            const colorsData = panelColors ?? s.colors;
+            layers.push(new ScatterplotLayer({
+              id: `g${pi}-points-${s.id}`,
+              data: { length: s.length, attributes: {
+                getPosition: { value: s.positions, size: nd },
+                getFillColor: { value: colorsData, size: 4, normalized: true },
+                getFilterValue: { value: legendValues, size: 1 },
+              } } as any,
+              radiusUnits: 'pixels',
+              billboard: is3D,
+              getRadius: s.radii ? 1 : pointSize / 2,
+              radiusMinPixels: 0.5,
+              stroked: false,
+              filled: true,
+              antialiasing: !density,
+              opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
+              pickable: false,
+              parameters: setParams as any,
+              updateTriggers: { getPosition: this.version, getFillColor: this.version + pi, getFilterValue: this.version },
+              extensions: baseExts,
+              filterRange: [0.5, 1.5] as [number, number],
+            } as any));
+          }
+        }
+        return;
+      }
+
       for (let si = 0; si < this.sets.length; si++) {
         const s = this.sets[si];
         if (s.length === 0) continue;
@@ -1294,6 +1371,16 @@ export class ScatterRenderer {
       });
     }
     this.version++;
+    // C1: if grid mode is active, rebuild views with the new orthographic setting.
+    if (this.gridEnabled && this.gridPanelColors.length > 0) {
+      const orthographic = dims === 2 || this.ortho3D;
+      const w = this.container.clientWidth || 800;
+      const h = this.container.clientHeight || 600;
+      const views = buildGridViews(this.gridLayout, w, h, orthographic);
+      const keyed: Record<string, any> = {};
+      for (let pi = 0; pi < this.gridPanelColors.length; pi++) keyed[`panel-${pi}`] = this.viewState;
+      this.deck.setProps({ views: views as any, viewState: keyed as any });
+    }
     this.render();
   }
 
@@ -1395,7 +1482,11 @@ export class ScatterRenderer {
   private viewport(): any {
     const deck = this.deck as any;
     if (!deck?.viewManager) return undefined;
-    return deck.getViewports()[0];
+    const vps = deck.getViewports();
+    if (!vps?.length) return undefined;
+    // C1: in grid mode, return the first panel's viewport for unproject/project operations.
+    if (this.gridEnabled) return vps.find((v: any) => v.id === 'panel-0') ?? vps[0];
+    return vps[0];
   }
 
   projectAll3D(xyz: Float32Array, n: number): Float32Array | null {
@@ -1593,6 +1684,56 @@ export class ScatterRenderer {
       );
     }
   }
+
+  // ---- C1: Grid mode (item 4) -----------------------------------------------
+
+  /**
+   * Enable or disable grid mode (small multiples).
+   *
+   * When enabled, the deck.gl Deck switches to a multi-view layout with one
+   * OrbitView per panel.  All views share the same OrbitViewState so cameras are
+   * linked.  Per-panel layers (id prefix `gN-`) are restricted to their panel
+   * via `layerFilter`; labels, outlines and the hover ring render in all views.
+   *
+   * @param enabled       Whether grid mode is active.
+   * @param layout        Grid layout string (e.g. '2x2').
+   * @param panelColors   Per-panel RGBA arrays (length == panel count).
+   *                      Pass null for a panel to fall back to the PointSet's own colors.
+   */
+  setGrid(enabled: boolean, layout: GridLayout, panelColors: (Uint8Array | null)[]): void {
+    const wasEnabled = this.gridEnabled;
+    this.gridEnabled = enabled;
+    this.gridLayout = layout;
+    this.gridPanelColors = panelColors;
+
+    if (enabled) {
+      const w = this.container.clientWidth || 800;
+      const h = this.container.clientHeight || 600;
+      const orthographic = this.dims === 2 || this.ortho3D;
+      const views = buildGridViews(layout, w, h, orthographic);
+      // Build a keyed viewState so all panels share the same camera.
+      const keyed: Record<string, any> = {};
+      for (const v of views) keyed[(v as any).id] = this.viewState;
+      this.deck.setProps({ views: views as any, viewState: keyed as any });
+    } else if (wasEnabled) {
+      // Restore single-view mode.
+      this.deck.setProps({
+        views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: this.dims === 2 || this.ortho3D }),
+        viewState: this.viewState as any,
+      });
+    }
+    this.version++;
+    this.render();
+  }
+
+  /** Return grid mode enabled state (for PNG export and harness inspection). */
+  get isGridEnabled(): boolean { return this.gridEnabled; }
+
+  /** Return current grid layout. */
+  get gridLayoutValue(): GridLayout { return this.gridLayout; }
+
+  /** Return per-panel colors (for harness inspection). */
+  get gridColors(): (Uint8Array | null)[] { return this.gridPanelColors; }
 
   /** Destroy the NavController (called when the renderer is torn down). */
   destroyNavController(): void {
