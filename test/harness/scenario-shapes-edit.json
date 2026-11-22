@@ -1,0 +1,153 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\nk = rng.integers(0, 2, n)\ncenters = rng.normal(0, 8, (2, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['label'] = [f'cls_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 1000
+  },
+  "theme": "dark",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "activate shapes tool",
+      "eval": "document.querySelector('button[aria-label=\"Shapes\"]').click()",
+      "until": "a.annotateTool === 'shapes'",
+      "timeout": 3000
+    },
+    {
+      "name": "compute anchor screen position",
+      "eval": "const canvas = document.querySelector('canvas'); const r = canvas.getBoundingClientRect(); const sc = a.renderer.projectWorld(a.anchorXY[0], a.anchorXY[1]); window.__sx0 = Math.round(r.left + sc[0]); window.__sy0 = Math.round(r.top + sc[1]);",
+      "until": "window.__sx0 !== undefined"
+    },
+    {
+      "name": "draw a rectangle centered on data",
+      "drag": "(() => { const x0 = window.__sx0 - 60; const y0 = window.__sy0 - 50; return [[x0, y0], [x0+120, y0+100]]; })()",
+      "until": "a.shapes.some(s => s.kind === 'rect')",
+      "timeout": 5000,
+      "assert": ["a.shapes.length === 1", "a.shapes[0].kind === 'rect'"],
+      "report": "{ w: a.shapes[0].w, h: a.shapes[0].h, rotation: a.shapes[0].rotation }",
+      "screenshot": "shapes-edit-rect-drawn.png"
+    },
+    {
+      "name": "compute BR corner screen position",
+      "eval": "const rect = a.shapes[0]; const sc = a.renderer.projectWorld(rect.x + rect.w, rect.y); window.__brX = Math.round(document.querySelector('canvas').getBoundingClientRect().left + sc[0]); window.__brY = Math.round(document.querySelector('canvas').getBoundingClientRect().top + sc[1]); window.__origW = rect.w; window.__origH = rect.h;",
+      "until": "window.__brX !== undefined"
+    },
+    {
+      "name": "resize rect by dragging BR handle outward (Shift for aspect ratio)",
+      "drag": "[[window.__brX, window.__brY], [window.__brX + 30, window.__brY + 30]]",
+      "until": "a.shapes[0].w !== window.__origW || a.shapes[0].h !== window.__origH",
+      "timeout": 3000,
+      "assert": ["a.shapes[0].w > window.__origW || a.shapes[0].h > window.__origH", "a.history.canUndo"],
+      "report": "{ wBefore: window.__origW, wAfter: a.shapes[0].w, hBefore: window.__origH, hAfter: a.shapes[0].h }",
+      "screenshot": "shapes-edit-resize.png"
+    },
+    {
+      "name": "undo resize",
+      "eval": "a.undo()",
+      "until": "Math.abs(a.shapes[0].w - window.__origW) < 0.001",
+      "timeout": 2000,
+      "assert": ["Math.abs(a.shapes[0].w - window.__origW) < 0.001"]
+    },
+    {
+      "name": "redo resize",
+      "eval": "a.redo()",
+      "until": "a.shapes[0].w !== window.__origW",
+      "timeout": 2000
+    },
+    {
+      "name": "compute rotate handle position (above top edge)",
+      "eval": "const rect = a.shapes[0]; const cx = rect.x + rect.w/2; const topY = rect.y + rect.h; const rotOffsetWorld = 20 * a.renderer.worldPerPixel(); const rsc = a.renderer.projectWorld(cx, topY + rotOffsetWorld); const r = document.querySelector('canvas').getBoundingClientRect(); window.__rhX2 = Math.round(r.left + rsc[0]); window.__rhY2 = Math.round(r.top + rsc[1]); window.__origRotation = rect.rotation;",
+      "until": "window.__rhX2 !== undefined"
+    },
+    {
+      "name": "rotate rect by dragging rotate handle",
+      "drag": "[[window.__rhX2, window.__rhY2], [window.__rhX2 + 40, window.__rhY2 + 10]]",
+      "until": "a.shapes[0].rotation !== window.__origRotation",
+      "timeout": 3000,
+      "assert": ["a.shapes[0].rotation !== window.__origRotation", "a.history.canUndo"],
+      "report": "{ rotationBefore: window.__origRotation, rotationAfter: a.shapes[0].rotation }",
+      "screenshot": "shapes-edit-rotate.png"
+    },
+    {
+      "name": "undo rotation",
+      "eval": "a.undo()",
+      "until": "Math.abs(a.shapes[0].rotation - window.__origRotation) < 0.1",
+      "timeout": 2000
+    },
+    {
+      "name": "add a second shape for front/back order test",
+      "eval": "const ref = a.shapes[0]; const s = { kind: 'rect', id: 'rect-b', x: ref.x + 1, y: ref.y + 1, w: ref.w, h: ref.h, rotation: 0, style: { ...ref.style }, selected: false }; a.addShape(s);",
+      "until": "a.shapes.length === 2",
+      "timeout": 2000
+    },
+    {
+      "name": "select second shape (rect-b) and send to back",
+      "eval": "const id = a.shapes.find(s => s.id === 'rect-b')?.id; if (id) { a.shapesSelectedId = id; a.sendToBack(id); }",
+      "until": "a.shapes[0].id === 'rect-b'",
+      "timeout": 1000,
+      "assert": ["a.shapes[0].id === 'rect-b'", "a.history.canUndo"],
+      "report": "{ order: a.shapes.map(s => s.id) }"
+    },
+    {
+      "name": "undo send to back",
+      "eval": "a.undo()",
+      "until": "a.shapes[a.shapes.length - 1].id === 'rect-b'",
+      "timeout": 1000,
+      "assert": ["a.shapes[a.shapes.length - 1].id === 'rect-b'"]
+    },
+    {
+      "name": "bring to front",
+      "eval": "const id = a.shapes.find(s => s.id === 'rect-b')?.id; if (id) a.bringToFront(id);",
+      "until": "a.shapes[a.shapes.length - 1].id === 'rect-b'",
+      "timeout": 1000,
+      "assert": ["a.shapes[a.shapes.length - 1].id === 'rect-b'"]
+    },
+    {
+      "name": "draw a polygon for vertex editing",
+      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; const wpp = a.renderer.worldPerPixel() * 20; const poly = { kind: 'polygon', id: 'poly-v', vertices: [[wx-wpp, wy-wpp], [wx+wpp, wy-wpp], [wx, wy+wpp]], rotation: 0, style: { strokeColor: [0,200,80,220], fillColor: [0,200,80,40], strokeWidth: 2, opacity: 1, dash: [], arrowHead: 'none' }, selected: false }; a.addShape(poly);",
+      "until": "a.shapes.some(s => s.id === 'poly-v')",
+      "timeout": 2000
+    },
+    {
+      "name": "move a polygon vertex via updateShape",
+      "eval": "const poly = a.shapes.find(s => s.id === 'poly-v'); if (poly) { const verts = [...poly.vertices]; const delta = a.renderer.worldPerPixel() * 15; verts[2] = [verts[2][0] + delta, verts[2][1] + delta]; window.__origVert2 = poly.vertices[2].slice(); a.updateShape('poly-v', { vertices: verts }); }",
+      "until": "a.shapes.find(s => s.id === 'poly-v')?.vertices[2][0] !== window.__origVert2?.[0]",
+      "timeout": 1000,
+      "assert": ["a.history.canUndo"],
+      "report": "{ vertexMoved: a.shapes.find(s => s.id === 'poly-v')?.vertices[2] }"
+    },
+    {
+      "name": "undo vertex move",
+      "eval": "a.undo()",
+      "until": "a.history.canRedo",
+      "timeout": 1000
+    },
+    {
+      "name": "draw an arrow and check arrowhead in PNG export",
+      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; const wpp = a.renderer.worldPerPixel() * 40; const arr = { kind: 'arrow', id: 'arr-png', points: [[wx - wpp, wy], [wx + wpp, wy]], rotation: 0, style: { strokeColor: [255, 60, 0, 255], fillColor: [255, 60, 0, 60], strokeWidth: 3, opacity: 1, dash: [], arrowHead: 'end' }, selected: false }; a.addShape(arr);",
+      "until": "a.shapes.some(s => s.id === 'arr-png')",
+      "timeout": 2000
+    },
+    {
+      "name": "verify arrowhead pixels in PNG export",
+      "eval": "const arr = a.shapes.find(s => s.id === 'arr-png'); const tipPt = arr.points[arr.points.length - 1]; const sc = a.renderer.projectWorld(tipPt[0], tipPt[1]); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const dpr = img.width / document.querySelector('canvas').getBoundingClientRect().width; const px = Math.round((sc[0]) * dpr), py = Math.round((sc[1]) * dpr); let redPixels = 0; for (let dx = -20; dx <= 5; dx++) for (let dy = -15; dy <= 15; dy++) { const d = g.getImageData(px+dx, py+dy, 1, 1).data; if (d[0] > 180 && d[1] < 100 && d[3] > 100) redPixels++; } window.__arrowPixels = redPixels;",
+      "until": "window.__arrowPixels !== undefined",
+      "timeout": 5000,
+      "assert": "window.__arrowPixels > 2",
+      "report": "{ arrowheadRedPixels: window.__arrowPixels }"
+    },
+    {
+      "name": "deactivate shapes tool",
+      "eval": "document.querySelector('button[aria-label=\"Shapes\"]').click()",
+      "until": "a.annotateTool === null",
+      "timeout": 2000,
+      "assert": ["a.annotateTool === null"],
+      "screenshot": "shapes-edit-done.png"
+    }
+  ]
+}

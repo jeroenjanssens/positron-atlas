@@ -418,7 +418,11 @@ Details are in the research notes of 2026-11-22.
   - [x] Point-in-shape (`pointsInPolygon`; ellipses and rectangles converted to polygon) → `writeLabels` path.
   - [x] PNG export and HTML viewer render shapes via `drawShapesOnCanvas` in `composite.ts`.
   - [x] Harness: `scenario-shapes-drag.json` — draw rect over data, undo/redo move, fitView, rotation, tag 113 points inside, JSON round-trip, PNG pixel check.
-  - Note: resize handles render but resize drag not yet wired; vertex editing for polygon not yet wired; front/back z-order not yet implemented. These are polish items for a follow-up.
+  - [x] Shape editing: resize by dragging handles (all 8 corners/edges; Shift keeps aspect ratio), rotate via rotate handle (20 px above top edge), polygon/line/arrow vertex drag, double-click edge to insert vertex, Alt-click vertex to remove; all undoable via `commitShapeEdit` (captures pre-preview state correctly).
+  - [x] Front/back order: `bringToFront` / `sendToBack` on atlas, `]`/`[` keys in `'2d-shapes'` context (only while Shapes tool active and a shape is selected), both undoable.
+  - [x] Style completeness: dash presets (solid/dashed/dotted) and arrowhead placement (none/end/start/both) wired in AnnotateTab; `style.arrowHead` now controls SVG marker-end and canvas `drawArrowTip` in composite.ts (instead of `shape.kind === 'arrow'`).
+  - [x] Shapes in 3D: ShapeLayer is hidden when `atlas.dims === 3` (wrapped in `{#if atlas.dims !== 3}` in App.svelte). AnnotateTab shows a hint "Shapes are drawn on the 2D projection plane and are not available in 3D view."
+  - [x] Harness: `scenario-shapes-edit.json` — resize (undo/redo), rotate (undo), front/back order (undo), polygon vertex move (undo), arrowhead PNG pixel check (26 red pixels at tip).
 
 ---
 

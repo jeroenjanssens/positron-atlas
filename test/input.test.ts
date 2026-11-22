@@ -44,7 +44,7 @@ describe('BINDINGS registry', () => {
   });
 
   it('every entry has a valid context', () => {
-    const contexts = new Set(['2d', '3d', 'both', '2d-brush']);
+    const contexts = new Set(['2d', '3d', 'both', '2d-brush', '2d-shapes']);
     for (const b of BINDINGS) {
       expect(contexts.has(b.context), `${b.actionId} has invalid context "${b.context}"`).toBe(true);
     }
