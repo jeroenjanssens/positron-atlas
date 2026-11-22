@@ -541,6 +541,11 @@
 </div>
 
 <style>
+  /* Outside Positron there are no --vscode-font-* variables: use the system UI font. */
+  :global(html), :global(body) {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 13px;
+  }
   .viewer {
     position: relative;
     width: 100%;
