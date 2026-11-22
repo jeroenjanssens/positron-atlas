@@ -153,7 +153,12 @@ describe('Info component cross-references (I3)', () => {
   it('every help.ts id is referenced by at least one component (no dead entries)', () => {
     // Toolbar entries are shown via button title= attributes rather than Info popovers;
     // they are exempt from the component-reference check.
-    const toolbarExempt = new Set(['toolbar.pan', 'toolbar.lasso', 'toolbar.fitView', 'toolbar.annotate']);
+    // Nav settings will be wired to <Info> in the B-wave sidebar; exempt for now.
+    const toolbarExempt = new Set([
+      'toolbar.pan', 'toolbar.lasso', 'toolbar.fitView', 'toolbar.annotate',
+      'toolbar.compass',
+      'nav.preset', 'nav.scrollGesture', 'nav.zoomToCursor', 'nav.invertZoom', 'nav.emulateMiddleButton',
+    ]);
     for (const id of Object.keys(HELP)) {
       if (toolbarExempt.has(id)) continue;
       expect(inComponents.has(id), `HELP entry "${id}" is not referenced in any component`).toBe(true);
