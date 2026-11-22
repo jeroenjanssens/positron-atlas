@@ -143,6 +143,20 @@ export interface UmapParams {
   learningRate: number;
 }
 
+/** Navigation / input settings (A1 wave, item 1). */
+export interface NavigationSettings {
+  /** Navigation interaction preset. */
+  preset: 'dataMap' | 'molecular' | 'cad' | 'design';
+  /** What scroll gesture does (zoom vs pan). */
+  scrollGesture: 'zoom' | 'pan';
+  /** Zoom toward the cursor position when true. */
+  zoomToCursor: boolean;
+  /** Reverse the scroll-to-zoom direction. */
+  invertZoom: boolean;
+  /** Treat Alt+left-drag as middle-button drag (emulates three-button mouse). */
+  emulateMiddleButton: boolean;
+}
+
 export interface Settings {
   maxAnchors: number;
   maxAnchorsCpu: number;
@@ -157,6 +171,8 @@ export interface Settings {
   maxLazyRows: number;
   /** Memory budget (MB) for the nearest-anchor neighbour cache (P1). */
   neighborCacheMB: number;
+  /** Navigation / input settings (A1 wave, item 1). */
+  nav: NavigationSettings;
 }
 
 /** How selected rows differ from all prepared rows (kernel compare_selection). */
@@ -353,6 +369,8 @@ export interface PanelState {
     blending: 'normal' | 'additive';
     order: number;
   }[];
+  /** 2D map rotation angle in degrees (item 14). 0 = north-up. */
+  rotation2D?: number;
 }
 
 export type ToWebview =
@@ -395,6 +413,10 @@ export type ToWebview =
   | { type: 'searchResults'; column: number; query: string; file: FileRef; count: number }
   /** Search returned no matches (A7). */
   | { type: 'searchEmpty'; column: number; query: string }
+  /** Forward a VS Code command to the webview (item 1). */
+  | { type: 'command'; id: string }
+  /** Navigation settings changed (item 1). */
+  | { type: 'settingsChanged'; nav: NavigationSettings }
   /** DataMapPlot export saved to a file (D3/D12). */
   | { type: 'datamapplotSaved'; path: string }
   /** HTML export saved to a file (X2). path = '' on harness (written to job dir). */
@@ -517,4 +539,8 @@ export type ToHost =
       type: 'exportHtmlReady';
       /** Complete HTML file as UTF-8 bytes. */
       htmlBytes: Uint8Array;
-    };
+    }
+  /** Webview gained keyboard focus (item 1): host sets positronAtlas.webviewFocused context. */
+  | { type: 'webviewFocused' }
+  /** Webview lost keyboard focus (item 1): host clears positronAtlas.webviewFocused context. */
+  | { type: 'webviewBlurred' };
