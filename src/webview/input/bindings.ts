@@ -42,7 +42,8 @@ export type ActionId =
   | 'brush.sizeDown'
   | 'shapes.order.front'
   | 'shapes.order.back'
-  | 'animate.playPause';
+  | 'animate.playPause'
+  | 'view.toggleGrid';
 
 /**
  * Which contexts a binding applies in.
@@ -247,6 +248,15 @@ export const BINDINGS: BindingEntry[] = [
   {
     actionId: 'view.toggleFullScreen',
     label: 'Toggle full screen',
+    section: 'view',
+    context: 'both',
+  },
+  // ---- item 4: Grid mode (small multiples) ----------------------------------------
+  {
+    actionId: 'view.toggleGrid',
+    label: 'Toggle grid mode (small multiples)',
+    mac: 'cmd+g',
+    win: 'ctrl+g',
     section: 'view',
     context: 'both',
   },

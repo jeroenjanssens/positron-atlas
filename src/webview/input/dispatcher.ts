@@ -181,6 +181,10 @@ export class InputDispatcher {
       case 'animate.playPause':
         a.togglePlay?.();
         break;
+      // ---- Grid mode (item 4, C1) -----------------------------------------------
+      case 'view.toggleGrid':
+        a.toggleGrid();
+        break;
     }
   }
 
@@ -209,6 +213,13 @@ export class InputDispatcher {
     }
     if (ctrl && key === 'z' && shift) {
       this.dispatch('edit.redo');
+      e.preventDefault();
+      return;
+    }
+
+    // Grid toggle: Ctrl/Cmd+G (item 4, C1).
+    if (ctrl && key === 'g' && !shift && !alt) {
+      this.dispatch('view.toggleGrid');
       e.preventDefault();
       return;
     }
