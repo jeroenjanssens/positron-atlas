@@ -2,6 +2,12 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import * as zlib from 'node:zlib';
+import { promisify } from 'node:util';
+import { packBlob } from '../shared/viewerBlob';
+import type { BlobHeader } from '../shared/viewerBlob';
+
+const gzipAsync = promisify(zlib.gzip);
 import { KernelBridge, KernelError } from './kernelBridge';
 import type { PositronApi } from './positron';
 import { bytesFromPayload } from './binaryUtil';
@@ -655,6 +661,11 @@ export class AtlasPanel {
         }
         break;
       }
+      // --- HTML export (X2) ---
+      case 'exportHtml': {
+        await this.handleExportHtml(m);
+        break;
+      }
       // --- Full-screen toggle (N5 / F1) ---
       case 'fullscreen': {
         // In Positron, maximize the editor panel (hides the sidebar and status bar).
@@ -704,6 +715,147 @@ export class AtlasPanel {
       this.post({ type: 'projected', seconds: s.result?.seconds ?? 0, exact, backend: s.result?.backend });
     } else if (s.stage === 'error') {
       throw new KernelError(s.error ?? `${task} failed`, s.result?.traceback);
+    }
+  }
+
+  /** Handle the exportHtml message: fetch text data from kernel, assemble blob, write HTML. */
+  private async handleExportHtml(m: Extract<import('../shared/protocol').ToHost, { type: 'exportHtml' }>): Promise<void> {
+    const job = this.requireJob();
+
+    // 1. Show save dialog
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const uri = await vscode.window.showSaveDialog({
+      filters: { 'HTML file': ['html'] },
+      defaultUri: vscode.Uri.file(path.join(workspaceRoot, `${this.state.variable}-atlas.html`)),
+    });
+    if (!uri) {
+      return;
+    }
+
+    // 2. Fetch tooltip text from kernel for each requested column
+    type TextSection = { column: number; utf8: Buffer; offsets: Buffer };
+    const textSections: TextSection[] = [];
+    for (const col of m.tooltipColumns) {
+      try {
+        const r = await this.bridge.call<{ ok: boolean; utf8File?: string; offsetsFile?: string; count?: number }>(
+          'texts',
+          job,
+          col.index,
+          m.maxChars,
+        );
+        if (r.ok && r.utf8File && r.offsetsFile) {
+          const [utf8, offsets] = await Promise.all([
+            fs.readFile(path.join(this.jobDir.fsPath, r.utf8File)),
+            fs.readFile(path.join(this.jobDir.fsPath, r.offsetsFile)),
+          ]);
+          textSections.push({ column: col.index, utf8, offsets });
+        }
+      } catch (e) {
+        this.ctx.log.warn(`[exportHtml] texts for column ${col.index}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    // 3. Assemble the blob
+    const nPoints = m.nPoints;
+    const xy = new Float32Array(bytesFromPayload(m.positions).buffer);
+    const rgba = bytesFromPayload(m.rgba);
+    const codes = m.codes ? new Uint16Array(bytesFromPayload(m.codes).buffer) : null;
+    const radii = m.radii ? new Float32Array(bytesFromPayload(m.radii).buffer) : null;
+
+    // Build combined text arrays: interleave columns
+    // textUtf8: concatenation of all column texts
+    // textOffsets: u32[(n+1)*nCols] offsets
+    let textUtf8: Uint8Array | null = null;
+    let textOffsets: Uint32Array | null = null;
+    if (textSections.length > 0 && m.tooltipColumns.length > 0) {
+      const nCols = m.tooltipColumns.length;
+      const offsetsPerCol = nPoints + 1;
+      textOffsets = new Uint32Array(nCols * offsetsPerCol);
+      const utf8Parts: Buffer[] = [];
+      let globalOffset = 0;
+
+      for (let ci = 0; ci < nCols; ci++) {
+        const colIdx = m.tooltipColumns[ci].index;
+        const sec = textSections.find((s) => s.column === colIdx);
+        const colOffsets = new Uint32Array(offsetsPerCol);
+        if (sec) {
+          // sec.offsets is u32[count+1], count = number of prepared rows
+          const srcOffsets = new Uint32Array(sec.offsets.buffer, sec.offsets.byteOffset, sec.offsets.byteLength / 4);
+          const colBase = Math.min(srcOffsets.length - 1, nPoints);
+          for (let i = 0; i <= colBase; i++) {
+            colOffsets[i] = globalOffset + (i < srcOffsets.length ? srcOffsets[i] : srcOffsets[srcOffsets.length - 1]);
+          }
+          // Fill remaining if srcOffsets shorter than nPoints
+          const lastSrc = srcOffsets.length > 0 ? srcOffsets[Math.min(nPoints, srcOffsets.length - 1)] : 0;
+          for (let i = colBase + 1; i <= nPoints; i++) {
+            colOffsets[i] = globalOffset + lastSrc;
+          }
+          globalOffset += sec.utf8.length;
+          utf8Parts.push(sec.utf8);
+        } else {
+          // No data for this column: all offsets the same
+          colOffsets.fill(globalOffset);
+        }
+        textOffsets.set(colOffsets, ci * offsetsPerCol);
+      }
+
+      const totalLen = utf8Parts.reduce((s, b) => s + b.length, 0);
+      const combined = new Uint8Array(totalLen);
+      let pos = 0;
+      for (const p of utf8Parts) { combined.set(p, pos); pos += p.length; }
+      textUtf8 = combined;
+    }
+
+    const header: BlobHeader = {
+      v: 1,
+      n: nPoints,
+      bg: m.bg,
+      sections: { xy: [0, 0], rgba: [0, 0], codes: null, radii: null, textUtf8: null, textOffsets: null }, // filled by packBlob
+      tooltipCols: m.tooltipColumns.map((c) => ({ name: c.name, isLink: c.isLink, isTitle: c.isTitle })),
+      legend: JSON.parse(m.legend),
+      labels: JSON.parse(m.labels),
+      annotations: JSON.parse(m.annotations),
+      title: JSON.parse(m.title),
+      fontCss: m.fontCss,
+      sample: { n: m.sampled, total: m.total, pct: m.samplePct },
+    };
+
+    const rawBlob = packBlob({
+      header,
+      xy: xy.subarray(0, nPoints * 2),
+      rgba: rgba.subarray(0, nPoints * 4),
+      codes,
+      radii,
+      textUtf8,
+      textOffsets,
+    });
+
+    // 4. Gzip the blob
+    const gzipped = await gzipAsync(rawBlob);
+
+    // 5. Read the viewer JS (built by npm run build:viewer)
+    const viewerPath = vscode.Uri.joinPath(this.ctx.extension.extensionUri, 'dist', 'viewer', 'viewer.js');
+    let viewerJs = '';
+    try {
+      viewerJs = (await vscode.workspace.fs.readFile(viewerPath)).toString();
+    } catch {
+      this.ctx.log.warn('[exportHtml] dist/viewer/viewer.js not found; HTML will not be functional.');
+    }
+
+    // 6. Base64 encode the gzipped blob
+    const b64 = Buffer.from(gzipped).toString('base64');
+
+    // 7. Write HTML file
+    const html = buildViewerHtml(viewerJs, b64, m.variable);
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(html, 'utf-8'));
+
+    this.post({ type: 'htmlExportSaved', path: uri.fsPath });
+    const open = await vscode.window.showInformationMessage(
+      `HTML export saved to ${path.basename(uri.fsPath)}`,
+      'Open',
+    );
+    if (open === 'Open') {
+      await vscode.env.openExternal(uri);
     }
   }
 
@@ -757,3 +909,31 @@ export function isStatus(x: unknown): x is JobStatus {
 }
 
 export { bytesFromPayload };
+
+/** Build the self-contained HTML string for an exported Atlas map. */
+export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, title: string): string {
+  // Escape </script> in the viewer JS (should not normally appear, but be safe).
+  const safeJs = viewerJs.replace(/<\/script>/gi, '<\\/script>');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas: ${escapeHtml(title)}</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #1e1e1e; overflow: hidden; }
+#app { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script id="atlas-data" type="application/octet-stream">${gzippedBlobBase64}</script>
+<script type="module">${safeJs}</script>
+</body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}

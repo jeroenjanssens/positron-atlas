@@ -104,6 +104,23 @@ function _injectCss(family: string, css: string): void {
     _styleElements.set(family, el);
   }
   el.textContent = css;
+  // Keep a parallel map so we can re-retrieve CSS for export.
+  _cssByFamily.set(family, css);
+}
+
+// ---------------------------------------------------------------------------
+// Export helper (X2 HTML export)
+// ---------------------------------------------------------------------------
+
+/** Map of family name → @font-face CSS, for all fonts loaded in this session. */
+const _cssByFamily = new Map<string, string>();
+
+/**
+ * Return all @font-face CSS strings that have been injected so far.
+ * Used by the HTML exporter to embed fonts in the exported file.
+ */
+export function getLoadedFontCss(): string[] {
+  return [..._cssByFamily.values()];
 }
 
 // ---------------------------------------------------------------------------

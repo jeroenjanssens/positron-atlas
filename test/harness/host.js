@@ -417,6 +417,57 @@
         post({ type: 'fontCatalog', families });
         break;
       }
+      // --- HTML export (X2) ---
+      case 'exportHtml': {
+        // In the harness: pack the blob server-side, write to job dir, store path in harness.htmlExport.
+        // We skip the kernel texts call and just pack visual data only.
+        try {
+          const { packBlob } = await import('../../src/shared/viewerBlob.ts');
+          const { gzipSync } = await import('node:zlib');
+
+          const nPoints = m.nPoints;
+          const xy = new Float32Array(m.positions.buffer ? m.positions.buffer : m.positions);
+          const rgba = m.rgba instanceof Uint8Array ? m.rgba : new Uint8Array(m.rgba);
+          const codes = m.codes ? new Uint16Array(m.codes.buffer ?? m.codes) : null;
+          const radii = m.radii ? new Float32Array(m.radii.buffer ?? m.radii) : null;
+
+          const header = {
+            v: 1,
+            n: nPoints,
+            bg: m.bg,
+            sections: { xy: [0,0], rgba: [0,0], codes: null, radii: null, textUtf8: null, textOffsets: null },
+            tooltipCols: m.tooltipColumns.map(c => ({ name: c.name, isLink: c.isLink, isTitle: c.isTitle })),
+            legend: JSON.parse(m.legend),
+            labels: JSON.parse(m.labels),
+            annotations: JSON.parse(m.annotations),
+            title: JSON.parse(m.title),
+            fontCss: m.fontCss,
+            sample: { n: m.sampled, total: m.total, pct: m.samplePct },
+          };
+
+          const rawBlob = packBlob({ header, xy: xy.subarray(0, nPoints*2), rgba: rgba.subarray(0, nPoints*4), codes, radii, textUtf8: null, textOffsets: null });
+          const gzipped = gzipSync(rawBlob);
+          const b64 = Buffer.from(gzipped).toString('base64');
+
+          // Minimal viewer placeholder (harness doesn't have viewer.js)
+          const viewerJs = `console.log('Atlas viewer: harness mode, ${nPoints} points embedded');`;
+          const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Atlas: ${m.variable}</title></head><body><script id="atlas-data" type="application/octet-stream">${b64}<\/script><script type="module">${viewerJs}<\/script></body></html>`;
+
+          const outName = `atlas_export_${Date.now()}.html`;
+          const outPath = `${info.jobRoot}/${jobDir}/${outName}`;
+          const { writeFile } = await import('node:fs/promises');
+          await writeFile(outPath, html, 'utf-8');
+
+          harness.log.push(`htmlExported: path=${outPath}, size=${html.length}`);
+          harness.htmlExport = { ok: true, path: outPath, size: html.length, nPoints };
+          post({ type: 'htmlExportSaved', path: outPath });
+        } catch (e) {
+          harness.log.push(`htmlExport error: ${e.message}`);
+          harness.htmlExport = { ok: false, error: e.message };
+          post({ type: 'htmlExportSaved', path: '' });
+        }
+        break;
+      }
       // --- Full-screen toggle (N5 / F1) ---
       case 'fullscreen':
         // In the harness, the webview is not in Positron, so isPositron is false and

@@ -911,6 +911,17 @@ export const HELP: Record<string, HelpEntry> = {
     dataMapPlot: 'datamapplot.create_interactive_plot()',
   },
 
+  'export.exportHtml': {
+    title: 'Export as HTML',
+    what: 'Saves the map as a self-contained interactive HTML file that works offline in any browser.',
+    intuition:
+      'Opens a dialog to choose which columns to show in tooltips, then writes a single HTML file with the viewer JS, ' +
+      'point positions, colours, labels, annotations, and tooltip text all embedded. ' +
+      'The file supports pan/zoom, hover tooltips, legend toggles, search, and full screen.',
+    when: 'To share the map as a standalone file without requiring Atlas, Positron, or Python.',
+    cost: 'none',
+  },
+
   // ---- Search ------------------------------------------------------------------
 
   'search.query': {

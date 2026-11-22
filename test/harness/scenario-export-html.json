@@ -1,0 +1,44 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['title'] = [f'item_{i:04d}' for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set color column to cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index);",
+      "until": "a.colorColumn !== null && a.colorMeta !== null",
+      "timeout": 10000
+    },
+    {
+      "name": "open html export dialog",
+      "eval": "a.htmlExportOpen = true",
+      "assert": "a.htmlExportOpen === true"
+    },
+    {
+      "name": "run html export with tooltip columns",
+      "eval": "const titleCol = a.describe.columns.find(c => c.name === 'title'); const clusterCol = a.describe.columns.find(c => c.name === 'cluster'); a.exportHtml({ tooltipColumns: [titleCol.index, clusterCol.index], linkColumn: -1, maxChars: 200, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 30000,
+      "screenshot": "export-html.png",
+      "assert": [
+        "h.htmlExport !== undefined",
+        "h.htmlExport.ok === true",
+        "h.htmlExport.nPoints >= 100",
+        "h.htmlExport.size > 1000"
+      ],
+      "report": "{ export: h.htmlExport }"
+    },
+    {
+      "name": "verify dialog closed after export",
+      "assert": "a.htmlExportOpen === false"
+    }
+  ]
+}

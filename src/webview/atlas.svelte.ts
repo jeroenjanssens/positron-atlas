@@ -143,6 +143,11 @@ import {
   flash as flashImpl,
 } from './atlas/actions.svelte';
 import {
+  exportHtml as exportHtmlImpl,
+  estimateExportBytes as estimateExportBytesImpl,
+  type HtmlExportOptions,
+} from './atlas/exportHtml';
+import {
   runSearch as runSearchImpl,
   clearSearch as clearSearchImpl,
   zoomToSearchMatches as zoomToSearchMatchesImpl,
@@ -245,6 +250,8 @@ export class Atlas {
   } | null>(null);
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
+  /** Whether the HTML export dialog is open. */
+  htmlExportOpen = $state(false);
   useGpu = $state(false);
   paused = $state(false);
   placementBackend = $state<'rust' | 'numpy' | null>(null);
@@ -559,6 +566,10 @@ export class Atlas {
       case 'datamapplotSaved':
         this.flash(`Saved to ${msg.path}`);
         break;
+      case 'htmlExportSaved':
+        this.htmlExportOpen = false;
+        if (msg.path) this.flash(`HTML export saved to ${msg.path}`);
+        break;
     }
   }
 
@@ -703,6 +714,8 @@ export class Atlas {
   copyPolarsUmap(): void { copyPolarsUmapImpl(this); }
   copyDataMapPlot(): void { copyDataMapPlotImpl(this); }
   exportDataMapPlot(): void { exportDataMapPlotImpl(this); }
+  exportHtml(opts: HtmlExportOptions): void { exportHtmlImpl(this, opts); }
+  estimateExportBytes(opts: Pick<HtmlExportOptions, 'tooltipColumns' | 'maxChars'>): number { return estimateExportBytesImpl(this, opts); }
   reload(): void { reloadImpl(this); }
   persist(): void { persistImpl(this); }
   setSession(sessionId: string, languageId: string, variable: string): void { setSessionImpl(this, sessionId, languageId, variable); }

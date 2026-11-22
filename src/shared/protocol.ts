@@ -364,7 +364,9 @@ export type ToWebview =
   /** Search returned no matches (A7). */
   | { type: 'searchEmpty'; column: number; query: string }
   /** DataMapPlot export saved to a file (D3/D12). */
-  | { type: 'datamapplotSaved'; path: string };
+  | { type: 'datamapplotSaved'; path: string }
+  /** HTML export saved to a file (X2). path = '' on harness (written to job dir). */
+  | { type: 'htmlExportSaved'; path: string };
 
 /** Entry in the font catalogue sent to the webview. */
 export interface FontCatalogEntry {
@@ -435,4 +437,42 @@ export type ToHost =
       anchorXY?: Uint8Array;
       /** Category → hex color when colorColumn === labelColumn (categorical). */
       labelColorMap?: Record<string, string>;
+    }
+  /** Export the map as a self-contained HTML file (X2). */
+  | {
+      type: 'exportHtml';
+      /** Number of points in the positions/rgba/codes/radii arrays. */
+      nPoints: number;
+      /** Plot background hex color. */
+      bg: string;
+      /** f32[nPoints*2] interleaved xy. */
+      positions: Uint8Array;
+      /** u8[nPoints*4] RGBA per point. */
+      rgba: Uint8Array;
+      /** u16[nPoints] category codes for legend filter, or null. */
+      codes: Uint8Array | null;
+      /** f32[nPoints] per-point radii, or null for uniform. */
+      radii: Uint8Array | null;
+      /** Category code indices that are hidden (for pre-filtering in export). */
+      hiddenCodes: number[];
+      /** JSON-encoded BlobLegend. */
+      legend: string;
+      /** JSON-encoded BlobLabel[]. */
+      labels: string;
+      /** JSON-encoded BlobAnnotation[]. */
+      annotations: string;
+      /** JSON-encoded BlobTitle. */
+      title: string;
+      /** @font-face CSS strings with embedded data-URL sources. */
+      fontCss: string[];
+      /** Columns to embed as tooltip text. */
+      tooltipColumns: { index: number; name: string; isLink?: boolean; isTitle?: boolean }[];
+      /** Max characters per tooltip cell. */
+      maxChars: number;
+      /** DataFrame variable name (for default save path). */
+      variable: string;
+      /** Sampling info for the blob header. */
+      samplePct: number;
+      total: number;
+      sampled: number;
     };
