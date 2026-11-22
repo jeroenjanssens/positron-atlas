@@ -180,6 +180,7 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>Every message between the parts</td><td><code>src/shared/protocol.ts</code></td></tr>
     <tr><td>How the host connects webview and kernel</td><td><code>src/extension/atlasPanel.ts</code>, <code>kernelBridge.ts</code></td></tr>
     <tr><td>The kernel side (prepare, placement, colours, rows, write-back)</td><td><code>python/positron_atlas_kernel.py</code></td></tr>
+    <tr><td>Built-in example dataset loaders (MNIST, Fashion MNIST, Covertype)</td><td><code>python/positron_atlas_examples.py</code></td></tr>
     <tr><td>The webview's state and logic</td><td><code>src/webview/atlas.svelte.ts</code> (state) and <code>src/webview/atlas/*.ts</code> (one module per area)</td></tr>
     <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
     <tr><td>What is drawn, in which order</td><td><code>src/webview/atlas/layers.ts</code> (the layer registry: the base map and every overlay, with visibility, opacity, blending and draw order; the renderer and the HTML overlays both read it)</td></tr>
@@ -422,7 +423,7 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
 <!-- ================================================================================== -->
 <h2 id="deps"><span class="n">4</span>Dependencies</h2>
 <p class="lead">What ships in the VSIX: <code>dist/extension.js</code>, <code>dist/webview/**</code> (JavaScript bundled, including the UMAP WASM), <code>dist/viewer/viewer.js</code> (the stand-alone viewer that HTML exports inline), <code>media/fonts/</code> (bundled fonts and the Google Fonts catalogue),
-<code>python/positron_atlas_kernel.py</code> and, in the platform VSIX files, <code>native/&lt;platform&gt;/</code>. Nothing is installed into your Python environment.</p>
+<code>python/positron_atlas_kernel.py</code>, <code>python/positron_atlas_examples.py</code> (example dataset loaders for the "Open example" command) and, in the platform VSIX files, <code>native/&lt;platform&gt;/</code>. Nothing is installed into your Python environment.</p>
 <table>
   <thead><tr><th>Layer</th><th>Required</th><th>Optional</th><th>Build, test and benchmarks only</th></tr></thead>
   <tbody>

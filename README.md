@@ -47,8 +47,13 @@ You can also run **Extensions: Install from VSIX…** from Positron's Command Pa
 
 - **From the Data Explorer.** Open a DataFrame from the Variables pane, then click **Open in Atlas**, the first button in the Data Explorer's toolbar (top left).
 - **From the Command Palette.** Run **Atlas: Open DataFrame…** and pick a DataFrame from the foreground Python session, or enter an expression.
+- **Try a built-in example.** Run **Atlas: Open example…** from the Command Palette to pick a sample dataset (MNIST, Fashion MNIST, or Forest Cover Type). Atlas downloads and caches the data (~11 MB, requires numpy and polars), creates a variable in your session, and opens it. The same loaders are used by the example notebooks, so the cache is shared.
 
 Positron does not yet let extensions add items to the Variables pane itself, so the Data Explorer button is the closest entry point.
+
+### Selection to Data Explorer
+
+After you use **New DataFrame from selection** in the Export tab, Atlas automatically opens the new DataFrame in Positron's Data Explorer, so you can inspect the rows you selected.
 
 ### Example notebooks
 

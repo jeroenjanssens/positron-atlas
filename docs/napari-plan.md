@@ -463,8 +463,8 @@ Details are in the research notes of 2026-11-22.
 
 ## 13. Small conveniences — any wave (S each)
 
-- [ ] **Atlas: Open example**: a quick pick of the example datasets (MNIST, HIGGS, ChEMBL sample, UniProt human, trials sample). It downloads and caches like the notebooks, creates a DataFrame in the session, and opens it.
-- [ ] **Open selection in the Data Explorer**: after "New DataFrame from selection", open it in Positron's Data Explorer (check which command or API Positron offers).
+- [x] **Atlas: Open example**: a quick pick of the example datasets (MNIST, Fashion MNIST, Forest Cover Type). It downloads and caches like the notebooks, creates a DataFrame in the session, and opens it. Loaders live in `python/positron_atlas_examples.py`; command registered as `positronAtlas.openExample`.
+- [x] **Open selection in the Data Explorer**: after "New DataFrame from selection", `%view <variable>` via `executeCode` opens it in the Data Explorer automatically (S1-Q4 recommendation, one-line change in `atlasPanel.ts`).
 - [ ] **3D view options:**
   - perspective or orthographic (`OrbitView` `fovy` vs orthographic; Blender's numpad 5 analogue, verified);
   - depth fade (fog);
