@@ -28,7 +28,10 @@
       "drag": "(() => { const x0 = window.__sx0 - 60; const y0 = window.__sy0 - 50; return [[x0, y0], [x0+120, y0+100]]; })()",
       "until": "a.shapes.some(s => s.kind === 'rect')",
       "timeout": 5000,
-      "assert": ["a.shapes.length === 1", "a.shapes[0].kind === 'rect'"],
+      "assert": [
+        "a.shapes.length === 1",
+        "a.shapes[0].kind === 'rect'"
+      ],
       "report": "{ w: a.shapes[0].w, h: a.shapes[0].h, rotation: a.shapes[0].rotation }",
       "screenshot": "shapes-edit-rect-drawn.png"
     },
@@ -42,7 +45,10 @@
       "drag": "[[window.__brX, window.__brY], [window.__brX + 30, window.__brY + 30]]",
       "until": "a.shapes[0].w !== window.__origW || a.shapes[0].h !== window.__origH",
       "timeout": 3000,
-      "assert": ["a.shapes[0].w > window.__origW || a.shapes[0].h > window.__origH", "a.history.canUndo"],
+      "assert": [
+        "a.shapes[0].w > window.__origW || a.shapes[0].h > window.__origH",
+        "a.history.canUndo"
+      ],
       "report": "{ wBefore: window.__origW, wAfter: a.shapes[0].w, hBefore: window.__origH, hAfter: a.shapes[0].h }",
       "screenshot": "shapes-edit-resize.png"
     },
@@ -51,7 +57,9 @@
       "eval": "a.undo()",
       "until": "Math.abs(a.shapes[0].w - window.__origW) < 0.001",
       "timeout": 2000,
-      "assert": ["Math.abs(a.shapes[0].w - window.__origW) < 0.001"]
+      "assert": [
+        "Math.abs(a.shapes[0].w - window.__origW) < 0.001"
+      ]
     },
     {
       "name": "redo resize",
@@ -69,7 +77,10 @@
       "drag": "[[window.__rhX2, window.__rhY2], [window.__rhX2 + 40, window.__rhY2 + 10]]",
       "until": "a.shapes[0].rotation !== window.__origRotation",
       "timeout": 3000,
-      "assert": ["a.shapes[0].rotation !== window.__origRotation", "a.history.canUndo"],
+      "assert": [
+        "a.shapes[0].rotation !== window.__origRotation",
+        "a.history.canUndo"
+      ],
       "report": "{ rotationBefore: window.__origRotation, rotationAfter: a.shapes[0].rotation }",
       "screenshot": "shapes-edit-rotate.png"
     },
@@ -90,7 +101,10 @@
       "eval": "const id = a.shapes.find(s => s.id === 'rect-b')?.id; if (id) { a.shapesSelectedId = id; a.sendToBack(id); }",
       "until": "a.shapes[0].id === 'rect-b'",
       "timeout": 1000,
-      "assert": ["a.shapes[0].id === 'rect-b'", "a.history.canUndo"],
+      "assert": [
+        "a.shapes[0].id === 'rect-b'",
+        "a.history.canUndo"
+      ],
       "report": "{ order: a.shapes.map(s => s.id) }"
     },
     {
@@ -98,14 +112,18 @@
       "eval": "a.undo()",
       "until": "a.shapes[a.shapes.length - 1].id === 'rect-b'",
       "timeout": 1000,
-      "assert": ["a.shapes[a.shapes.length - 1].id === 'rect-b'"]
+      "assert": [
+        "a.shapes[a.shapes.length - 1].id === 'rect-b'"
+      ]
     },
     {
       "name": "bring to front",
       "eval": "const id = a.shapes.find(s => s.id === 'rect-b')?.id; if (id) a.bringToFront(id);",
       "until": "a.shapes[a.shapes.length - 1].id === 'rect-b'",
       "timeout": 1000,
-      "assert": ["a.shapes[a.shapes.length - 1].id === 'rect-b'"]
+      "assert": [
+        "a.shapes[a.shapes.length - 1].id === 'rect-b'"
+      ]
     },
     {
       "name": "draw a polygon for vertex editing",
@@ -118,7 +136,9 @@
       "eval": "const poly = a.shapes.find(s => s.id === 'poly-v'); if (poly) { const verts = [...poly.vertices]; const delta = a.renderer.worldPerPixel() * 15; verts[2] = [verts[2][0] + delta, verts[2][1] + delta]; window.__origVert2 = poly.vertices[2].slice(); a.updateShape('poly-v', { vertices: verts }); }",
       "until": "a.shapes.find(s => s.id === 'poly-v')?.vertices[2][0] !== window.__origVert2?.[0]",
       "timeout": 1000,
-      "assert": ["a.history.canUndo"],
+      "assert": [
+        "a.history.canUndo"
+      ],
       "report": "{ vertexMoved: a.shapes.find(s => s.id === 'poly-v')?.vertices[2] }"
     },
     {
@@ -135,18 +155,21 @@
     },
     {
       "name": "verify arrowhead pixels in PNG export",
-      "eval": "const arr = a.shapes.find(s => s.id === 'arr-png'); const tipPt = arr.points[arr.points.length - 1]; const sc = a.renderer.projectWorld(tipPt[0], tipPt[1]); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const dpr = img.width / document.querySelector('canvas').getBoundingClientRect().width; const px = Math.round((sc[0]) * dpr), py = Math.round((sc[1]) * dpr); let redPixels = 0; for (let dx = -20; dx <= 5; dx++) for (let dy = -15; dy <= 15; dy++) { const d = g.getImageData(px+dx, py+dy, 1, 1).data; if (d[0] > 180 && d[1] < 100 && d[3] > 100) redPixels++; } window.__arrowPixels = redPixels;",
+      "eval": "await new Promise((r) => setTimeout(r, 300)); const arr = a.shapes.find(s => s.id === 'arr-png'); const tipPt = arr.points[arr.points.length - 1]; const sc = a.renderer.projectWorld(tipPt[0], tipPt[1]); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const dpr = img.width / document.querySelector('canvas').getBoundingClientRect().width; const px = Math.round((sc[0]) * dpr), py = Math.round((sc[1]) * dpr); let redPixels = 0; for (let dx = -20; dx <= 5; dx++) for (let dy = -15; dy <= 15; dy++) { const d = g.getImageData(px+dx, py+dy, 1, 1).data; if (d[0] > 180 && d[1] < 100 && d[3] > 100) redPixels++; } window.__arrowPixels = redPixels;",
       "until": "window.__arrowPixels !== undefined",
       "timeout": 5000,
       "assert": "window.__arrowPixels > 2",
-      "report": "{ arrowheadRedPixels: window.__arrowPixels }"
+      "report": "{ arrowheadRedPixels: window.__arrowPixels }",
+      "note": "Shapes reach the renderer through a reactive update; wait for it before reading the canvas."
     },
     {
       "name": "deactivate shapes tool",
       "eval": "document.querySelector('button[aria-label=\"Shapes\"]').click()",
       "until": "a.annotateTool === null",
       "timeout": 2000,
-      "assert": ["a.annotateTool === null"],
+      "assert": [
+        "a.annotateTool === null"
+      ],
       "screenshot": "shapes-edit-done.png"
     }
   ]
