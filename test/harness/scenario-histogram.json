@@ -1,0 +1,75 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\n# 'value' is a numeric column with a known distribution: half the rows are in [0, 1], half in [9, 10].\ndf['value'] = np.where(np.arange(n) < n // 2, rng.uniform(0, 1, n), rng.uniform(9, 10, n))\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "open explore tab and set histogram column to value",
+      "eval": "document.querySelector('#tab-explore').click(); await new Promise(r => setTimeout(r, 200)); const valIdx = a.describe.columns.find(c => c.name === 'value').index; a.setHistColumn(valIdx)",
+      "until": "a.histData !== null && a.histRawValues !== null",
+      "timeout": 15000,
+      "assert": [
+        "a.histData !== null",
+        "a.histRawValues !== null",
+        "a.histRawValues.length === a.nKept",
+        "a.histData.edges.length === 51",
+        "a.histData.counts.length === 50"
+      ],
+      "report": "{ edges: [a.histData.edges[0], a.histData.edges[a.histData.edges.length - 1]], nValues: a.histRawValues ? a.histRawValues.length : 0 }"
+    },
+    {
+      "name": "brush to [0, 1]: only the low half is visible",
+      "eval": "a.setHistRange([0.0, 1.0])",
+      "until": "a.histFilter !== null && a.histFilter.range[1] <= 1.5",
+      "timeout": 5000,
+      "assert": [
+        "a.histFilter !== null",
+        "a.histFilter.range[0] <= 0.1",
+        "a.histFilter.range[1] <= 1.5",
+        "a.renderVisibleCount > 0",
+        "a.renderVisibleCount < a.nKept"
+      ],
+      "report": "{ range: a.histFilter ? a.histFilter.range : null, visible: a.renderVisibleCount, total: a.nKept }"
+    },
+    {
+      "name": "brushed range: drawn pixels are roughly half the total",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__halfPixels = n",
+      "until": "window.__halfPixels !== undefined",
+      "assert": "window.__halfPixels > 100",
+      "report": "{ drawnPixels: window.__halfPixels }",
+      "screenshot": "histogram-filter-low.png"
+    },
+    {
+      "name": "brush to [9, 10]: only the high half is visible",
+      "eval": "a.setHistRange([9.0, 10.0])",
+      "until": "a.histFilter !== null && a.histFilter.range[0] >= 8.0",
+      "timeout": 5000,
+      "assert": [
+        "a.renderVisibleCount > 0",
+        "a.renderVisibleCount < a.nKept"
+      ],
+      "report": "{ range: a.histFilter ? a.histFilter.range : null, visible: a.renderVisibleCount, total: a.nKept }",
+      "screenshot": "histogram-filter-high.png"
+    },
+    {
+      "name": "clear histogram filter restores all points",
+      "eval": "a.setHistColumn(null)",
+      "until": "a.histFilter === null && a.histData === null",
+      "timeout": 5000,
+      "assert": [
+        "a.histFilter === null",
+        "a.histData === null",
+        "a.renderVisibleCount === a.nKept"
+      ]
+    }
+  ]
+}

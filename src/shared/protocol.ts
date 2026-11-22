@@ -105,6 +105,28 @@ export type ColorMeta = NumericColorMeta | CategoricalColorMeta;
 /** Exact UMAP on all prepared rows in the kernel. */
 export type ExactEngine = 'umap-learn' | 'polars-umap';
 
+/** Metadata for a size-by-column attribute (A10). */
+export interface SizeMeta {
+  kind: 'numeric';
+  min: number;
+  /** 1st percentile (used as low clamp). */
+  q01: number;
+  /** 99th percentile (used as high clamp). */
+  q99: number;
+  max: number;
+  nullCount: number;
+}
+
+/** Pre-computed histogram bins for a numeric or date column (A13). */
+export interface HistogramData {
+  /** n+1 bin edges (uniform or date-aware). */
+  edges: number[];
+  /** n bin counts (all prepared rows, before filter). */
+  counts: number[];
+  /** True when the column is a datetime (edges are ms since epoch). */
+  isDatetime: boolean;
+}
+
 export interface UmapParams {
   nNeighbors: number;
   minDist: number;
@@ -276,7 +298,7 @@ export interface PanelState {
     images?: boolean;
     imageWidth?: number;
     imageInvert?: boolean;
-    palette?: 'map' | 'tableau';
+    palette?: 'map' | 'tableau' | 'cvd';
   };
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */
@@ -293,6 +315,12 @@ export interface PanelState {
   annotations?: Record<string, AnnotationData>;
   /** Column index used as the annotation ID key; null = use row index. */
   annotateIdColumn?: number | null;
+  /** True when coloring by automatic cluster codes (A6). */
+  colorByCluster?: boolean;
+  /** Column index used for size-by-column (A10), or null for uniform size. */
+  sizeColumn?: number | null;
+  /** Active histogram brush range for the filter (A13): [lo, hi] of the column value. */
+  histFilter?: { column: number; range: [number, number] } | null;
 }
 
 export type ToWebview =
@@ -303,6 +331,14 @@ export type ToWebview =
   | { type: 'projected'; seconds: number; exact?: boolean; backend?: 'rust' | 'numpy' }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
+  /** Size-by-column values (A10): float32 per kept row. */
+  | { type: 'sizes'; column: number; file: FileRef; meta: SizeMeta }
+  /** Raw float32 column values for histogram filter (A13). */
+  | { type: 'histValues'; column: number; file: FileRef }
+  /** Pre-computed histogram bins for a column (A13). */
+  | { type: 'histogram'; column: number; data: HistogramData }
+  /** Anchor XY from kernel polars-umap (P3): float32[nAnchors*2]. */
+  | { type: 'anchorXY'; file: FileRef; seconds: number }
   | { type: 'groupNames'; seq: number; names: string[] }
   | { type: 'labelsWritten'; variable: string; column: string; rows: number; describe: DescribeResult }
   | { type: 'comparison'; seq: number; result: SelectionComparison }
@@ -348,6 +384,14 @@ export type ToHost =
   | { type: 'exact'; params: UmapParams; engine: ExactEngine }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
+  /** Request float32 size values for a column (A10). */
+  | { type: 'sizes'; column: number }
+  /** Request float32 column values for the histogram filter (A13). */
+  | { type: 'histValues'; column: number }
+  /** Request a histogram for a numeric/date column (A13). */
+  | { type: 'histogram'; column: number; nBins?: number }
+  /** Request anchor-only UMAP via polars-umap in the kernel (P3). */
+  | { type: 'anchorUmap'; params: UmapParams }
   | { type: 'describeGroups'; seq: number; codes: Uint8Array /* uint16 per prepared row */; k: number; columns: number[] }
   | {
       type: 'writeLabels';

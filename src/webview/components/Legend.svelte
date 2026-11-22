@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
-  import { NULL_COLOR, OTHER_COLOR, cssGradient } from '../color/colormaps';
+  import { NULL_COLOR, NOISE_COLOR, OTHER_COLOR, cssGradient } from '../color/colormaps';
   let { atlas }: { atlas: Atlas } = $props();
   const meta = $derived(atlas.colorMeta);
 
@@ -17,7 +17,21 @@
   }
 </script>
 
-{#if meta && atlas.colorColumn !== null}
+{#if atlas.colorByCluster && atlas.clusterCount > 0 && atlas.cluster}
+  <div class="legend">
+    <div class="legend-title">Clusters</div>
+    {#each Array.from({ length: atlas.cluster.k }, (_, i) => i) as i}
+      {@const name = atlas.clusterNames[i] ?? `Cluster ${i + 1}`}
+      {@const hex = atlas.categoryColor(i)}
+      <div class="item" title="{(atlas.cluster?.counts[i] ?? 0).toLocaleString()} rows">
+        <span class="sw" style="background:{hex}"></span>{name}
+      </div>
+    {/each}
+    <div class="item" title="Noise/unlabelled points">
+      <span class="sw" style="background:{NOISE_COLOR}"></span>Unlabelled
+    </div>
+  </div>
+{:else if meta && atlas.colorColumn !== null}
   <div class="legend">
     <div class="legend-title">{atlas.describe?.columns[atlas.colorColumn]?.name}</div>
     {#if meta.kind === 'numeric'}

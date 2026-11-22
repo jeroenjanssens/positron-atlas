@@ -114,6 +114,9 @@ export function persist(atlas: Atlas): void {
     titleOverlay: $state.snapshot(atlas.titleOverlay) as import('../../shared/protocol').TitleOptions,
     annotations: Object.keys(annotationsRecord).length ? annotationsRecord : undefined,
     annotateIdColumn: atlas.annotateIdColumn,
+    colorByCluster: atlas.colorByCluster || undefined,
+    sizeColumn: atlas.sizeColumn ?? undefined,
+    histFilter: atlas.histFilter ?? undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

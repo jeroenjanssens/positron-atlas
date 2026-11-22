@@ -483,6 +483,35 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Explore → Size (A10) ----------------------------------------------------
+
+  'explore.sizeBy': {
+    title: 'Size by',
+    what: "Scale each point's radius by the value of a numeric column.",
+    intuition:
+      'Uses a square-root scale (like a bubble chart) so area is proportional to the value. ' +
+      'Useful for showing magnitude alongside the UMAP layout. ' +
+      'Values are clamped to the range of the column; missing values get the smallest radius.',
+    when: 'When the magnitude of a column (e.g. a count, a price, a frequency) is as important as the structural grouping.',
+    cost: 'none',
+    dataMapPlot: 'marker_size_array',
+  },
+
+  // ---- Explore → Filter / Histogram (A13) --------------------------------------
+
+  'explore.histFilter': {
+    title: 'Histogram filter',
+    what: 'Shows a histogram of a numeric column and lets you drag a brush to show only points in a value range.',
+    intuition:
+      'Each bin shows how many prepared rows fall in that range. ' +
+      'Drag the left or right handle to narrow the brush, or drag the filled area to slide it. ' +
+      'The filter combines with the legend toggles: a point must be both in the brush range and in a visible legend category to be shown. ' +
+      'Click Reset to show all values again.',
+    when: 'To focus on a subset of rows by value, for example outliers in a score column or a specific time window.',
+    cost: 'none',
+    dataMapPlot: 'histogram_*',
+  },
+
   // ---- Explore → Tooltip (H3–H8) -----------------------------------------------
 
   'tooltip.titleColumn': {

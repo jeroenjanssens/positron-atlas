@@ -1764,6 +1764,130 @@ def colors(job_id: str, col: int, force_categorical: bool = False, max_categorie
 
 
 @_guard
+def sizes(job_id: str, col: int) -> str:
+    """Float32 column values for size-by-column (A10).
+
+    Returns the numeric column values for the prepared rows as float32, suitable for
+    square-root scaling on the webview side. NaN for missing values.
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    col = int(col)
+    dtype_str, kind = job.frame.column_kind(col)
+    if kind not in ("numeric", "bool"):
+        raise ValueError(f"Column {col} is {kind}; size-by requires a numeric or boolean column.")
+    vals = job.frame.column(col, job.kept_idx)
+    fv = _to_float(vals, kind).astype(np.float32)
+    finite = fv[np.isfinite(fv)]
+    q01, q99 = (np.percentile(finite, [1, 99]) if len(finite) >= 2 else (float(finite[0]), float(finite[0])) if len(finite) == 1 else (0.0, 0.0))
+    meta = {
+        "kind": "numeric",
+        "min": float(finite.min()) if len(finite) else 0.0,
+        "q01": float(q01),
+        "q99": float(q99),
+        "max": float(finite.max()) if len(finite) else 0.0,
+        "nullCount": int(len(fv) - len(finite)),
+    }
+    fname = f"sizes_{col}_{uuid.uuid4().hex[:6]}.f32"
+    _write(job, fname, fv)
+    return _json({"ok": True, "file": fname, "dtype": "f32", "meta": meta, "length": int(len(fv))})
+
+
+@_guard
+def hist_values(job_id: str, col: int) -> str:
+    """Float32 column values for the histogram filter (A13).
+
+    Returns the raw numeric column values for the prepared rows, allowing the webview to
+    check per-point membership in the brush range.
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    col = int(col)
+    dtype_str, kind = job.frame.column_kind(col)
+    if kind not in ("numeric", "bool", "datetime"):
+        raise ValueError(f"Column {col} is {kind}; histogram filter requires a numeric or datetime column.")
+    vals = job.frame.column(col, job.kept_idx)
+    fv = _to_float(vals, kind).astype(np.float32)
+    fname = f"histvals_{col}_{uuid.uuid4().hex[:6]}.f32"
+    _write(job, fname, fv)
+    return _json({"ok": True, "file": fname, "dtype": "f32", "length": int(len(fv))})
+
+
+@_guard
+def histogram(job_id: str, col: int, n_bins: int = 50) -> str:
+    """Pre-compute histogram bins for a numeric or datetime column (A13).
+
+    Returns ``n_bins`` uniform bins spanning the 1st–99th percentile of the prepared rows.
+    For datetime columns the edges are ms-since-epoch (float64, as float32).
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    col = int(col)
+    n_bins = max(2, min(int(n_bins), 500))
+    dtype_str, kind = job.frame.column_kind(col)
+    if kind not in ("numeric", "bool", "datetime"):
+        raise ValueError(f"Column {col} is {kind}; histogram requires a numeric or datetime column.")
+    vals = job.frame.column(col, job.kept_idx)
+    fv = _to_float(vals, kind)
+    if kind == "datetime":
+        # Convert ns → ms for JS Date compatibility.
+        fv = fv / 1e6
+    finite = fv[np.isfinite(fv)]
+    if len(finite) < 2:
+        edges = [0.0, 1.0]
+        counts = [int(len(finite))]
+    else:
+        lo, hi = np.percentile(finite, [0.5, 99.5])
+        if lo == hi:
+            lo = float(finite.min())
+            hi = float(finite.max())
+        if lo == hi:
+            hi = lo + 1.0
+        edges_arr = np.linspace(lo, hi, n_bins + 1)
+        counts_arr, _ = np.histogram(finite, bins=edges_arr)
+        edges = edges_arr.tolist()
+        counts = counts_arr.tolist()
+    return _json({
+        "ok": True,
+        "data": {
+            "edges": edges,
+            "counts": counts,
+            "isDatetime": kind == "datetime",
+        },
+    })
+
+
+@_guard
+def anchor_umap(job_id: str, params_json: str = "{}") -> str:
+    """Run polars-umap on the anchor rows only (P3: kernel anchors compute mode).
+
+    Runs polars-umap on ``job.anchors`` (shape [nAnchors, dims]) and writes the result
+    as ``anchor_xy.f32`` to the job dir.  The webview then proceeds with normal placement.
+    Requires polars-umap to be installed; raises RuntimeError otherwise.
+    """
+    job = _get(job_id)
+    if job.anchors is None or job.anchor_pos is None:
+        raise RuntimeError("Run prepare first.")
+    try:
+        import polars as pl
+        import polars_umap as pu  # type: ignore
+    except ImportError as e:
+        raise RuntimeError("polars-umap is not installed in this Python environment.") from e
+    params = json.loads(params_json)
+    n = len(job.anchors)
+    t0 = time.time()
+    vectors = pl.Series("features", np.ascontiguousarray(job.anchors, dtype=np.float32))
+    out = pl.DataFrame([vectors]).select(xy=pu.umap("features", **_polars_umap_args(params)))
+    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, 2)
+    fname = f"anchor_xy_{uuid.uuid4().hex[:6]}.f32"
+    _write(job, fname, xy)
+    return _json({"ok": True, "file": fname, "dtype": "f32", "shape": [n, 2], "length": n * 2, "seconds": time.time() - t0})
+
+
+@_guard
 def row(job_id: str, i: int, image_cols: list[int] | None = None) -> str:
     """One row for the hover tooltip; optionally also the raw values of the image columns."""
     job = _get(job_id)

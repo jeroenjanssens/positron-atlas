@@ -22,7 +22,7 @@ export function project(atlas: Atlas): void {
 /** Exact UMAP of all prepared rows in the kernel, with the chosen engine. */
 export function runExact(atlas: Atlas): void {
   const engine = atlas.computeMode;
-  if (!atlas.prepared || engine === 'browser') {
+  if (!atlas.prepared || engine === 'browser' || engine === 'kernel-anchors') {
     return;
   }
   atlas.exactEngine = engine as import('../../shared/protocol').ExactEngine;
@@ -69,6 +69,43 @@ export function cancelKernel(atlas: Atlas): void {
   if (atlas.projection === 'running') {
     atlas.projection = 'stale';
   }
+}
+
+/**
+ * Run polars-umap on the anchors in the kernel (P3).
+ * Sets the phase to 'embedding' and waits for 'anchorXY' message.
+ */
+export function runKernelAnchors(atlas: Atlas): void {
+  if (!atlas.prepared) return;
+  stopWorker(atlas);
+  atlas.phase = 'embedding';
+  atlas.umapProgress = { stage: 'kernel-polars-umap (anchors)', progress: 0, epoch: 0, total: 0 };
+  atlas.projection = atlas.prepared.needsProjection ? 'stale' : 'none';
+  atlas.estimate = null;
+  atlas.hit = null;
+  atlas.tooltip = null;
+  vscode.post({ type: 'anchorUmap', params: $state.snapshot(atlas.umap) as import('../../shared/protocol').UmapParams });
+}
+
+/**
+ * Handle the 'anchorXY' message from the kernel (P3): load anchor positions and proceed.
+ */
+export async function onAnchorXY(atlas: Atlas, file: FileRef, seconds: number): Promise<void> {
+  const xy = (await fetchTyped(file.uri, 'f32')) as Float32Array;
+  if (xy.length !== atlas.prepared!.nAnchors * 2) return; // wrong shape
+  atlas.anchorXY = xy;
+  atlas.phase = 'ready';
+  atlas.umapProgress = null;
+  atlas.autoFit = true;
+  atlas.timings = { ...atlas.timings, umap: seconds };
+  atlas.layoutEngine = 'polars-umap (anchors)';
+  if (atlas.prepared?.needsProjection) {
+    atlas.projection = 'stale';
+    atlas.project();
+  }
+  updateMapColors(atlas, false);
+  atlas.recolor();
+  refreshClusters(atlas);
 }
 
 export async function onXYChunk(atlas: Atlas, file: FileRef): Promise<void> {

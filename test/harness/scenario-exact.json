@@ -9,7 +9,7 @@
     {
       "name": "both kernel engines are offered",
       "assert": [
-        "[...document.querySelectorAll('select[aria-label=\"Compute\"] option')].map(o => o.value).join() === 'browser,polars-umap,umap-learn'"
+        "[...document.querySelectorAll('select[aria-label=\"Compute\"] option')].map(o => o.value).filter(v => v !== 'kernel-anchors').join() === 'browser,polars-umap,umap-learn'"
       ]
     },
     {

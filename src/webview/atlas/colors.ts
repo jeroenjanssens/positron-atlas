@@ -1,11 +1,12 @@
 /**
  * Color column encoding, map palette, legend data.
+ * Also: size-by-column (A10) and histogram filter (A13).
  */
 
 import type { Atlas } from '../atlas.svelte';
-import type { ColorMeta, FileRef } from '../../shared/protocol';
+import type { ColorMeta, FileRef, SizeMeta, HistogramData } from '../../shared/protocol';
 import { encodeCategorical, encodeConstant, encodeNumeric, gatherRgba } from '../color/encode';
-import { CATEGORICAL, DEFAULT_POINT_COLOR, hexToRgb } from '../color/colormaps';
+import { CATEGORICAL, CVD_SAFE, DEFAULT_POINT_COLOR, NOISE_COLOR, hexToRgb } from '../color/colormaps';
 import { mapPalette } from '../color/mapPalette';
 import { placeGroupLabels } from '../labels/place';
 import { vscode } from '../vscode';
@@ -13,6 +14,236 @@ import { fetchTyped } from '../vscode';
 import { gatherU16, contrastText } from './utils';
 import { applySelectionFade } from './selection';
 import { plotBackground } from './render';
+
+// ---- A6: Colour by cluster -------------------------------------------------------
+
+/**
+ * Enable or disable cluster colouring.  When enabled the colorColumn is unset so
+ * the two paths do not conflict; when disabled a plain recolor restores the default.
+ */
+export function setColorByCluster(atlas: Atlas, on: boolean): void {
+  atlas.colorByCluster = on;
+  if (on) {
+    // Suspend column-based colouring while cluster colours are active.
+    atlas.colorColumn = null;
+    atlas.colorMeta = null;
+    atlas.colorValues = null;
+    atlas.mapColors = null;
+    recolorByClusters(atlas);
+  } else {
+    atlas.recolor();
+  }
+}
+
+/**
+ * Encode cluster codes into RGBA, with the map palette (or CVD-safe palette),
+ * grey noise points, then render.  Call after clusters are refreshed.
+ */
+export function recolorByClusters(atlas: Atlas): void {
+  if (!atlas.colorByCluster || !atlas.cluster || !atlas.prepared || !atlas.anchorPos) {
+    return;
+  }
+  const { codes, k } = atlas.cluster; // k = noise code
+  const n = atlas.nKept;
+  const palette = buildClusterPalette(atlas, k);
+  // codes[i] < k → cluster colour; codes[i] >= k → noise grey
+  atlas.colorsAll = new Uint8Array(n * 4);
+  const noiseRgb = hexToRgb(NOISE_COLOR);
+  for (let i = 0; i < n; i++) {
+    const c = codes[i];
+    const o = i * 4;
+    if (c >= k) {
+      atlas.colorsAll[o] = noiseRgb[0];
+      atlas.colorsAll[o + 1] = noiseRgb[1];
+      atlas.colorsAll[o + 2] = noiseRgb[2];
+      atlas.colorsAll[o + 3] = 200;
+    } else {
+      const hex = palette[c % palette.length];
+      const [r, g, b] = hexToRgb(hex);
+      atlas.colorsAll[o] = r;
+      atlas.colorsAll[o + 1] = g;
+      atlas.colorsAll[o + 2] = b;
+      atlas.colorsAll[o + 3] = 255;
+    }
+  }
+  applySelectionFade(atlas, atlas.colorsAll);
+  atlas.colorsAnchors = atlas.prepared.needsProjection
+    ? gatherRgba(atlas.colorsAll, atlas.anchorPos)
+    : atlas.colorsAll;
+  // Colour the outlines by cluster colour (each cluster may have multiple rings).
+  const clusterRings = atlas.cluster.outlines;
+  if (clusterRings && clusterRings.length) {
+    const flatRings: [number, number][][] = [];
+    const perColors: [number, number, number, number][] = [];
+    for (let ci = 0; ci < clusterRings.length; ci++) {
+      const hex = palette[ci % palette.length];
+      const [r, g, b] = hexToRgb(hex);
+      for (const ring of clusterRings[ci]) {
+        flatRings.push(ring);
+        perColors.push([r, g, b, 255]);
+      }
+    }
+    atlas.renderer?.setOutlines(flatRings, undefined, perColors);
+  }
+  atlas.render();
+}
+
+/** Build k colors for clusters using the active palette setting. */
+function buildClusterPalette(atlas: Atlas, k: number): string[] {
+  if (atlas.view.palette === 'cvd') {
+    return Array.from({ length: k }, (_, i) => CVD_SAFE[i % CVD_SAFE.length]);
+  }
+  if (atlas.view.palette === 'map' && atlas.anchorXY && atlas.cluster) {
+    // Use the map palette: derive centers from cluster codes on the anchor layout.
+    const { codes: allCodes, codesAnchors } = atlas.cluster;
+    const xy = atlas.anchorXY;
+    const nA = atlas.prepared!.nAnchors;
+    const centers = new Float64Array(k * 2).fill(NaN);
+    for (const l of placeGroupLabels(xy, codesAnchors, nA, Array.from({ length: k }, (_, i) => String(i)))) {
+      if (l.group < k) {
+        centers[2 * l.group] = l.x;
+        centers[2 * l.group + 1] = l.y;
+      }
+    }
+    const dark = contrastText(plotBackground(atlas))[0] > 128;
+    return mapPalette(centers, xy, nA, { dark }, (i) => CATEGORICAL[i % CATEGORICAL.length]);
+  }
+  // Tableau fallback.
+  return Array.from({ length: k }, (_, i) => CATEGORICAL[i % CATEGORICAL.length]);
+}
+
+// ---- A10: Size by column ----------------------------------------------------------
+
+export function setSizeColumn(atlas: Atlas, c: number | null): void {
+  atlas.sizeColumn = c;
+  atlas.sizeValues = null;
+  if (c === null) {
+    atlas.render();
+  } else {
+    atlas.requestSizes();
+  }
+}
+
+export function requestSizes(atlas: Atlas): void {
+  if (atlas.sizeColumn !== null && atlas.prepared) {
+    vscode.post({ type: 'sizes', column: atlas.sizeColumn });
+  }
+}
+
+export async function onSizes(atlas: Atlas, column: number, file: FileRef, _meta: SizeMeta): Promise<void> {
+  if (column !== atlas.sizeColumn) return;
+  const raw = (await fetchTyped(file.uri, 'f32')) as Float32Array;
+  if (raw.length !== atlas.nKept) return; // stale
+  // Square-root scale: radius = pointSize * sqrt(normalised(v))
+  // Clamp raw to [q01, q99] from meta, then sqrt-normalise to [0.5, 1.5] * pointSize.
+  atlas.sizeValues = raw;
+  atlas.render();
+}
+
+/**
+ * Compute per-point radii in pixels (A10): sqrt scale, clamped to [0.5, 10] × pointSize/3.
+ * Returns null when no size column is active.
+ */
+export function buildRadii(atlas: Atlas, length: number, offset = 0): Float32Array | null {
+  if (!atlas.sizeValues || atlas.sizeColumn === null) return null;
+  const vals = atlas.sizeValues;
+  if (vals.length < offset + length) return null;
+  // Determine clamp range from the full column (simple min/max percentile scan).
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    if (v === v && isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
+  }
+  const span = max > min ? max - min : 1;
+  const base = atlas.view.pointSize;
+  const radii = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const v = vals[offset + i];
+    const norm = v !== v ? 0 : Math.max(0, Math.min(1, (v - min) / span));
+    // sqrt maps [0,1] → [0,1]; scale to [0.5, 1.5] × base/2 pixel radii
+    radii[i] = Math.max(0.5, Math.sqrt(norm) * base);
+  }
+  return radii;
+}
+
+// ---- A13: Histogram filter --------------------------------------------------------
+
+export function setHistColumn(atlas: Atlas, c: number | null): void {
+  if (c === null) {
+    atlas.histFilter = null;
+    atlas.histData = null;
+    atlas.histRawValues = null;
+    atlas.histRawColumn = null;
+    atlas.render();
+    return;
+  }
+  // Keep existing range if same column, else reset.
+  if (atlas.histFilter?.column !== c) {
+    atlas.histFilter = null;
+  }
+  // Trigger kernel histogram computation and raw value fetch.
+  if (atlas.prepared) {
+    vscode.post({ type: 'histogram', column: c, nBins: 50 });
+    vscode.post({ type: 'histValues', column: c });
+  }
+}
+
+export function requestHistogram(atlas: Atlas): void {
+  const col = atlas.histFilter?.column;
+  if (col !== undefined && col !== null && atlas.prepared) {
+    vscode.post({ type: 'histogram', column: col, nBins: 50 });
+    vscode.post({ type: 'histValues', column: col });
+  }
+}
+
+export function onHistogram(atlas: Atlas, column: number, data: HistogramData): void {
+  atlas.histData = data;
+  // If no range is set yet, default to the full range.
+  if (!atlas.histFilter || atlas.histFilter.column !== column) {
+    const lo = data.edges[0];
+    const hi = data.edges[data.edges.length - 1];
+    atlas.histFilter = { column, range: [lo, hi] };
+  }
+  atlas.render();
+}
+
+export async function onHistValues(atlas: Atlas, column: number, file: FileRef): Promise<void> {
+  if (atlas.histFilter?.column !== column && atlas.histRawColumn !== column) return;
+  const raw = (await fetchTyped(file.uri, 'f32')) as Float32Array;
+  if (raw.length !== atlas.nKept) return; // stale
+  atlas.histRawValues = raw;
+  atlas.histRawColumn = column;
+  atlas.render();
+}
+
+export function setHistRange(atlas: Atlas, range: [number, number] | null): void {
+  if (range === null || !atlas.histFilter) {
+    atlas.histFilter = null;
+  } else {
+    atlas.histFilter = { ...atlas.histFilter, range };
+  }
+  atlas.render();
+}
+
+/**
+ * Build a Float32Array of histogram filter values (1 = in brush range, 0 = outside) for a
+ * point set, given the per-kept-row raw column values for the hist column (A13).
+ * Returns null when no histogram filter is active or values not yet loaded.
+ */
+export function buildHistFilterValues(atlas: Atlas, length: number, offset = 0): Float32Array | null {
+  if (!atlas.histFilter || !atlas.histData) return null;
+  const { column, range } = atlas.histFilter;
+  if (!atlas.histRawValues || atlas.histRawColumn !== column) return null;
+  const vals = atlas.histRawValues;
+  if (vals.length < offset + length) return null;
+  const [lo, hi] = range;
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const v = vals[offset + i];
+    out[i] = v !== v ? 0 : v >= lo && v <= hi ? 1 : 0;
+  }
+  return out;
+}
 
 export function setColorColumn(atlas: Atlas, c: number | null): void {
   atlas.colorColumn = c;

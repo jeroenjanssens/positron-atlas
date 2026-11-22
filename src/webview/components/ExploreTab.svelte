@@ -6,6 +6,7 @@
   import Info from './controls/Info.svelte';
   import Select from './controls/Select.svelte';
   import TooltipSection from './TooltipSection.svelte';
+  import Histogram from './Histogram.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
   import { formatCount, formatPercent, formatStat } from '../logic';
 
@@ -13,20 +14,59 @@
 
   function onColorChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
-    atlas.setColorColumn(v === '' ? null : Number(v));
+    if (v === '__clusters') {
+      atlas.setColorByCluster(true);
+    } else {
+      atlas.setColorByCluster(false);
+      atlas.setColorColumn(v === '' ? null : Number(v));
+    }
+  }
+
+  const colorSelectValue = $derived(
+    atlas.colorByCluster ? '__clusters' : atlas.colorColumn === null ? '' : String(atlas.colorColumn)
+  );
+
+  const numericColumns = $derived(
+    (atlas.describe?.columns ?? []).filter((c) => c.kind === 'numeric' || c.kind === 'datetime')
+  );
+
+  function onSizeChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    atlas.setSizeColumn(v === '' ? null : Number(v));
+  }
+
+  function onHistChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    atlas.setHistColumn(v === '' ? null : Number(v));
   }
 </script>
 
 <Section {atlas} id="color" title="Color">
     <div class="select">
       <span>Color by <Info id="explore.colorBy" /></span>
-      <Select value={atlas.colorColumn === null ? '' : String(atlas.colorColumn)} ariaLabel="Color by" onchange={onColorChange}>
+      <Select value={colorSelectValue} ariaLabel="Color by" onchange={onColorChange}>
         <option value="">None</option>
+        {#if atlas.clusterCount > 0}
+          <option value="__clusters">Clusters</option>
+        {/if}
         {#each atlas.describe?.columns ?? [] as c (c.index)}
           {#if c.kind !== 'other'}<option value={String(c.index)}>{c.name}</option>{/if}
         {/each}
       </Select>
     </div>
+    {#if atlas.colorByCluster && atlas.clusterCount > 0}
+      <div class="select">
+        <span>Palette <Info id="explore.palette" /></span>
+        <Select value={atlas.view.palette} ariaLabel="Palette"
+          onchange={(e) => { atlas.setView({ palette: (e.target as HTMLSelectElement).value as 'map' | 'tableau' | 'cvd' }); atlas.recolorByClusters(); }}>
+          <option value="map">Follows the map</option>
+          <option value="tableau">Tableau 20</option>
+          <option value="cvd">Colour-vision-safer</option>
+        </Select>
+      </div>
+      <div class="hint muted">{atlas.clusterCount} clusters · noise points shown in grey as "Unlabelled"</div>
+    {/if}
+    {#if !atlas.colorByCluster}
     {#if atlas.colorColumn !== null && atlas.describe?.columns[atlas.colorColumn]?.kind === 'numeric'}
       <Checkbox bind:checked={atlas.forceCategorical} onchange={() => atlas.requestColors()}>
         Treat as categories <Info id="explore.treatAsCategories" />
@@ -35,14 +75,16 @@
     {#if atlas.colorMeta?.kind === 'categorical'}
       <div class="select">
         <span>Palette <Info id="explore.palette" /></span>
-        <Select value={atlas.view.palette} ariaLabel="Palette" onchange={(e) => atlas.setView({ palette: (e.target as HTMLSelectElement).value as 'map' | 'tableau' })}>
+        <Select value={atlas.view.palette} ariaLabel="Palette" onchange={(e) => atlas.setView({ palette: (e.target as HTMLSelectElement).value as 'map' | 'tableau' | 'cvd' })}>
           <option value="map">Follows the map</option>
           <option value="tableau">Tableau 20</option>
+          <option value="cvd">Colour-vision-safer</option>
         </Select>
       </div>
       {#if atlas.view.palette === 'map' && !atlas.mapColors}
         <div class="hint muted">Colors follow the map once the layout settles.</div>
       {/if}
+    {/if}
     {/if}
     {#if atlas.colorMeta?.kind === 'numeric'}
       <div class="select">
@@ -66,6 +108,44 @@
         </div>
       {/if}
     {/if}
+</Section>
+
+<Section {atlas} id="size" title="Size">
+  <div class="select">
+    <span>Size by <Info id="explore.sizeBy" /></span>
+    <Select value={atlas.sizeColumn === null ? '' : String(atlas.sizeColumn)} ariaLabel="Size by" onchange={onSizeChange}>
+      <option value="">Uniform</option>
+      {#each numericColumns as c (c.index)}
+        <option value={String(c.index)}>{c.name}</option>
+      {/each}
+    </Select>
+  </div>
+  {#if atlas.sizeColumn !== null && !atlas.sizeValues}
+    <div class="hint muted">Loading sizes…</div>
+  {/if}
+  {#if numericColumns.length === 0}
+    <div class="hint muted">No numeric column to size by.</div>
+  {/if}
+</Section>
+
+<Section {atlas} id="filter" title="Filter">
+  <div class="select">
+    <span>Histogram <Info id="explore.histFilter" /></span>
+    <Select value={atlas.histFilter ? String(atlas.histFilter.column) : ''} ariaLabel="Histogram filter column" onchange={onHistChange}>
+      <option value="">None</option>
+      {#each numericColumns as c (c.index)}
+        <option value={String(c.index)}>{c.name}</option>
+      {/each}
+    </Select>
+  </div>
+  {#if atlas.histFilter && atlas.histData}
+    <Histogram {atlas} />
+    <div class="hint muted">Drag the handles to filter points; {atlas.renderVisibleCount} of {atlas.nAnchors} visible.</div>
+  {:else if atlas.histFilter}
+    <div class="hint muted">Loading histogram…</div>
+  {:else}
+    <div class="hint muted">Choose a column to show a histogram brush filter.</div>
+  {/if}
 </Section>
 
 <Section {atlas} id="display" title="Display">

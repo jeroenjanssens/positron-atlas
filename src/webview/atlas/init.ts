@@ -161,6 +161,19 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   if (typeof state?.annotateIdColumn === 'number' || state?.annotateIdColumn === null) {
     atlas.annotateIdColumn = state.annotateIdColumn;
   }
+  // Restore size column (A10).
+  if (state && 'sizeColumn' in state) {
+    atlas.sizeColumn = typeof state.sizeColumn === 'number' && valid.has(state.sizeColumn) ? state.sizeColumn : null;
+  }
+  // Restore histogram filter (A13).
+  if (state?.histFilter && typeof state.histFilter.column === 'number' && valid.has(state.histFilter.column)) {
+    atlas.histFilter = { column: state.histFilter.column, range: state.histFilter.range };
+  }
+  // Restore color-by-cluster flag (A6) — clusters themselves are not persisted; recolour when
+  // clusters next arrive (clusters.ts calls recolorByClusters when colorByCluster is true).
+  if (state?.colorByCluster === true) {
+    atlas.colorByCluster = true;
+  }
   // Reset hover state from prior session.
   atlas.rowCache.clear();
   atlas.hoverInflight = 0;

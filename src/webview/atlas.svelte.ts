@@ -53,6 +53,8 @@ import {
   onProjected as onProjectedImpl,
   cancelKernel as cancelKernelImpl,
   onXYChunk as onXYChunkImpl,
+  runKernelAnchors as runKernelAnchorsImpl,
+  onAnchorXY as onAnchorXYImpl,
 } from './atlas/projection.svelte';
 import {
   setColorColumn as setColorColumnImpl,
@@ -62,6 +64,16 @@ import {
   categoryColor as categoryColorImpl,
   updateMapColors as updateMapColorsImpl,
   toggleCategory as toggleCategoryImpl,
+  setColorByCluster as setColorByClusterImpl,
+  recolorByClusters as recolorByClustersImpl,
+  setSizeColumn as setSizeColumnImpl,
+  requestSizes as requestSizesImpl,
+  onSizes as onSizesImpl,
+  setHistColumn as setHistColumnImpl,
+  requestHistogram as requestHistogramImpl,
+  onHistogram as onHistogramImpl,
+  onHistValues as onHistValuesImpl,
+  setHistRange as setHistRangeImpl,
 } from './atlas/colors';
 import {
   setLabelSource as setLabelSourceImpl,
@@ -195,6 +207,16 @@ export class Atlas {
   colorMeta = $state.raw<ColorMeta | null>(null);
   mapColors = $state.raw<string[] | null>(null);
   colorRange = $state<[number, number] | null>(null);
+  /** True when coloring by automatic cluster codes (A6). */
+  colorByCluster = $state(false);
+  /** Column index for size-by-column (A10), or null for uniform size. */
+  sizeColumn = $state<number | null>(null);
+  /** Per-kept-row float32 sizes (A10), scaled to pixel radii. Null = uniform. */
+  sizeValues = $state.raw<Float32Array | null>(null);
+  /** Active histogram column + brush range (A13). */
+  histFilter = $state.raw<{ column: number; range: [number, number] } | null>(null);
+  /** Pre-computed histogram bins for the histFilter column (A13). */
+  histData = $state.raw<import('../shared/protocol').HistogramData | null>(null);
   prepared = $state.raw<PrepareResult | null>(null);
   kernelStatus = $state.raw<{ task: string; stage: string; progress: number; message: string } | null>(null);
   umapProgress = $state.raw<{ stage: string; progress: number; epoch: number; total: number } | null>(null);
@@ -216,7 +238,7 @@ export class Atlas {
   paused = $state(false);
   placementBackend = $state<'rust' | 'numpy' | null>(null);
   gpuAvailable = $state(false);
-  computeMode = $state<'browser' | ExactEngine>('browser');
+  computeMode = $state<'browser' | ExactEngine | 'kernel-anchors'>('browser');
   layoutEngine = $state<string>('');
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
@@ -274,6 +296,9 @@ export class Atlas {
   placedRows = 0;
   colorValues: Float32Array | Uint16Array | null = null;
   colorsAll: Uint8Array | null = null;
+  /** Raw float32 values for the histogram filter column (A13). */
+  histRawValues: Float32Array | null = null;
+  histRawColumn: number | null = null;
   colorsAnchors: Uint8Array | null = null;
   labelCodes: Uint16Array | null = null;
   labelCodesAnchors: Uint16Array | null = null;
@@ -448,6 +473,18 @@ export class Atlas {
       case 'colors':
         await onColorsImpl(this, msg.column, msg.file, msg.meta);
         break;
+      case 'sizes':
+        await onSizesImpl(this, msg.column, msg.file, msg.meta);
+        break;
+      case 'histValues':
+        await onHistValuesImpl(this, msg.column, msg.file);
+        break;
+      case 'histogram':
+        onHistogramImpl(this, msg.column, msg.data);
+        break;
+      case 'anchorXY':
+        await onAnchorXYImpl(this, msg.file, msg.seconds);
+        break;
       case 'labelCodes':
         await onLabelCodesImpl(this, msg.column, msg.file, msg.meta, msg.purpose ?? 'labels');
         break;
@@ -535,6 +572,8 @@ export class Atlas {
   project(): void { projectImpl(this); }
   runExact(): void { runExactImpl(this); }
   cancelKernel(): void { cancelKernelImpl(this); }
+  /** Run polars-umap on anchors only in the kernel (P3). */
+  runKernelAnchors(): void { runKernelAnchorsImpl(this); }
 
   // ---- colors ------------------------------------------------------------------
   setColorColumn(c: number | null): void { setColorColumnImpl(this, c); }
@@ -542,6 +581,17 @@ export class Atlas {
   recolor(): void { recolorImpl(this); }
   categoryColor(i: number): string { return categoryColorImpl(this, i); }
   updateMapColors(recolor = true): void { updateMapColorsImpl(this, recolor); }
+  /** Toggle color-by-cluster mode (A6). When on, cluster codes drive the color. */
+  setColorByCluster(on: boolean): void { setColorByClusterImpl(this, on); }
+  /** Recolor using the current cluster codes (A6). */
+  recolorByClusters(): void { recolorByClustersImpl(this); }
+  // ---- size by column (A10) ----------------------------------------------------
+  setSizeColumn(c: number | null): void { setSizeColumnImpl(this, c); }
+  requestSizes(): void { requestSizesImpl(this); }
+  // ---- histogram filter (A13) --------------------------------------------------
+  setHistColumn(c: number | null): void { setHistColumnImpl(this, c); }
+  requestHistogram(): void { requestHistogramImpl(this); }
+  setHistRange(range: [number, number] | null): void { setHistRangeImpl(this, range); }
 
   // ---- legend toggles (L1) -----------------------------------------------------
   /** Toggle visibility of a category; solo=true (alt-click) isolates that one. */

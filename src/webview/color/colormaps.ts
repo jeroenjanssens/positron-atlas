@@ -18,6 +18,23 @@ export const CATEGORICAL = [
 export const OTHER_COLOR = '#9a9a9a';
 export const NULL_COLOR = '#5a5a5a';
 export const DEFAULT_POINT_COLOR = '#4e79a7';
+/** Grey used for noise/unlabelled points in cluster colouring (A6). */
+export const NOISE_COLOR = '#8c8c8c';
+
+/**
+ * Colour-vision-safer categorical palette (A6): Bang Wong 2011 / IBM Design.
+ * 8 hues distinguishable under deuteranopia, protanopia, and tritanopia.
+ */
+export const CVD_SAFE = [
+  '#E69F00', // orange
+  '#56B4E9', // sky blue
+  '#009E73', // bluish green
+  '#F0E442', // yellow
+  '#0072B2', // blue
+  '#D55E00', // vermilion
+  '#CC79A7', // reddish purple
+  '#000000', // black
+];
 
 export function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');

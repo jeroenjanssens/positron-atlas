@@ -9,6 +9,7 @@ import { lowerBound } from '../logic';
 import { themeBackground } from './utils';
 import { gatherU16 } from './utils';
 import { runSearch, searchColumn } from './search';
+import { buildRadii, buildHistFilterValues } from './colors';
 
 export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>): void {
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
@@ -42,30 +43,61 @@ export function render(atlas: Atlas): void {
   let sets: import('../render/renderer').PointSet[];
   let filters: (FilterAttribute | null)[];
 
-  const filterForCodes = (codes: Uint16Array | null): FilterAttribute | null => {
-    if (!codes || atlas.colorColumn === null) return null;
-    const hidden = atlas.hiddenCategories.get(atlas.colorColumn);
-    if (!hidden || hidden.size === 0) return null;
-    return { codes, hidden };
+  const filterForCodes = (
+    codes: Uint16Array | null,
+    histVals: Float32Array | null,
+    histOffset = 0,
+  ): FilterAttribute | null => {
+    const hidden = (atlas.colorColumn !== null && !atlas.colorByCluster)
+      ? atlas.hiddenCategories.get(atlas.colorColumn)
+      : undefined;
+    // Cluster colouring (A6): use cluster codes for the legend filter.
+    const clusterCodes = atlas.colorByCluster && atlas.cluster
+      ? (codes ?? atlas.cluster.codes)
+      : null;
+    const activeCodes = clusterCodes ?? (hidden && hidden.size > 0 ? codes : null);
+    if (!activeCodes && !histVals) return null;
+    const length = activeCodes ? activeCodes.length : (histVals ? histVals.length : 0);
+    // Combined filter: 1 if visible in BOTH legend and histogram brush.
+    const out = new Float32Array(length).fill(1);
+    if (activeCodes && hidden && hidden.size > 0 && !atlas.colorByCluster) {
+      for (let i = 0; i < activeCodes.length; i++) {
+        if (hidden.has(activeCodes[i])) out[i] = 0;
+      }
+    }
+    if (histVals) {
+      for (let i = 0; i < Math.min(out.length, histVals.length); i++) {
+        if (histVals[i] < 0.5) out[i] = 0;
+      }
+    }
+    // Wrap in a FilterAttribute with an always-empty hidden set (we pre-computed the filter).
+    return { codes: activeCodes ?? new Uint16Array(length), hidden: new Set(), precomputed: out };
   };
 
   if (showingAll(atlas) && atlas.allXY && atlas.colorsAll && atlas.anchorPos) {
     const placed = atlas.placedRows;
     const first = lowerBound(atlas.anchorPos, placed);
+    const histAll = buildHistFilterValues(atlas, placed, 0);
+    const histAnchors = buildHistFilterValues(atlas, nA - first, first);
+    const radiiAll = buildRadii(atlas, placed, 0);
+    const radiiAnchors = buildRadii(atlas, nA - first, first);
     sets = [
-      { id: 'all', positions: atlas.allXY.subarray(0, placed * 2), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed },
-      { id: 'anchors', positions: atlas.anchorXY.subarray(first * 2), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first },
+      { id: 'all', positions: atlas.allXY.subarray(0, placed * 2), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, radii: radiiAll ?? undefined },
+      { id: 'anchors', positions: atlas.anchorXY.subarray(first * 2), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, radii: radiiAnchors ?? undefined },
     ];
     filters = [
-      filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null),
-      filterForCodes(atlas.colorValues instanceof Uint16Array ? gatherU16(atlas.colorValues, atlas.anchorPos).subarray(first) : null),
+      filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null, histAll),
+      filterForCodes(atlas.colorValues instanceof Uint16Array ? gatherU16(atlas.colorValues, atlas.anchorPos).subarray(first) : null, histAnchors, first),
     ];
   } else {
-    sets = [{ id: 'anchors', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA }];
+    const histAll = buildHistFilterValues(atlas, nA, 0);
+    const radiiAnchors = buildRadii(atlas, nA, 0);
+    sets = [{ id: 'anchors', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, radii: radiiAnchors ?? undefined }];
     filters = [filterForCodes(
       atlas.colorValues instanceof Uint16Array
         ? (atlas.prepared.needsProjection && atlas.anchorPos ? gatherU16(atlas.colorValues, atlas.anchorPos) : atlas.colorValues)
         : null,
+      histAll,
     )];
   }
   atlas.renderer.setPointSets(sets, filters);

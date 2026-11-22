@@ -16,8 +16,8 @@ export interface ViewOptions {
   imageWidth: number;
   /** Swap dark and light in the image thumbnails. */
   imageInvert: boolean;
-  /** Categorical colors: 'map' follows the layout (nearby groups get related hues), 'tableau' is Tableau 20. */
-  palette: 'map' | 'tableau';
+  /** Categorical colors: 'map' follows the layout, 'tableau' is Tableau 20, 'cvd' is colour-vision-safer. */
+  palette: 'map' | 'tableau' | 'cvd';
 }
 
 export type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';

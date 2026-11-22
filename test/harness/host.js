@@ -204,6 +204,28 @@
         post({ type: 'labelCodes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta, length: r.length, purpose: m.purpose });
         break;
       }
+      case 'sizes': {
+        const r = await call('sizes', jobId, m.column);
+        post({ type: 'sizes', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), meta: r.meta });
+        break;
+      }
+      case 'histValues': {
+        const r = await call('hist_values', jobId, m.column);
+        post({ type: 'histValues', column: m.column, file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }) });
+        break;
+      }
+      case 'histogram': {
+        const r = await call('histogram', jobId, m.column, m.nBins ?? 50);
+        post({ type: 'histogram', column: m.column, data: r.data });
+        break;
+      }
+      case 'anchorUmap': {
+        const gen = ++generation;
+        const r = await call('anchor_umap', jobId, JSON.stringify(m.params));
+        if (gen !== generation) break;
+        post({ type: 'anchorXY', file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), seconds: r.seconds });
+        break;
+      }
       case 'writeLabels': {
         if (!confirmModal(`${m.description} in column ${m.column}`)) return;
         const name = `labels_${Date.now()}.u16`;

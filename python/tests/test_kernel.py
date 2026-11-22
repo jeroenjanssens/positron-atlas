@@ -1274,3 +1274,112 @@ def test_texts_max_chars(ns, tmp_path, kind):
     for i in range(nkept):
         s = utf8_bytes[offsets[i]:offsets[i + 1]].decode("utf-8")
         assert len(s) <= 4, f"String '{s}' exceeds 4 chars"
+
+
+# ---------------------------------------------------------------------------
+# A10: sizes() – float32 column values for size-by-column
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_sizes_numeric(ns, tmp_path, frame_kind):
+    """sizes() returns float32 values and correct metadata for a numeric column."""
+    jid, _, x, _ = prepared(ns, frame_kind, tmp_path)
+    r = J(pak.sizes(jid, 0))
+    assert r["ok"] and r["dtype"] == "f32"
+    vals = np.fromfile(tmp_path / r["file"], dtype="<f4")
+    assert len(vals) == 3000
+    m = r["meta"]
+    assert m["kind"] == "numeric"
+    assert m["min"] <= m["q01"] <= m["q99"] <= m["max"]
+    assert m["nullCount"] == 0
+
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_sizes_requires_numeric(ns, tmp_path, frame_kind):
+    """sizes() rejects non-numeric columns."""
+    jid, _, _, _ = prepared(ns, frame_kind, tmp_path)
+    # column 20 is 'label' (categorical); 0-indexed after 20 numeric feature cols
+    r = J(pak.sizes(jid, 20))
+    assert not r["ok"] and "size-by requires" in r["error"]
+
+
+def test_sizes_with_nans(ns, tmp_path):
+    """sizes() reports nullCount correctly when a non-feature column has NaN values."""
+    x, labels = make_blobs(500, 5)
+    df = pd.DataFrame(x, columns=[f"f{i}" for i in range(5)])
+    # 'weight' is not in features, so it is never imputed; NaN values pass through.
+    weight = np.ones(500, dtype=np.float64)
+    weight[::10] = np.nan
+    df["weight"] = weight
+    ns["df"] = df
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    J(pak.prepare(jid, json.dumps({"features": list(range(5))})))
+    wait(jid)
+    # column 5 is "weight"
+    r = J(pak.sizes(jid, 5))
+    assert r["ok"]
+    vals = np.fromfile(tmp_path / r["file"], dtype="<f4")
+    nan_count = int(np.sum(~np.isfinite(vals)))
+    assert nan_count == r["meta"]["nullCount"]
+    assert nan_count > 0  # we seeded NaNs in every 10th row
+
+
+# ---------------------------------------------------------------------------
+# A13: histogram() and hist_values() – histogram bins and filter values
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_histogram_numeric(ns, tmp_path, frame_kind):
+    """histogram() returns n_bins bins covering the data range."""
+    jid, _, _, _ = prepared(ns, frame_kind, tmp_path)
+    r = J(pak.histogram(jid, 0, 20))
+    assert r["ok"]
+    d = r["data"]
+    assert not d["isDatetime"]
+    assert len(d["edges"]) == 21  # n_bins + 1
+    assert len(d["counts"]) == 20
+    assert all(c >= 0 for c in d["counts"])
+    assert d["edges"][0] < d["edges"][-1]  # monotonically increasing
+
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_histogram_rejects_categorical(ns, tmp_path, frame_kind):
+    """histogram() rejects categorical columns."""
+    jid, _, _, _ = prepared(ns, frame_kind, tmp_path)
+    r = J(pak.histogram(jid, 20))  # 'label' column index
+    assert not r["ok"] and "histogram requires" in r["error"]
+
+
+def test_histogram_datetime(ns, tmp_path):
+    """histogram() converts datetime edges to ms-since-epoch."""
+    x, labels = make_blobs(500, 5)
+    df = pd.DataFrame({f"f{i}": x[:, i] for i in range(5)})
+    df["when"] = pd.date_range("2020-01-01", periods=500, freq="h")
+    ns["df"] = df
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    J(pak.prepare(jid, json.dumps({"features": list(range(5))})))
+    wait(jid)
+    # column 5 is "when" (datetime)
+    r = J(pak.histogram(jid, 5, 10))
+    assert r["ok"]
+    d = r["data"]
+    assert d["isDatetime"]
+    # Edges should be in ms since epoch (large positive numbers, > year 2001)
+    assert d["edges"][0] > 1_000_000_000_000
+
+
+@pytest.mark.parametrize("frame_kind", ["pandas", "polars"])
+def test_hist_values(ns, tmp_path, frame_kind):
+    """hist_values() returns float32 column values per kept row."""
+    jid, _, x, _ = prepared(ns, frame_kind, tmp_path)
+    r = J(pak.hist_values(jid, 1))
+    assert r["ok"] and r["dtype"] == "f32"
+    vals = np.fromfile(tmp_path / r["file"], dtype="<f4")
+    assert len(vals) == 3000
+
+
+def test_hist_values_rejects_categorical(ns, tmp_path):
+    """hist_values() rejects categorical columns."""
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path)
+    r = J(pak.hist_values(jid, 20))
+    assert not r["ok"] and "histogram filter requires" in r["error"]

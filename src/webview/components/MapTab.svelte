@@ -122,14 +122,19 @@
       <div class="select">
         <span>Compute <Info id="umap.computeMode" /></span>
         <Select value={atlas.computeMode} ariaLabel="Compute"
-          onchange={(e) => { atlas.computeMode = (e.target as HTMLSelectElement).value as 'browser' | 'polars-umap' | 'umap-learn'; }}>
+          onchange={(e) => { atlas.computeMode = (e.target as HTMLSelectElement).value as 'browser' | 'polars-umap' | 'umap-learn' | 'kernel-anchors'; }}>
           <option value="browser">Browser (live)</option>
           {#if atlas.describe?.deps?.polars_umap}<option value="polars-umap">Kernel (polars-umap)</option>{/if}
           {#if atlas.describe?.deps?.umap}<option value="umap-learn">Kernel (umap-learn)</option>{/if}
+          {#if !atlas.gpuAvailable && atlas.describe?.deps?.polars_umap}
+            <option value="kernel-anchors">Kernel (polars-umap) on anchors</option>
+          {/if}
         </Select>
       </div>
-      {#if atlas.computeMode !== 'browser'}
+      {#if atlas.computeMode !== 'browser' && atlas.computeMode !== 'kernel-anchors'}
         <div class="hint muted">Runs {atlas.computeMode} on all {formatCount(atlas.nKept)} prepared rows in the kernel. No animation; parameters apply when you click Run.</div>
+      {:else if atlas.computeMode === 'kernel-anchors'}
+        <div class="hint muted">polars-umap lays out {formatCount(atlas.nAnchors)} anchors in the kernel; placement uses the neighbour cache. No animation; available when WebGPU is absent.</div>
       {/if}
     {/if}
     <Slider label="Neighbors" tag="rebuild" bind:value={atlas.umap.nNeighbors} min={2} max={200} onchange={umapChanged}
@@ -165,7 +170,10 @@
       </Checkbox>
     {/if}
     <div class="buttons">
-      {#if atlas.computeMode !== 'browser'}
+      {#if atlas.computeMode === 'kernel-anchors'}
+        <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runKernelAnchors()}>Run in kernel (anchors)</button>
+        {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
+      {:else if atlas.computeMode !== 'browser'}
         <button class="primary" disabled={!atlas.prepared || atlas.phase === 'embedding'} onclick={() => atlas.runExact()}>Run in kernel</button>
         {#if atlas.phase === 'embedding'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
       {:else if atlas.paused}

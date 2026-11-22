@@ -18,6 +18,8 @@ export interface PointSet {
   /** RGBA per point. */
   colors: Uint8Array;
   length: number;
+  /** Per-point radius in pixels (A10). When omitted the uniform pointSize is used. */
+  radii?: Float32Array;
 }
 
 /** A text label on the map (world coordinates, size in pixels). */
@@ -62,6 +64,12 @@ export interface FilterAttribute {
   codes: Uint16Array;
   /** Set of hidden category indices. */
   hidden: Set<number>;
+  /**
+   * Pre-computed filter values (1 = visible, 0 = hidden).
+   * When present, used directly instead of re-deriving from codes + hidden.
+   * Supports combined legend + histogram filters (A13).
+   */
+  precomputed?: Float32Array;
 }
 
 const ADDITIVE = {
@@ -90,6 +98,8 @@ export class ScatterRenderer {
   /** Zoom level set by the last fit() call. Used for zoom-dependent fine-label visibility (A8). */
   fittedZoom: number = -Infinity;
   private outlineColor: [number, number, number] = [200, 200, 200];
+  /** Per-outline RGBA colors (A6). Overrides outlineColor when set. */
+  private outlineColors: [number, number, number, number][] | null = null;
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
   private readonly collision = new CollisionFilterExtension();
   private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
@@ -321,8 +331,13 @@ export class ScatterRenderer {
     this.render();
   }
 
-  /** Replace the cluster outlines (rings in world coordinates; an empty list removes them). */
-  setOutlines(rings: [number, number][][], color?: [number, number, number]): void {
+  /** Replace the cluster outlines (rings in world coordinates; an empty list removes them).
+   *  Optionally provide per-outline RGBA colors (A6): one entry per ring. */
+  setOutlines(
+    rings: [number, number][][],
+    color?: [number, number, number],
+    perColors?: [number, number, number, number][],
+  ): void {
     if (rings.length === 0 && this.outlines.length === 0) {
       return;
     }
@@ -330,6 +345,7 @@ export class ScatterRenderer {
     if (color) {
       this.outlineColor = color;
     }
+    this.outlineColors = perColors ?? null;
     this.render();
   }
 
@@ -365,27 +381,38 @@ export class ScatterRenderer {
       const s = this.sets[si];
       if (s.length === 0) continue;
       const filter = this.filters[si] ?? null;
-      const hasFilter = filter !== null && filter.hidden.size > 0;
+      // A precomputed histogram filter must also be applied even when hidden.size === 0.
+      const hasFilter = filter !== null && (filter.hidden.size > 0 || !!filter.precomputed);
       // Always attach the DataFilterExtension and a filter value per point (1 = visible,
       // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
       // the layer exists does not rebuild its shaders, which hid every point.
       const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
       const sf = this.searchFilters[si] ?? null;
+
+      // Build a data attributes object to support optional per-point radii (A10).
+      const makeAttrs = (filterValue: Float32Array): Record<string, any> => {
+        const attrs: Record<string, any> = {
+          getPosition: { value: s.positions, size: 2 },
+          getFillColor: { value: s.colors, size: 4, normalized: true },
+          getFilterValue: { value: filterValue, size: 1 },
+        };
+        if (s.radii) attrs['getRadius'] = { value: s.radii, size: 1 };
+        return attrs;
+      };
+
       if (searchActive && sf !== null) {
         // Two-pass: faded base layer for all legend-visible points, bright highlight for matches.
+        // The highlight pass only shows points that BOTH match the search AND are legend-visible.
+        const searchAndVisible = new Float32Array(sf.length);
+        for (let i = 0; i < sf.length; i++) {
+          searchAndVisible[i] = Math.min(sf[i], legendValues[i]);
+        }
         // Base pass: all legend-visible points at reduced opacity.
         layers.push(new ScatterplotLayer({
           id: `points-${s.id}-base`,
-          data: {
-            length: s.length,
-            attributes: {
-              getPosition: { value: s.positions, size: 2 },
-              getFillColor: { value: s.colors, size: 4, normalized: true },
-              getFilterValue: { value: legendValues, size: 1 },
-            },
-          } as any,
+          data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
           radiusUnits: 'pixels',
-          getRadius: pointSize / 2,
+          getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
           filled: true,
@@ -397,19 +424,12 @@ export class ScatterRenderer {
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
         }));
-        // Highlight pass: only matching points at full opacity.
+        // Highlight pass: only matching & legend-visible points at full opacity.
         layers.push(new ScatterplotLayer({
           id: `points-${s.id}-highlight`,
-          data: {
-            length: s.length,
-            attributes: {
-              getPosition: { value: s.positions, size: 2 },
-              getFillColor: { value: s.colors, size: 4, normalized: true },
-              getFilterValue: { value: sf, size: 1 },
-            },
-          } as any,
+          data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
           radiusUnits: 'pixels',
-          getRadius: pointSize / 2,
+          getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
           filled: true,
@@ -422,19 +442,12 @@ export class ScatterRenderer {
           filterRange: [0.5, 1.5] as [number, number],
         }));
       } else {
-        // No search: single layer with legend filter.
+        // No search: single layer with combined legend+histogram filter.
         layers.push(new ScatterplotLayer({
           id: `points-${s.id}`,
-          data: {
-            length: s.length,
-            attributes: {
-              getPosition: { value: s.positions, size: 2 },
-              getFillColor: { value: s.colors, size: 4, normalized: true },
-              getFilterValue: { value: legendValues, size: 1 },
-            },
-          } as any,
+          data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
           radiusUnits: 'pixels',
-          getRadius: pointSize / 2,
+          getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
           filled: true,
@@ -451,6 +464,7 @@ export class ScatterRenderer {
     }
     if (this.outlines.length) {
       const [r, g, b] = this.outlineColor;
+      const perColors = this.outlineColors;
       layers.push(
         new PolygonLayer<[number, number][]>({
           id: 'outlines',
@@ -458,12 +472,17 @@ export class ScatterRenderer {
           getPolygon: (d: [number, number][]) => d,
           stroked: true,
           filled: true,
-          getFillColor: [r, g, b, 14],
-          getLineColor: [r, g, b, 150],
+          getFillColor: perColors
+            ? (_d: [number, number][], { index }: any) => { const c = perColors[index] ?? [r, g, b, 14]; return [c[0], c[1], c[2], 14] as [number,number,number,number]; }
+            : [r, g, b, 14],
+          getLineColor: perColors
+            ? (_d: [number, number][], { index }: any) => { const c = perColors[index] ?? [r, g, b, 150]; return [c[0], c[1], c[2], 150] as [number,number,number,number]; }
+            : [r, g, b, 150],
           lineWidthUnits: 'pixels',
           getLineWidth: 1.25,
           pickable: false,
           parameters: NORMAL as any,
+          updateTriggers: { getFillColor: this.version, getLineColor: this.version },
         } as any),
       );
     }
@@ -673,7 +692,9 @@ export class ScatterRenderer {
     let total = 0;
     for (let si = 0; si < this.sets.length; si++) {
       const filter = this.filters[si] ?? null;
-      if (!filter || filter.hidden.size === 0) {
+      // A filter with a precomputed array must always be counted precisely,
+      // even when hidden.size === 0 (the precomputed values carry histogram bits).
+      if (!filter || (filter.hidden.size === 0 && !filter.precomputed)) {
         total += this.sets[si]?.length ?? 0;
       } else {
         const vals = buildFilterValues(filter);
@@ -691,10 +712,11 @@ export class ScatterRenderer {
 }
 
 /**
- * Build a Float32Array of filter values (1 = visible, 0 = hidden) for a point set,
- * based on the category codes and hidden set.
+ * Build a Float32Array of filter values (1 = visible, 0 = hidden) for a point set.
+ * Uses precomputed values when available (supports combined legend + histogram filters).
  */
 function buildFilterValues(filter: FilterAttribute): Float32Array {
+  if (filter.precomputed) return filter.precomputed;
   const n = filter.codes.length;
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {

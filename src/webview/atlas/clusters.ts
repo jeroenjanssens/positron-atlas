@@ -8,6 +8,7 @@ import { ClusterFinder } from '../labels/clusterWorker';
 import { vscode, typedArrayToBytes } from '../vscode';
 import { gatherU16, dominantNames } from './utils';
 import { updateLabels } from './labels';
+import { recolorByClusters } from './colors';
 import { MAX_LABELS } from './types';
 
 /** Re-cluster the current layout (when it has settled; labels follow the points meanwhile). */
@@ -122,6 +123,10 @@ export async function runClustering(atlas: Atlas): Promise<void> {
   } else {
     atlas.clusterFine = null;
     atlas.clusterFineNames = [];
+  }
+  // If colour-by-cluster is active, refresh the colours with the new cluster codes (A6).
+  if (atlas.colorByCluster) {
+    recolorByClusters(atlas);
   }
 }
 

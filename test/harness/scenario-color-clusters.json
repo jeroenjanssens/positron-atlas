@@ -1,0 +1,64 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 8, (5, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "open annotate tab and run automatic clusters",
+      "eval": "document.querySelector('#tab-annotate').click(); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterCount > 0 && !a.clustering",
+      "timeout": 60000,
+      "assert": [
+        "a.clusterCount >= 2",
+        "a.clusterCount <= 20"
+      ],
+      "report": "{ k: a.clusterCount }"
+    },
+    {
+      "name": "open explore tab and enable colour by clusters",
+      "eval": "document.querySelector('#tab-explore').click(); await new Promise(r => setTimeout(r, 200)); a.setColorByCluster(true)",
+      "until": "a.colorByCluster === true",
+      "timeout": 10000,
+      "assert": [
+        "a.colorByCluster === true",
+        "a.colorColumn === null"
+      ]
+    },
+    {
+      "name": "points are drawn in cluster colours (non-grey pixels appear)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__drawnPixels = n",
+      "until": "window.__drawnPixels !== undefined",
+      "assert": "window.__drawnPixels > 500",
+      "report": "{ drawnPixels: window.__drawnPixels }",
+      "screenshot": "color-clusters.png"
+    },
+    {
+      "name": "switch to CVD-safe palette",
+      "eval": "a.view.palette = 'cvd'; a.recolorByClusters()",
+      "until": "a.view.palette === 'cvd' && a.colorByCluster",
+      "timeout": 5000,
+      "assert": [
+        "a.colorByCluster === true"
+      ],
+      "screenshot": "color-clusters-cvd.png"
+    },
+    {
+      "name": "disable colour by cluster restores default",
+      "eval": "a.setColorByCluster(false)",
+      "until": "a.colorByCluster === false",
+      "timeout": 5000,
+      "assert": [
+        "a.colorByCluster === false"
+      ]
+    }
+  ]
+}
