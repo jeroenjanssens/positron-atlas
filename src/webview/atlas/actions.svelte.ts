@@ -201,6 +201,9 @@ export function persist(atlas: Atlas): void {
         : undefined;
     })(),
     rotation2D: atlas.rotation2D !== 0 ? atlas.rotation2D : undefined,
+    // B4: persist shapes and brush classes.
+    shapes: atlas.shapes.length ? atlas.shapes : undefined,
+    brushClasses: atlas.brush.classes.length && atlas.brush.classes[0] !== 'Class 1' ? atlas.brush.classes : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

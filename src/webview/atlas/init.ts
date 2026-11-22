@@ -11,6 +11,7 @@ import { runPrepare } from './prepare.svelte';
 import { detectTitleColumn, detectLinkColumn, detectImageUrlColumn } from '../hover/texts';
 import { detectCoordsColumns } from './coords';
 import { restoreLayers } from './layers';
+import { importShapesJson } from './shapes';
 
 export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
   atlas.describe = d;
@@ -238,6 +239,16 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   } else {
     atlas.dims = 2;
     atlas.renderer?.setDims(2);
+  }
+  // Restore shapes (B4).
+  if (Array.isArray(state?.shapes)) {
+    atlas.shapes = importShapesJson({ version: 1, shapes: state!.shapes });
+  } else {
+    atlas.shapes = [];
+  }
+  // Restore brush class names (B4).
+  if (Array.isArray(state?.brushClasses) && state!.brushClasses.length) {
+    atlas.brush = { ...atlas.brush, classes: (state!.brushClasses as string[]).slice() };
   }
   // Restore 2D rotation (item 14).
   if (typeof state?.rotation2D === 'number' && state.dims !== 3) {

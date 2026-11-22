@@ -183,8 +183,8 @@ describe('deckLayerDescriptors', () => {
   it('returns only deck.gl layers sorted by order', () => {
     const layers = createInitialLayers();
     const descs = deckLayerDescriptors(layers);
-    // B2 adds 'boxes' (order 15) and 'data-box' (order 5); B5 adds 'leader-lines' (order 35).
-    expect(descs.map((d) => d.id)).toEqual(['base', 'data-box', 'outlines', 'boxes', 'labels', 'leader-lines']);
+    // B2 adds 'boxes' (15) and 'data-box' (5); B4 adds 'brush-overlay' (25) and 'shapes' (26); B5 adds 'leader-lines' (35).
+    expect(descs.map((d) => d.id)).toEqual(['base', 'data-box', 'outlines', 'boxes', 'labels', 'brush-overlay', 'shapes', 'leader-lines']);
     // All deck.gl ids are in DECK_LAYER_IDS
     for (const d of descs) expect(DECK_LAYER_IDS.has(d.id)).toBe(true);
   });

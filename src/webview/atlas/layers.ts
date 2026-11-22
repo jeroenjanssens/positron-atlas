@@ -10,6 +10,8 @@
  *   'base'          – ScatterplotLayers inside deck.gl (always first by default)
  *   'outlines'      – PolygonLayer inside deck.gl (cluster boundary rings)
  *   'labels'        – TextLayers inside deck.gl (cluster / column labels + badges)
+ *   'brush-overlay' – ScatterplotLayer inside deck.gl (pending brush-tag colours, B4)
+ *   'shapes'        – PolygonLayer/PathLayer/TextLayer inside deck.gl (map shapes, B4)
  *   'glow'          – HTML canvas overlay (A12 blurred halo, z-index ~20)
  *   'leader-lines'  – deck.gl LineLayer in map space (callout leaders, B5, orbits correctly in 3D)
  *   'annotations'   – HTML overlay (callout boxes, A4, z-index ~21)
@@ -50,7 +52,7 @@ export interface LayerState {
 // ---------------------------------------------------------------------------
 
 /** Layer ids that are rendered as deck.gl layers (WebGL canvas). */
-export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels', 'leader-lines', 'boxes', 'data-box']);
+export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels', 'leader-lines', 'boxes', 'data-box', 'brush-overlay', 'shapes']);
 
 /** Layer ids that are rendered as HTML canvas/SVG overlays. */
 export const HTML_LAYER_IDS = new Set(['glow', 'annotations', 'around-labels']);
@@ -88,6 +90,24 @@ export function createInitialLayers(): LayerState[] {
       opacity: 1,
       blending: 'normal',
       order: 20,
+    },
+    {
+      id: 'brush-overlay',
+      kind: 'overlay-frame',
+      name: 'Brush overlay',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 25,
+    },
+    {
+      id: 'shapes',
+      kind: 'overlay-frame',
+      name: 'Shapes',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 26,
     },
     {
       id: 'glow',

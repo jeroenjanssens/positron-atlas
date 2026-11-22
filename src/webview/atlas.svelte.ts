@@ -214,6 +214,26 @@ import {
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
 import { enqueueApiCommand as enqueueApiCommandImpl } from './atlas/api';
+import {
+  createBrushState,
+  adjustBrushSize as adjustBrushSizeImpl,
+  type BrushState,
+} from './atlas/brush';
+import {
+  applyBrushStroke as applyBrushStrokeImpl,
+  commitBrush as commitBrushImpl,
+  cancelBrush as cancelBrushImpl,
+  fillBrushAtPoint as fillBrushAtPointImpl,
+} from './atlas/brushOps';
+import type { Shape } from './atlas/shapes';
+import {
+  addShape as addShapeImpl,
+  removeShape as removeShapeImpl,
+  updateShape as updateShapeImpl,
+  tagPointsInShape as tagPointsInShapeImpl,
+  exportShapes as exportShapesImpl,
+  importShapes as importShapesImpl,
+} from './atlas/shapeOps';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
@@ -259,6 +279,17 @@ export class Atlas {
   labelMeta = $state.raw<CategoricalColorMeta | null>(null);
   labelCount = $state(0);
   tool = $state<'pan' | 'lasso' | 'annotate'>('pan');
+  /**
+   * Active sub-tool within the Annotate tool (item 7+8, B4).
+   * null = default annotation mode (callouts); 'brush' = brush tagging; 'shapes' = shape drawing.
+   */
+  annotateTool = $state<'brush' | 'shapes' | null>(null);
+  /** Brush tool settings (item 7, B4). */
+  brush = $state<BrushState>(createBrushState());
+  /** Pending brush codes per kept row (u16; 65535 = no pending tag).  Null = brush not started. */
+  pendingBrushCodes = $state.raw<Uint16Array | null>(null);
+  /** Shapes on the map (item 8, B4).  Persisted in panel state. */
+  shapes = $state.raw<Shape[]>([]);
   selection = $state.raw<Uint8Array | null>(null);
   selectedCount = $state(0);
   selectionOnAnchors = $state(false);
@@ -1112,6 +1143,26 @@ export class Atlas {
   handleAnnotateClick(titleText = ''): AnnotationData | null { return handleAnnotateClickImpl(this, titleText); }
   /** Create an annotation from the pinned hover card. */
   addAnnotationFromCard(card: { row: number; title?: string; preparedIdx: number; x: number; y: number; image?: (number | null)[]; imageUri?: string }): AnnotationData | null { return addAnnotationFromCardImpl(this, card); }
+
+  // ---- brush tagging (item 7, B4) -----------------------------------------------
+  /** Set the active annotate sub-tool and notify the host (for context key). */
+  setAnnotateTool(tool: 'brush' | 'shapes' | null): void {
+    this.annotateTool = tool;
+    vscode.post({ type: 'annotateToolChanged', tool });
+  }
+  adjustBrushSize(delta: number): void { this.brush = { ...this.brush, sizePx: adjustBrushSizeImpl(this.brush.sizePx, delta) }; }
+  applyBrushStroke(cx: number, cy: number): void { applyBrushStrokeImpl(this, cx, cy); }
+  commitBrush(column: string): void { commitBrushImpl(this, column); }
+  cancelBrush(): void { cancelBrushImpl(this); }
+  fillBrushAtPoint(prepIdx: number): void { fillBrushAtPointImpl(this, prepIdx); }
+
+  // ---- shapes (item 8, B4) ------------------------------------------------------
+  addShape(shape: Shape): void { addShapeImpl(this, shape); }
+  removeShape(id: string): void { removeShapeImpl(this, id); }
+  updateShape(id: string, patch: Partial<Shape>): void { updateShapeImpl(this, id, patch); }
+  tagPointsInShape(shapeId: string, column: string): void { tagPointsInShapeImpl(this, shapeId, column); }
+  exportShapes(): string { return exportShapesImpl(this); }
+  importShapes(json: string): void { importShapesImpl(this, json); }
 
   // ---- undo / redo (A3) --------------------------------------------------------
   recordHistory(entry: HistoryEntry): void { recordHistoryImpl(this, entry); }
