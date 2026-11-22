@@ -508,10 +508,10 @@ Details are in the research notes of 2026-11-22.
 
 - [x] **Atlas: Open example**: a quick pick of the example datasets (MNIST, Fashion MNIST, Forest Cover Type). It downloads and caches like the notebooks, creates a DataFrame in the session, and opens it. Loaders live in `python/positron_atlas_examples.py`; command registered as `positronAtlas.openExample`. HIGGS (2.6 GB), Wikipedia, ChEMBL, UniProt and ClinicalTrials stay notebook-only: they need large downloads or extra packages (rdkit, embedding models).
 - [x] **Open selection in the Data Explorer**: after "New DataFrame from selection", `%view <variable>` via `executeCode` opens it in the Data Explorer automatically (S1-Q4 recommendation, one-line change in `atlasPanel.ts`).
-- [ ] **3D view options:**
-  - perspective or orthographic (`OrbitView` `fovy` vs orthographic; Blender's numpad 5 analogue, verified);
-  - depth fade (fog);
-  - point shading as spheres (optional).
+- [x] **3D view options (item 13, 2026-11-22):**
+  - perspective / orthographic toggle (`OrbitView orthographic: true`; key `5`, Blender numpad-5 analogue); `positronAtlas.nav.view.toggle3DOrtho` command + binding; Explore → Projection select; persisted in `ViewOptions.orthographic3D` and `PersistState.view.orthographic3D`.
+  - depth fade (GPU fragment shader via `DepthFadeExtension`; `LayerExtension` / `fs:DECKGL_FILTER_COLOR`; zero CPU cost; Explore → Depth fade checkbox; persisted in `ViewOptions.depthFade`).
+  - point shading as spheres: **not implemented** — requires lit-sphere fragment shader per point; left out to keep cost zero in the common case.
 
 ---
 
@@ -563,8 +563,8 @@ Details are in the research notes of 2026-11-22.
 ## 16. Follow-ups from the first plan — any wave (S–M each)
 
 - [x] **3D support for automatic clusters and outlines (B2, 2026-11-22):** `runKMeans3D` in `src/webview/workers/kmeans3d.worker.ts` (off-main-thread; samples ≤ 100 k rows for k-means fit, assigns all n rows in the worker; cancellable via `clusterSeq`). K values: detail 1–5 → k = 4, 8, 16, 24, 32. Boxes (wireframe cubes, `LineLayer`) used instead of hulls in 3D. Outlines field set to `[]`. See `src/webview/atlas/clusters3d.ts` and `src/webview/workers/KMeans3DWorker.ts`.
-- [ ] **HTML viewer in 3D:** an `OrbitView` in the viewer, with the stored camera, so 3D maps can be exported (now disabled in 3D).
-- [ ] **Invert or tint image-URL thumbnails:** "Invert colors" applies only to pixel-column images today. Add it for image URLs (CSS filter) so dark structure drawings (ChEMBL) stay readable on dark cards; consider "auto" (invert in dark themes).
+- [x] **HTML viewer in 3D (item 16, 2026-11-22):** `ViewerApp.svelte` detects `header.positionStride === 3`, calls `setDims(3)` with left-drag orbit nav; restores camera via `restoreCamera3D(header.camera3D)`; renders 3D bounding boxes and data-box/grid/gizmo; labels with worldZ; annotations projected with worldZ via `projectWorld(x,y,z)`; `ScreenHitIndex` rebuilt every rAF for hover; Export tab 3D gate removed. `viewerBlob.ts` bumped to v2 (min version 1 for backward compat); new fields: `positionStride`, `camera3D`, `boxes3D`, `dataBox3D`, `imageInvert`. Harness: `scenario-3d-export-html.json`.
+- [x] **Invert or tint image-URL thumbnails (item 16, 2026-11-22):** `header.imageInvert` stored in blob; `ViewerApp.svelte` applies `filter:invert(1)` to annotation images when `imageInvert=true` or `imageInvert='auto'` on dark backgrounds. The webview has had Off/On/Auto since B3.
 - [ ] **Cache cosine neighbours:** the neighbour cache holds euclidean neighbours only. Compute and cache cosine neighbours on first use, or at prepare when the metric is known.
 - [ ] **R support** stays out of scope (`roadmap-plan.md` section 12) until decided otherwise.
 
