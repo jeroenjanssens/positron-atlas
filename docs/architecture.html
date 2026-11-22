@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">58e58cf</span> (2026-11-21).</p>
+     Checked against commit <span class="mono">9b78f72</span> (2026-11-22).</p>
   <nav>
     <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -152,8 +152,8 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="36" y="476" width="328" height="84" rx="8"/>
     <text class="t" x="50" y="500">Interaction &amp; colour</text>
-    <text class="s" x="50" y="519">HitIndex grid (hover) · lasso → bit mask</text>
-    <text class="s" x="50" y="536">colormaps · map palette · RGBA encoding</text>
+    <text class="s" x="50" y="519">HitIndex (hover, prefetch) · pinned card · lasso</text>
+    <text class="s" x="50" y="536">colormaps · map palette · legend filter (GPU)</text>
     <text class="s" x="50" y="553">snippets: Python, polars-umap, DataMapPlot</text>
 
     <!-- internal arrows -->
@@ -179,7 +179,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="s" x="500" y="207">routes ToHost ↔ ToWebview messages</text>
     <text class="s" x="500" y="224">turns kernel outputs into webview URIs</text>
     <text class="s" x="500" y="241">modal confirms · save dialog · clipboard</text>
-    <text class="s" x="500" y="258">writes inputs · fonts (Google Fonts cache)</text>
+    <text class="s" x="500" y="258">writes inputs · images · fonts (cache)</text>
 
     <rect class="box" x="486" y="294" width="248" height="90" rx="8"/>
     <text class="t" x="500" y="318">KernelBridge</text>
@@ -211,7 +211,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="856" y="178" width="308" height="96" rx="8" style="stroke:var(--py)"/>
     <text class="t" x="870" y="202">_positron_atlas helper</text>
     <text class="s" x="870" y="221">in sys.modules, not in your namespace</text>
-    <text class="s" x="870" y="238">describe · colors · row · compare_selection</text>
+    <text class="s" x="870" y="238">describe · colors · rows · texts · compare_selection</text>
     <text class="s" x="870" y="255">describe_groups · write_labels · add_coordinates</text>
 
     <rect class="box" x="856" y="294" width="308" height="96" rx="8"/>
@@ -288,11 +288,11 @@ only the selected numeric columns are converted to float32, and only the anchors
 </div>
 
 <div class="legend">
-  <div><b style="background:var(--msg)">1</b><strong>postMessage</strong>: typed JSON messages (<code>src/shared/protocol.ts</code>). Arrays going <em>to</em> the host (anchor layout, selection masks, label codes) are base64 strings.</div>
+  <div><b style="background:var(--msg)">1</b><strong>postMessage</strong>: typed messages (<code>src/shared/protocol.ts</code>). Arrays going <em>to</em> the host (anchor layout, selection masks, label codes, PNG bytes) are sent as <code>Uint8Array</code>s, without base64.</div>
   <div><b style="background:var(--eval)">2</b><strong>evaluateCode</strong>: every kernel call is a silent Python expression returning a JSON string. Long tasks run in a job thread; the host polls <code>status()</code>.</div>
   <div><b style="background:var(--file)">3</b><strong>Kernel files</strong>: the kernel writes outputs atomically (<code>.tmp</code> then rename) and reads the host's input files.</div>
   <div><b style="background:var(--file)">4</b><strong>fetch()</strong>: the webview reads outputs through <code>asWebviewUri</code> URIs straight into typed arrays: no JSON, no base64.</div>
-  <div><b style="background:var(--file)">5</b><strong>Host files</strong>: the host decodes base64 from the webview into files for the kernel, then deletes them after the call.</div>
+  <div><b style="background:var(--file)">5</b><strong>Host files</strong>: the host writes the webview's bytes into files for the kernel and deletes them after the call. It also caches downloaded images (image-URL columns) and fonts.</div>
 </div>
 
 <!-- ================================================================================== -->
@@ -319,7 +319,8 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
     <tr><td><span class="pill web">webview</span></td><td>Anchors (kept on the main thread; a copy is moved to the UMAP worker, which also builds its kNN graph)</td><td class="mono">2 × a × d × 4 B</td><td class="num">40 MB</td></tr>
     <tr><td><span class="pill web">webview</span></td><td><code>anchorXY</code>, <code>allXY</code>, colour values, <code>colorsAll</code> RGBA, selection</td><td class="mono">a × 8 + n × (8 + 4 + 4 + 1) B</td><td class="num">18 MB</td></tr>
     <tr><td><span class="pill web">GPU</span></td><td>deck.gl attribute buffers: positions and RGBA for the drawn points</td><td class="mono">n × 12 B</td><td class="num">12 MB</td></tr>
-    <tr><td><span class="pill host">postMessage</span></td><td>Anchor layout sent for each placement (base64 inflates by a third)</td><td class="mono">a × 8 × 4/3 B</td><td class="num">1.1 MB</td></tr>
+    <tr><td><span class="pill host">postMessage</span></td><td>Anchor layout sent for each placement (raw bytes)</td><td class="mono">a × 8 B</td><td class="num">0.8 MB</td></tr>
+    <tr><td><span class="pill web">webview</span></td><td>Hover titles (when the title column fits in 64 MB) and an LRU cache of 1,000 rows</td><td class="mono">≤ 64 MB</td><td class="num">≈ 30 MB</td></tr>
   </tbody>
 </table>
 <div class="grid2" style="margin-top:14px">
@@ -398,7 +399,7 @@ Most of the heavy work is already well optimized (Rust placement at 11–13× nu
     <p class="ev">Evidence: <code>docs/benchmarks.md</code> (browser UMAP table; exact UMAP table).</p>
   </div>
   <div class="opt mid">
-    <h3>4 · Send arrays to the host as binary, not base64 <span class="tags">impact: medium for large frames · effort: low</span></h3>
+    <h3>4 · Send arrays to the host as binary, not base64 <span class="tags">done · raw Uint8Arrays (300× less encoding time for a 10⁶-row mask)</span></h3>
     <p>Label codes and cluster codes go to the host as base64 of one u16 per prepared row (<code>writeLabels</code>, <code>describeGroups</code>), and masks as packed bits.
     At 10⁷ rows that is a 27 MB string built in 32 KB slices (<code>bytesToBase64</code> in <code>src/webview/vscode.ts</code>), copied through IPC and decoded again.
     Recent VS Code versions transfer <code>ArrayBuffer</code>s in webview messages without JSON encoding; check that Positron's webview supports it, then post <code>Uint8Array</code>s.
@@ -463,7 +464,7 @@ const STEPS = [
   { note: 'W', text: ['UMAP worker: kNN graph → spectral init → SGD', 'WebGPU (or one CPU thread) · a frame every ~33 ms', 'deck.gl redraws; live changes re-anneal'] },
 
   { phase: 'Place all rows (when there are more rows than anchors)' },
-  { from: 'W', to: 'H', text: 'project(anchor layout as base64)', sub: 'automatic when the estimate is under 20 s' },
+  { from: 'W', to: 'H', text: 'project(anchor layout as bytes)', sub: 'automatic when the estimate is under 20 s' },
   { from: 'H', to: 'D', file: true, text: 'anchor_xy_*.f32' },
   { from: 'H', to: 'K', text: 'project(job, path)' },
   { note: 'K', text: ['Wait for the cached neighbours (or search: IVF index, 4 cells probed)', 'position = weighted mean of the 10 anchors\' xy (Rust or numpy)', 're-placing after a live change: weighted mean only'] },
@@ -476,9 +477,11 @@ const STEPS = [
   { from: 'H', to: 'K', text: 'colors(job, column)', sub: 'numeric values or category codes of the kept rows' },
   { from: 'K', to: 'D', file: true, text: 'colors .f32 / .u16' },
   { from: 'D', to: 'W', file: true, text: 'fetch() → RGBA per point' },
-  { from: 'W', to: 'K', via: 'H', text: 'row(i) on hover', sub: 'the hit index finds the nearest point' },
+  { from: 'W', to: 'K', via: 'H', text: 'texts(title column), once', sub: 'UTF-8 + offsets file: the hover title appears instantly' },
+  { from: 'W', to: 'K', via: 'H', text: 'rows([i, …16 neighbours]) on hover', sub: '30 ms debounce, one request in flight, LRU cache of 1,000 rows' },
   { from: 'K', to: 'W', ret: true, via: 'H', text: 'formatted values (JSON), optional image pixels' },
-  { from: 'W', to: 'K', via: 'H', text: 'compareSelection / describeGroups', sub: 'mask or codes as base64 → file; statistics on a 50k–100k sample' },
+  { from: 'W', to: 'H', text: 'image(row), openLink(url)', sub: 'host downloads image URLs (after a prompt) and opens links' },
+  { from: 'W', to: 'K', via: 'H', text: 'compareSelection / describeGroups', sub: 'mask or codes as bytes → file; statistics on a 50k–100k sample' },
 
   { phase: 'Write back (after a confirmation)' },
   { from: 'W', to: 'H', text: 'addCoordinates · writeLabels · selectionFrame' },
