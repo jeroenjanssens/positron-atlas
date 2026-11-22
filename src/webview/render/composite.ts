@@ -28,6 +28,9 @@ export interface CompositeOptions {
   leaderWidth?: number;
   /** A11 label font family for drawing text. */
   labelFontFamily?: string;
+  /** Whether to invert image thumbnails (false | true | 'auto').
+   *  'auto' resolves to true when the VS Code body has class vscode-dark or vscode-high-contrast. */
+  imageInvert?: boolean | 'auto';
 }
 
 /**
@@ -37,6 +40,7 @@ export interface CompositeOptions {
  */
 export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeOptions): Promise<void> {
   const dpr = opts.dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio : 1);
+  const invertImages = resolveInvertOption(opts.imageInvert);
 
   // ---- Title / subtitle --------------------------------------------------------
   const t = opts.title;
@@ -181,7 +185,11 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
         ctx.stroke();
 
         ctx.imageSmoothingEnabled = true;
+        if (invertImages) {
+          ctx.filter = 'invert(1)';
+        }
         ctx.drawImage(img, bx + pad, by + pad, dw, dh);
+        ctx.filter = 'none';
         ctx.restore();
       } catch {
         // Thumbnail unavailable; skip drawing this annotation image.
@@ -327,6 +335,16 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
       ctx.restore();
     }
   }
+}
+
+function resolveInvertOption(imageInvert: boolean | 'auto' | undefined): boolean {
+  if (imageInvert === true) return true;
+  if (imageInvert === 'auto') {
+    if (typeof document === 'undefined') return false;
+    const cl = document.body.classList;
+    return cl.contains('vscode-dark') || cl.contains('vscode-high-contrast');
+  }
+  return false;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

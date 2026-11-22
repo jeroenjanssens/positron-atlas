@@ -11,7 +11,7 @@
   import AnnotationOverlay from './components/AnnotationOverlay.svelte';
   import AroundLabelsOverlay from './components/AroundLabelsOverlay.svelte';
   import GlowOverlay from './components/GlowOverlay.svelte';
-  import { formatCount, formatSeconds, placeTooltip } from './logic';
+  import { formatCount, formatSeconds, placeTooltip, resolveInvert } from './logic';
   import SearchBox from './components/SearchBox.svelte';
 
   const atlas = new Atlas();
@@ -141,9 +141,9 @@
           <div class="tt-title">Row {formatCount(atlas.tooltip.row)}</div>
         {/if}
         {#if atlas.tooltip.imageUri}
-          <img class="pixel-image" src={atlas.tooltip.imageUri} alt="Row {atlas.tooltip.row}" style="max-width:200px;max-height:150px;object-fit:contain;display:block;margin:2px 0 6px;" />
+          <img class="pixel-image" class:invert-on={atlas.view.imageInvert === true} class:invert-auto={atlas.view.imageInvert === 'auto'} src={atlas.tooltip.imageUri} alt="Row {atlas.tooltip.row}" style="max-width:200px;max-height:150px;object-fit:contain;display:block;margin:2px 0 6px;" />
         {:else if atlas.tooltip.image && atlas.imageShape}
-          <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={atlas.view.imageInvert} />
+          <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={resolveInvert(atlas.view.imageInvert)} />
         {/if}
         {#if atlas.tooltip.values.length}
           <table>

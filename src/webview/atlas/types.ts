@@ -14,8 +14,9 @@ export interface ViewOptions {
   images: boolean;
   /** Image width in pixels; 0 = automatic (square). */
   imageWidth: number;
-  /** Swap dark and light in the image thumbnails. */
-  imageInvert: boolean;
+  /** Swap dark and light in the image thumbnails.
+   *  false = off, true = always on, 'auto' = on only in dark VS Code themes. */
+  imageInvert: boolean | 'auto';
   /** Categorical colors: 'map' follows the layout, 'tableau' is Tableau 20, 'cvd' is colour-vision-safer. */
   palette: 'map' | 'tableau' | 'cvd';
   // ---- A12 glow ----

@@ -1,0 +1,128 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(55)\nn = 300\ndf = pd.DataFrame(rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['image_path'] = 'test_bw.png'\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 300
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set image URL column",
+      "eval": "const imgCol = a.describe.columns.find(c => c.name === 'image_path').index; a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: imgCol, fieldMode: 'all' }; a.loadImagesFromUrls = 'always';",
+      "assert": [
+        "a.tooltipOpts.imageUrlColumn !== undefined && a.tooltipOpts.imageUrlColumn !== null",
+        "a.loadImagesFromUrls === 'always'"
+      ]
+    },
+    {
+      "name": "set imageInvert to auto",
+      "eval": "a.setView({ imageInvert: 'auto' })",
+      "assert": [
+        "a.view.imageInvert === 'auto'"
+      ]
+    },
+    {
+      "name": "hover first anchor to show tooltip with image URL",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for image URL in tooltip",
+      "until": "a.tooltip && a.tooltip.imageUri && a.tooltip.imageUri.length > 0",
+      "timeout": 10000,
+      "assert": [
+        "a.tooltip.imageUri.includes('test_bw.png')"
+      ],
+      "report": "{ imageUri: a.tooltip.imageUri }"
+    },
+    {
+      "name": "in light theme (no vscode-dark body class): tooltip img has no invert filter",
+      "eval": "document.body.classList.remove('vscode-dark'); document.body.classList.remove('vscode-high-contrast');",
+      "assert": [
+        "!document.body.classList.contains('vscode-dark')",
+        "!document.body.classList.contains('vscode-high-contrast')"
+      ]
+    },
+    {
+      "name": "tooltip image has invert-auto class (always present when imageInvert=auto)",
+      "assert": [
+        "!!document.querySelector('.tooltip img.invert-auto')"
+      ],
+      "report": "{ filter: document.querySelector('.tooltip img.invert-auto') ? getComputedStyle(document.querySelector('.tooltip img.invert-auto')).filter : 'no element' }"
+    },
+    {
+      "name": "in light theme: computed filter does not include invert",
+      "assert": [
+        "!getComputedStyle(document.querySelector('.tooltip img.invert-auto')).filter.includes('invert')"
+      ],
+      "report": "{ filter: getComputedStyle(document.querySelector('.tooltip img.invert-auto')).filter }",
+      "screenshot": "invert-light-tooltip.png"
+    },
+    {
+      "name": "in dark theme (add vscode-dark class to body): computed filter includes invert",
+      "eval": "document.body.classList.add('vscode-dark');",
+      "assert": [
+        "document.body.classList.contains('vscode-dark')",
+        "getComputedStyle(document.querySelector('.tooltip img.invert-auto')).filter.includes('invert')"
+      ],
+      "report": "{ filter: getComputedStyle(document.querySelector('.tooltip img.invert-auto')).filter }",
+      "screenshot": "invert-dark-tooltip.png"
+    },
+    {
+      "name": "pin card to show pinned hover card image",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] }); a.onClick({ clientX: 400, clientY: 300, shiftKey: false });",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for pinned card imageUri",
+      "until": "a.pinnedCard && a.pinnedCard.imageUri && a.pinnedCard.imageUri.length > 0",
+      "timeout": 10000,
+      "report": "{ imageUri: a.pinnedCard && a.pinnedCard.imageUri }"
+    },
+    {
+      "name": "pinned card image (hc-image) has invert-auto class in dark theme",
+      "assert": [
+        "!!document.querySelector('.hc-image.invert-auto')",
+        "getComputedStyle(document.querySelector('.hc-image.invert-auto')).filter.includes('invert')"
+      ],
+      "report": "{ filter: document.querySelector('.hc-image.invert-auto') ? getComputedStyle(document.querySelector('.hc-image.invert-auto')).filter : 'no element' }",
+      "screenshot": "invert-dark-hovercard.png"
+    },
+    {
+      "name": "remove dark class: hc-image filter no longer includes invert",
+      "eval": "document.body.classList.remove('vscode-dark');",
+      "assert": [
+        "!getComputedStyle(document.querySelector('.hc-image.invert-auto')).filter.includes('invert')"
+      ],
+      "report": "{ filter: getComputedStyle(document.querySelector('.hc-image.invert-auto')).filter }",
+      "screenshot": "invert-light-hovercard.png"
+    },
+    {
+      "name": "imageInvert=true always inverts regardless of theme",
+      "eval": "a.setView({ imageInvert: true });",
+      "assert": [
+        "a.view.imageInvert === true",
+        "!!document.querySelector('.hc-image.invert-on')",
+        "getComputedStyle(document.querySelector('.hc-image.invert-on')).filter.includes('invert')"
+      ],
+      "report": "{ filter: getComputedStyle(document.querySelector('.hc-image.invert-on')).filter }"
+    },
+    {
+      "name": "imageInvert=false: no invert class",
+      "eval": "a.setView({ imageInvert: false });",
+      "assert": [
+        "a.view.imageInvert === false",
+        "!document.querySelector('.hc-image.invert-on')",
+        "!document.querySelector('.hc-image.invert-auto')"
+      ],
+      "report": "{ imageInvert: a.view.imageInvert }"
+    }
+  ]
+}

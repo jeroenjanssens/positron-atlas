@@ -205,12 +205,23 @@
           <span class="muted-text">× {atlas.imageShape[1]}</span>
         </span>
       </label>
-      <Checkbox
-        checked={atlas.view.imageInvert}
-        onchange={(v) => atlas.setView({ imageInvert: v })}>
-        Invert colors <Info id="explore.imageInvert" />
-      </Checkbox>
       <div class="hint muted">{atlas.imageColumns.indices.length.toLocaleString()} pixel columns ({atlas.imageColumns.first} … {atlas.imageColumns.last}). Hover a point to see its image.</div>
+    {/if}
+    {#if atlas.imageColumns || (atlas.tooltipOpts.imageUrlColumn !== undefined && atlas.tooltipOpts.imageUrlColumn !== null)}
+      <div class="select">
+        <span>Invert image colors <Info id="explore.imageInvert" /></span>
+        <Select
+          value={String(atlas.view.imageInvert)}
+          ariaLabel="Invert image colors"
+          onchange={(e) => {
+            const v = (e.target as HTMLSelectElement).value;
+            atlas.setView({ imageInvert: v === 'true' ? true : v === 'auto' ? 'auto' : false });
+          }}>
+          <option value="false">Off</option>
+          <option value="true">On</option>
+          <option value="auto">Auto (dark themes)</option>
+        </Select>
+      </div>
     {/if}
 </Section>
 

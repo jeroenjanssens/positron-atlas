@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
   import PixelImage from './PixelImage.svelte';
-  import { formatCount } from '../logic';
+  import { formatCount, resolveInvert } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
   const card = $derived(atlas.pinnedCard);
@@ -18,9 +18,9 @@
       </button>
     </div>
     {#if card.imageUri}
-      <img class="hc-image" src={card.imageUri} alt="Row {card.row}" />
+      <img class="hc-image" class:invert-on={atlas.view.imageInvert === true} class:invert-auto={atlas.view.imageInvert === 'auto'} src={card.imageUri} alt="Row {card.row}" />
     {:else if card.image && atlas.imageShape}
-      <PixelImage values={card.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={atlas.view.imageInvert} />
+      <PixelImage values={card.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={resolveInvert(atlas.view.imageInvert)} />
     {/if}
     {#if card.values.length}
       <table class="hc-table">

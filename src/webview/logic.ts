@@ -203,6 +203,22 @@ export function imageToRgba(values: (number | null)[], width: number, height: nu
 }
 
 /**
+ * Resolve an `imageInvert` setting (false | true | 'auto') to a boolean.
+ *
+ * 'auto' inverts only in dark VS Code themes (body class `vscode-dark` or
+ * `vscode-high-contrast`). Called at render time — not reactive; re-evaluate when
+ * the setting or theme changes.
+ */
+export function resolveInvert(imageInvert: boolean | 'auto'): boolean {
+  if (imageInvert === 'auto') {
+    if (typeof document === 'undefined') return false;
+    const cl = document.body.classList;
+    return cl.contains('vscode-dark') || cl.contains('vscode-high-contrast');
+  }
+  return imageInvert === true;
+}
+
+/**
  * Position (along one axis) for a tooltip of size `size` near a cursor at `at` inside
  * a container of size `container`: after the cursor, before it if that overflows, and
  * clamped to the container.

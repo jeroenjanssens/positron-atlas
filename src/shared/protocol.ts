@@ -315,7 +315,7 @@ export interface PanelState {
     background?: string;
     images?: boolean;
     imageWidth?: number;
-    imageInvert?: boolean;
+    imageInvert?: boolean | 'auto';
     palette?: 'map' | 'tableau' | 'cvd';
     // A12 glow
     glow?: boolean;

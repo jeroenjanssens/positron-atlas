@@ -13,6 +13,7 @@
   import type { Atlas } from '../atlas.svelte';
   import type { AnnotationData } from '../../shared/protocol';
   import PixelImage from './PixelImage.svelte';
+  import { resolveInvert } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -172,14 +173,14 @@
               values={ann.imagePixels}
               width={ann.imageShape[0]}
               height={ann.imageShape[1]}
-              invert={atlas.view.imageInvert}
+              invert={resolveInvert(atlas.view.imageInvert)}
               size={64}
             />
             {#if ann.text && ann.text !== `Row ${ann.row}`}
               <div class="ann-img-caption">{ann.text}</div>
             {/if}
           {:else if ann.imageDataUrl}
-            <img src={ann.imageDataUrl} alt="Row {ann.row}" class="ann-url-img" />
+            <img src={ann.imageDataUrl} alt="Row {ann.row}" class="ann-url-img" class:invert-on={atlas.view.imageInvert === true} class:invert-auto={atlas.view.imageInvert === 'auto'} />
           {:else}
             <!-- Pixel data not yet loaded; show row number while waiting -->
             <div class="ann-image-placeholder" title="Row {ann.row}">Row {ann.row}</div>

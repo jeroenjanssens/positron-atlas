@@ -514,13 +514,17 @@ export const HELP: Record<string, HelpEntry> = {
   },
 
   'explore.imageInvert': {
-    title: 'Invert colors',
-    what: 'Swaps dark and light in the image thumbnails.',
+    title: 'Invert image colors',
+    what: 'Swaps dark and light in image thumbnails (pixel columns and image-URL columns).',
     intuition:
       'Some datasets (e.g. MNIST) encode digits as bright pixels on a black background, ' +
       'which can look muddy on a light plot background. ' +
-      'Invert swaps the intensity so digits appear dark on white, matching a printed appearance.',
-    when: 'Enable for white-on-black datasets when the background is light.',
+      'Invert swaps the intensity so digits appear dark on white, matching a printed appearance. ' +
+      'The Auto option inverts only in dark VS Code themes (dark or high-contrast), ' +
+      'so the same atlas looks correct whether the editor is light or dark.',
+    when:
+      'Use Auto for datasets whose images look better inverted in dark themes ' +
+      '(black-on-white images like MNIST). Use On to always invert regardless of theme.',
     cost: 'none',
   },
 
