@@ -1,0 +1,37 @@
+{
+  "description": "CAD preset (item 1): left-drag does NOT pan in 2D; middle-drag pans.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 3, 2000)\ncenters = rng.normal(0, 4, (3, 6))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (2000, 6)), columns=[f'f{i}' for i in range(6)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": { "maxAnchorsCpu": 2000, "nativeCore": false },
+  "screenshot": "preset-cad.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000
+    },
+    {
+      "name": "set CAD preset",
+      "eval": "a.navSettings = { ...a.navSettings, preset: 'cad' }; a.renderer?.setNavSettings(a.navSettings, a.dims, () => a.tool)",
+      "report": "{ preset: a.navSettings.preset }"
+    },
+    {
+      "name": "CAD 2D: left-drag does NOT pan (target unchanged)",
+      "eval": "window.__preCadTarget = JSON.stringify(a.renderer?.viewState?.target ?? [0,0,0]);",
+      "drag": "[[700, 450], [650, 450], [600, 450], [550, 450]]",
+      "assert": [
+        "JSON.stringify(a.renderer?.viewState?.target) === window.__preCadTarget"
+      ],
+      "report": "{ targetBefore: JSON.parse(window.__preCadTarget), targetAfter: a.renderer?.viewState?.target }"
+    },
+    {
+      "name": "CAD 2D: middle-drag pans",
+      "eval": "window.__preMidTarget = JSON.stringify(a.renderer?.viewState?.target ?? [0,0,0]);",
+      "middleDrag": "[[700, 450], [650, 450], [600, 450], [550, 450]]",
+      "until": "JSON.stringify(a.renderer?.viewState?.target) !== window.__preMidTarget",
+      "timeout": 5000,
+      "assert": ["JSON.stringify(a.renderer?.viewState?.target) !== window.__preMidTarget"],
+      "report": "{ target: a.renderer?.viewState?.target }"
+    }
+  ]
+}

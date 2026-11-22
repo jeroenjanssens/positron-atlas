@@ -12,6 +12,7 @@
   import AroundLabelsOverlay from './components/AroundLabelsOverlay.svelte';
   import GlowOverlay from './components/GlowOverlay.svelte';
   import CheatSheet from './components/CheatSheet.svelte';
+  import NavHint from './components/NavHint.svelte';
   import { formatCount, formatSeconds, placeTooltip, resolveInvert } from './logic';
   import SearchBox from './components/SearchBox.svelte';
   import { vscode } from './vscode';
@@ -187,6 +188,7 @@
     </div>
     <Legend {atlas} />
     {#if atlas.cheatSheetVisible}<CheatSheet {atlas} />{/if}
+    {#if atlas.showHint && !atlas.cheatSheetVisible}<NavHint {atlas} />{/if}
     <HoverCard {atlas} />
     {#if atlas.tooltip && !atlas.pinnedCard}
       <div class="tooltip" bind:clientWidth={ttW} bind:clientHeight={ttH} style="left:{ttPos.left}px; top:{ttPos.top}px">
