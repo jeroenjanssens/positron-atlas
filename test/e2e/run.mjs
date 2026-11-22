@@ -3,7 +3,7 @@
 // Launches an isolated Positron (test/e2e/launch.sh), lets the helper extension start Python,
 // create a DataFrame and open Atlas, then waits for the layout and takes screenshots.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { connect } from './cdp.mjs';
 
 const args = process.argv.slice(2);
@@ -110,6 +110,29 @@ try {
       }
     }
     if (step.report) console.log(`  ${step.name}: ${await cdp.evaluate(`(() => { const a = window.__atlas; return JSON.stringify(${step.report}); })()`, ctx)}`);
+    if (step.checkFile) {
+      if (!existsSync(step.checkFile)) throw new Error(`step ${step.name}: file not found: ${step.checkFile}`);
+      const sz = statSync(step.checkFile).size;
+      if (sz === 0) throw new Error(`step ${step.name}: file is empty: ${step.checkFile}`);
+      console.log(`  ${step.name}: ${step.checkFile} (${sz} bytes)`);
+    }
+    if (step.waitFile) {
+      while (!existsSync(step.waitFile)) {
+        if (Date.now() - ts > (step.timeout ?? 30000)) throw new Error(`step ${step.name}: file never appeared: ${step.waitFile}`);
+        await sleep(300);
+      }
+      console.log(`  ${step.name}: ${step.waitFile} (${statSync(step.waitFile).size} bytes)`);
+    }
+    if (step.writeFile) {
+      const content = typeof step.writeContent === 'string' ? step.writeContent : JSON.stringify(step.writeContent);
+      writeFileSync(step.writeFile, content);
+      console.log(`  ${step.name}: wrote ${step.writeFile}`);
+    }
+    if (step.readFile) {
+      const content = existsSync(step.readFile) ? readFileSync(step.readFile, 'utf8').trim() : '(not found)';
+      console.log(`  ${step.name}: ${content}`);
+    }
+    if (step.sleepMs) await sleep(step.sleepMs);
     console.log(`step ok: ${step.name} (${((Date.now() - ts) / 1000).toFixed(1)}s)`);
     if (step.screenshot) {
       await sleep(800);

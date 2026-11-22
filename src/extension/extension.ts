@@ -113,10 +113,47 @@ export function activate(context: vscode.ExtensionContext): void {
     // C3: Register the Positron comm client handler for 'positron.atlas'.
     // Safe to skip when Positron is not available (plain VS Code).
     ...(positron ? [registerAtlasCommHandler(ctx(positron))] : []),
+    // C3: Auto-load the kernel helper for every Python session so that
+    // `import positron_atlas` works without the user calling atlas.open() first.
+    ...(positron
+      ? [
+          positron.runtime.onDidChangeForegroundSession(async (sessionId) => {
+            if (!sessionId) return;
+            try {
+              const session = await positron.runtime.getSession(sessionId);
+              if (session?.runtimeMetadata.languageId === 'python') {
+                await autoLoadHelper(ctx(positron), sessionId);
+              }
+            } catch {
+              // session may have disappeared; ignore
+            }
+          }),
+        ]
+      : []),
   );
+  // Load the helper for all Python sessions that are already running.
+  if (positron) {
+    void positron.runtime.getActiveSessions().then(async (sessions) => {
+      for (const s of sessions) {
+        if (s.runtimeMetadata.languageId === 'python') {
+          await autoLoadHelper(ctx(positron), s.metadata.sessionId);
+        }
+      }
+    }, () => undefined);
+  }
 }
 
 export function deactivate(): void {}
+
+/** Load the kernel helper silently for a Python session (best-effort). */
+async function autoLoadHelper(ctx: AtlasContext, sessionId: string): Promise<void> {
+  try {
+    await bridgeFor(ctx, sessionId).ensureLoaded();
+    ctx.log.info(`Atlas helper loaded for session ${sessionId}`);
+  } catch (e) {
+    ctx.log.warn(`Atlas helper auto-load failed for session ${sessionId}: ${String(e)}`);
+  }
+}
 
 /** Single entry point used by every UI affordance. */
 export function openAtlas(ctx: AtlasContext, target: OpenTarget): AtlasPanel {

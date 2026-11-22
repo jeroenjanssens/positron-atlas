@@ -71,6 +71,28 @@ async function activate() {
       await positron.runtime.executeCode('python', sc.setup, false, false, undefined, undefined, undefined, session.metadata.sessionId);
       log('setup done');
     }
+    if (sc.pythonApiCode) {
+      // The Python code opens Atlas itself via comm (positron_atlas); no need to run a command.
+      await positron.runtime.executeCode('python', sc.pythonApiCode, false, false, undefined, undefined, undefined, session.metadata.sessionId);
+      log('pythonApiCode done');
+      // Poll for run-cell requests so run.mjs can trigger additional Python cells.
+      const out = process.env.E2E_DIR || '/tmp/positron-atlas-e2e';
+      const runCellFile = `${out}/run-cell.json`;
+      const intervalId = setInterval(async () => {
+        if (!fs.existsSync(runCellFile)) return;
+        let req;
+        try { req = JSON.parse(fs.readFileSync(runCellFile, 'utf8')); } catch { return; }
+        try { fs.unlinkSync(runCellFile); } catch {}
+        if (req && req.code) {
+          try {
+            await positron.runtime.executeCode('python', req.code, false, false, undefined, undefined, undefined, session.metadata.sessionId);
+            log(`run-cell done: ${req.code.slice(0, 60)}`);
+          } catch (e) { log(`run-cell error: ${e}`); }
+        }
+      }, 300);
+      log('READY');
+      return;
+    }
     if (sc.viaDataExplorer) {
       // Open the variable in Positron's Data Explorer, then use our toolbar command.
       await positron.runtime.executeCode('python', `%view ${sc.variable}`, false, false, undefined, undefined, undefined, session.metadata.sessionId);

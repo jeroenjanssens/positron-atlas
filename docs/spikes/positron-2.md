@@ -158,6 +158,17 @@ using `registerClientHandler` / `comm.send` / `comm.on_msg`. The chosen design:
 **Measured harness latency (colorBy round-trip):** ~200 ms in the headless Chrome harness.
 This includes: Python `comm.send` → host `dispatchCommCommand` → webview `apiCommand` → `setColorColumn` → `colors` kernel call → `apiReply`. In a real Positron session the iopub delivery adds ~5 ms.
 
+**E2E test (`scenario-python-api.json`):** `test/e2e/scenario-python-api.json` runs the full
+round-trip in a real Positron instance: Python `atlas.open(df)` opens an Atlas panel via
+`comm_open`; `m.color_by('cluster')` sends an `apiCommand` over the comm channel; the step
+timer from `eval: a.invertSelection()` to `until: a.selectedCount > 0` measures the
+in-process selection latency; a second Python cell (`run-cell.json`) writes the Python-side
+`len(m.selected_rows)` to verify that the reverse comm (host→kernel `performRpc`) delivers
+the selection mask correctly. Run with:
+```
+npm run build && node test/e2e/run.mjs test/e2e/scenario-python-api.json
+```
+
 **Recommendation:** ✅ Comms are the correct primitive. The architecture validated; item 12 is done.
 
 ---

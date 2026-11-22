@@ -1,0 +1,40 @@
+{
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
+  "pythonApiCode": "import positron_atlas as atlas; import pathlib; m = atlas.open(df); m.color_by('cluster'); m.save_png('/tmp/positron-atlas-e2e/api.png')",
+  "steps": [
+    {
+      "name": "png-saved",
+      "checkFile": "/tmp/positron-atlas-e2e/api.png",
+      "timeout": 20000
+    },
+    {
+      "name": "colormeta-categorical",
+      "report": "a.colorMeta && a.colorMeta.kind"
+    },
+    {
+      "name": "invert-selection",
+      "eval": "a.invertSelection()",
+      "screenshot": "api-selected.png"
+    },
+    {
+      "name": "wait-selection",
+      "until": "a.selectedCount > 0",
+      "timeout": 10000,
+      "report": "a.selectedCount"
+    },
+    {
+      "name": "run-cell-2",
+      "writeFile": "/tmp/positron-atlas-e2e/run-cell.json",
+      "writeContent": {"code": "import pathlib, json; pathlib.Path('/tmp/positron-atlas-e2e/sel-count.json').write_text(json.dumps(len(m.selected_rows)))"}
+    },
+    {
+      "name": "wait-sel-count",
+      "waitFile": "/tmp/positron-atlas-e2e/sel-count.json",
+      "timeout": 15000
+    },
+    {
+      "name": "sel-count",
+      "readFile": "/tmp/positron-atlas-e2e/sel-count.json"
+    }
+  ]
+}

@@ -3042,7 +3042,7 @@ def _atlas_open(df: Any) -> "_AtlasHandle":
             variable = k
             break
     if variable is None:
-        variable = "_atlas_df"
+        variable = f"_atlas_df_{uuid.uuid4().hex[:8]}"
         ns[variable] = df
 
     # Create a temporary directory for status files (host writes here).
@@ -3055,9 +3055,15 @@ def _atlas_open(df: Any) -> "_AtlasHandle":
             "apiDir": str(api_dir),
         },
     )
-    comm.open()
+    # Note: create_comm() with primary=True (default) already calls comm.open(data=...)
+    # internally in BaseComm.__init__; do NOT call comm.open() again.
 
     handle = _AtlasHandle(comm, variable, api_dir)
     _HANDLES[comm.comm_id] = handle
     _ensure_atlas_module(handle)
     return handle
+
+
+# Register positron_atlas in sys.modules when the helper loads.
+# This runs at module load time so ``import positron_atlas`` works immediately.
+_ensure_atlas_module()
