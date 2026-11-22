@@ -198,6 +198,7 @@ See `docs/benchmarks.md` in the source repository.
 - In 3D, automatic clusters, outlines, labels around the map, glow, label dragging, point annotations and the DataMapPlot and HTML exports are turned off (the interface says so); switch back to 2D for them.
 - The neighbour cache holds euclidean neighbours; with the cosine metric, rows are searched again for each placement.
 - Positron 2026.10 does not expose the Data Explorer's variable to extensions. Atlas reads it from the tab title (`Data: <name>`) and uses `positron.dataExplorer.getContext()` when available.
+- **Annotation position migration (B5).** Dragged label and callout box offsets are stored in map (world) coordinates since B5. Saved state from earlier versions stores them in screen pixels. On import, legacy offsets are reset to a small default offset — the visual position changes once, then follows the map correctly under rotation and in 3D.
 
 ## Development
 
