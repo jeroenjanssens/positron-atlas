@@ -218,6 +218,8 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       title: buildTitle(atlas),
       fontCss: getLoadedFontCss(),
       sample: { n: atlas.prepared.nSampled, total: atlas.prepared.nRows, pct: opts.samplePct },
+      // Persist 2D rotation so the HTML viewer opens at the same angle (item 14).
+      rotation2D: atlas.rotation2D !== 0 ? atlas.rotation2D : undefined,
     },
     variable: atlas.variable,
   };

@@ -22,6 +22,7 @@
  */
 
 import type { Atlas } from '../atlas.svelte';
+import { flash } from '../atlas/actions.svelte';
 import { isVsCodeWebview } from '../vscode';
 import type { ActionId } from './bindings';
 
@@ -146,24 +147,24 @@ export class InputDispatcher {
         break;
       // ---- Misc -------------------------------------------------------------------
       case 'view.showControls':
-        // Placeholder: B1 (cheat sheet) will implement this.
+        // Keyboard cheat sheet — planned for B1.
+        flash(a, 'Keyboard shortcuts panel coming soon');
         break;
       case 'view.toggleFullScreen':
-        if (a.isPositron) {
-          // Will be implemented fully when fullscreen state is tracked in Atlas.
-        }
+        a.toggleFullscreen();
         break;
       case 'view.toggle3D':
         a.setDims(a.dims === 2 ? 3 : 2);
         break;
       case 'view.toggleGrid':
-        // Placeholder for C1 (grid mode).
+        // Grid overlay — planned for C1.
+        flash(a, 'Grid overlay coming soon');
         break;
       case 'edit.undo':
-        // Placeholder for A3 (undo/redo).
+        // Undo/redo — A3 will plug into this command forwarding path.
         break;
       case 'edit.redo':
-        // Placeholder for A3 (undo/redo).
+        // Undo/redo — A3 will plug into this command forwarding path.
         break;
     }
   }

@@ -122,6 +122,8 @@ export interface BlobHeader {
   fontCss: string[];
   /** Sampling info (informational, not rendered). */
   sample?: { n: number; total: number; pct: number };
+  /** 2D map rotation angle in degrees (0 = north-up). Absent = 0. */
+  rotation2D?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -2,28 +2,10 @@
   import type { Atlas } from '../atlas.svelte';
   let { atlas }: { atlas: Atlas } = $props();
 
-  // Fullscreen state
-  let fullscreen = $state(false);
-
-  function toggleFullscreen() {
-    if (atlas.isPositron) {
-      // In Positron: post a ToHost message; the host runs the maximize command.
-      fullscreen = !fullscreen;
-      atlas.setFullscreen(fullscreen);
-    } else {
-      // In a plain browser: use the Fullscreen API.
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().then(() => { fullscreen = true; }).catch(() => {});
-      } else {
-        document.exitFullscreen().then(() => { fullscreen = false; }).catch(() => {});
-      }
-    }
-  }
-
-  // Keep local state in sync with browser fullscreen change events.
+  // Keep atlas.fullscreen in sync with the browser Fullscreen API events.
   function onFullscreenChange() {
     if (!atlas.isPositron) {
-      fullscreen = !!document.fullscreenElement;
+      atlas.fullscreen = !!document.fullscreenElement;
     }
   }
 </script>
@@ -128,9 +110,9 @@
   <span class="sep" aria-hidden="true"></span>
 
   <!-- Fullscreen (F1) -->
-  <button class="tool" class:active={fullscreen} aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
-    title={fullscreen ? 'Exit full screen' : 'Full screen: maximize the Atlas panel'}
-    onclick={toggleFullscreen}>
-    <span class="codicon {fullscreen ? 'codicon-screen-normal' : 'codicon-screen-full'}" aria-hidden="true"></span>
+  <button class="tool" class:active={atlas.fullscreen} aria-pressed={atlas.fullscreen} aria-label={atlas.fullscreen ? 'Exit full screen' : 'Full screen'}
+    title={atlas.fullscreen ? 'Exit full screen' : 'Full screen: maximize the Atlas panel'}
+    onclick={() => atlas.toggleFullscreen()}>
+    <span class="codicon {atlas.fullscreen ? 'codicon-screen-normal' : 'codicon-screen-full'}" aria-hidden="true"></span>
   </button>
 </div>

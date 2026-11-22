@@ -330,6 +330,10 @@
     import('../webview/render/hitIndex').then(({ bounds }) => {
       const legendPad = header.legend ? 220 : 0;
       renderer?.fit(bounds(blob.xy, nPoints), false, legendPad);
+      // Restore 2D rotation (item 14): apply after fit so the angle is preserved.
+      if (header.rotation2D) {
+        renderer?.setRotation2D(header.rotation2D);
+      }
     });
 
     // Start annotation position tracking

@@ -294,6 +294,10 @@ export class Atlas {
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
 
+  // ---- fullscreen state -----------------------------------------------------------
+  /** True when the panel/document is in full-screen mode (toggled via view.toggleFullScreen). */
+  fullscreen = $state(false);
+
   // ---- navigation / input state (item 1, item 14) --------------------------------
   /** Current 2D map rotation angle in degrees (0 = north-up). Kept in sync with renderer. */
   rotation2D = $state(0);
@@ -655,6 +659,7 @@ export class Atlas {
       // --- Navigation settings changed (item 1) ---
       case 'settingsChanged':
         this.navSettings = msg.nav;
+        this.renderer?.setNavSettings(msg.nav, this.dims);
         break;
     }
   }
@@ -677,6 +682,8 @@ export class Atlas {
     if (this.dims === d) return;
     this.dims = d;
     this.renderer?.setDims(d);
+    // Re-apply navigation settings for the new dimensionality (item 1).
+    this.renderer?.setNavSettings(this.navSettings, d);
     // Clear 3D-specific state when switching to 2D.
     if (d === 2) this._3dScreenXY = null;
     if (this.phase === 'ready' || this.phase === 'embedding') {
@@ -902,6 +909,21 @@ export class Atlas {
    *  the browser Fullscreen API instead (PlotToolbar.svelte checks isPositron). */
   setFullscreen(on: boolean): void {
     vscode.post({ type: 'fullscreen', on });
+  }
+
+  /** Toggle full-screen mode.  Dispatches to both Positron (ToHost message) and browser
+   *  (Fullscreen API).  Keeps `this.fullscreen` in sync so callers can read it. */
+  toggleFullscreen(): void {
+    if (this.isPositron) {
+      this.fullscreen = !this.fullscreen;
+      this.setFullscreen(this.fullscreen);
+    } else {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => { this.fullscreen = true; }).catch(() => {});
+      } else {
+        document.exitFullscreen().then(() => { this.fullscreen = false; }).catch(() => {});
+      }
+    }
   }
 
   // ---- 2D rotation (item 14) ---------------------------------------------------
