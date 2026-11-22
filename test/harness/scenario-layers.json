@@ -12,22 +12,10 @@
       "timeout": 60000
     },
     {
-<<<<<<< HEAD
-      "name": "verify default layer registry (7 built-in layers)",
-||||||| parent of a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
-      "name": "verify default layer registry (6 built-in layers)",
-=======
-      "name": "verify default layer registry (8 built-in layers)",
->>>>>>> a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
+      "name": "verify default layer registry (9 built-in layers)",
       "assert": [
-<<<<<<< HEAD
-        "a.layers.length === 7",
+        "a.layers.length === 9",
         "a.layers.some(l => l.id === 'leader-lines')",
-||||||| parent of a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
-        "a.layers.length === 6",
-=======
-        "a.layers.length === 8",
->>>>>>> a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
         "a.layers.some(l => l.id === 'base')",
         "a.layers.some(l => l.id === 'outlines')",
         "a.layers.some(l => l.id === 'labels')",
@@ -115,13 +103,7 @@
       "eval": "a.reorderLayer('base', 0)",
       "until": "a.layers.find(l => l.id === 'base') !== undefined",
       "timeout": 1000,
-<<<<<<< HEAD
-      "assert": "a.layers.length === 7"
-||||||| parent of a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
-      "assert": "a.layers.length === 6"
-=======
-      "assert": "a.layers.length === 8"
->>>>>>> a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
+      "assert": "a.layers.length === 9"
     },
     {
       "name": "enable cluster labels with outlines",
@@ -176,13 +158,7 @@
       "eval": "const outlinesOrder = a.layers.find(l => l.id === 'outlines').order; const labelsOrder = a.layers.find(l => l.id === 'labels').order; const labelsIdx = [...a.layers].sort((a,b) => a.order - b.order).findIndex(l => l.id === 'labels'); a.reorderLayer('labels', labelsIdx - 1 >= 0 ? labelsIdx - 1 : 0); window.__reorderDone = true",
       "until": "window.__reorderDone",
       "screenshot": "layers-labels-reordered.png",
-<<<<<<< HEAD
-      "assert": "a.layers.length === 7"
-||||||| parent of a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
-      "assert": "a.layers.length === 6"
-=======
-      "assert": "a.layers.length === 8"
->>>>>>> a589109 (fix: B2 added boxes and data-box layers, update scenario-layers count 6→8)
+      "assert": "a.layers.length === 9"
     },
     {
       "name": "restore labels to original order",
