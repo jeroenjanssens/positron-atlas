@@ -146,6 +146,7 @@ export function render(atlas: Atlas): void {
       positionStride: nd,
       layerOpacity: layer.opacity,
       layerBlending: layer.blending,
+      symbolCode: layer.symbol,
     });
     filters.push(null);
   }

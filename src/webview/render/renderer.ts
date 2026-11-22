@@ -1,10 +1,11 @@
 import { Deck, OrbitView, type OrbitViewState } from '@deck.gl/core';
-import { LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { IconLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 import { buildLeaderLinesLayer } from '../atlas/leaderLines';
 import { compositeOverlay } from './composite';
 import { ensureFont } from '../fonts';
 import type { AnnotationData, NavigationSettings, TitleOptions } from '../../shared/protocol';
+import { getSymbolAtlas, symbolName } from '../atlas/symbols';
 import type { AroundLabel } from '../labels/around';
 import { NavController } from './controller';
 import {
@@ -56,6 +57,12 @@ export interface PointSet {
   layerBlending?: 'normal' | 'additive';
   /** Id of the layer this point set belongs to (A2). Used by picking to identify the layer. */
   layerId?: string;
+  /**
+   * B3/Item 9: Symbol code for the entire point set (0 = circle, 1 = square, 2 = triangle, …).
+   * When 0 or undefined, the fast-path ScatterplotLayer is used.
+   * When > 0, IconLayer with a canvas sprite atlas is used for the whole set.
+   */
+  symbolCode?: number;
 }
 
 /** A text label on the map (world coordinates, size in pixels). */
@@ -667,7 +674,7 @@ export class ScatterRenderer {
     // In 3D mode use depth testing so closer points occlude farther ones.
     const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-equal' } as const;
     const searchActive = this.searchFilters.some((sf) => sf !== null);
-    type AnyLayer = ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel> | LineLayer | PathLayer;
+    type AnyLayer = ScatterplotLayer | IconLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel> | LineLayer | PathLayer;
     const layers: AnyLayer[] = [];
 
     // --- build helpers ---
@@ -712,43 +719,94 @@ export class ScatterRenderer {
           for (let i = 0; i < sf.length; i++) {
             searchAndVisible[i] = Math.min(sf[i], legendValues[i]);
           }
-          // Base pass: all legend-visible points at reduced opacity.
-          layers.push(new ScatterplotLayer({
-            id: `points-${s.id}-base`,
-            data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
-            radiusUnits: 'pixels',
-            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-            billboard: is3D,
-            getRadius: s.radii ? 1 : pointSize / 2,
-            radiusMinPixels: 0.5,
-            stroked: false,
-            filled: true,
-            antialiasing: !density,
-            opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
-            pickable: false,
-            parameters: setParams as any,
-            updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-            extensions: [this.dataFilter],
-            filterRange: [0.5, 1.5] as [number, number],
-          }));
-          // Highlight pass: only matching & legend-visible points at full opacity.
-          layers.push(new ScatterplotLayer({
-            id: `points-${s.id}-highlight`,
-            data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
-            radiusUnits: 'pixels',
-            // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
-            billboard: is3D,
-            getRadius: s.radii ? 1 : pointSize / 2,
-            radiusMinPixels: 0.5,
-            stroked: false,
-            filled: true,
-            antialiasing: !density,
+          if (s.symbolCode && s.symbolCode > 0) {
+            // Symbol (IconLayer) two-pass for search.
+            const { iconAtlas: ia, iconMapping } = getSymbolAtlas();
+            const iconAtlas = ia as any; // deck.gl accepts HTMLCanvasElement at runtime
+            const icon = symbolName(s.symbolCode);
+            const makeIconAttrs = (filterValue: Float32Array) => ({
+              getPosition: { value: s.positions, size: nd },
+              getColor: { value: s.colors, size: 4, normalized: true },
+              getFilterValue: { value: filterValue, size: 1 },
+            });
+            layers.push(new IconLayer({
+              id: `points-${s.id}-base`,
+              data: { length: s.length, attributes: makeIconAttrs(legendValues) } as any,
+              iconAtlas, iconMapping, getIcon: () => icon,
+              sizeUnits: 'pixels', getSize: s.radii ? 1 : pointSize, billboard: is3D,
+              opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
+              pickable: false, parameters: setParams as any,
+              updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
+              extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
+            }));
+            layers.push(new IconLayer({
+              id: `points-${s.id}-highlight`,
+              data: { length: s.length, attributes: makeIconAttrs(searchAndVisible) } as any,
+              iconAtlas, iconMapping, getIcon: () => icon,
+              sizeUnits: 'pixels', getSize: s.radii ? 1 : pointSize, billboard: is3D,
+              opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
+              pickable: false, parameters: setParams as any,
+              updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
+              extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
+            }));
+          } else {
+            // Base pass: all legend-visible points at reduced opacity.
+            layers.push(new ScatterplotLayer({
+              id: `points-${s.id}-base`,
+              data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
+              radiusUnits: 'pixels',
+              // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+              billboard: is3D,
+              getRadius: s.radii ? 1 : pointSize / 2,
+              radiusMinPixels: 0.5,
+              stroked: false,
+              filled: true,
+              antialiasing: !density,
+              opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
+              pickable: false,
+              parameters: setParams as any,
+              updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+              extensions: [this.dataFilter],
+              filterRange: [0.5, 1.5] as [number, number],
+            }));
+            // Highlight pass: only matching & legend-visible points at full opacity.
+            layers.push(new ScatterplotLayer({
+              id: `points-${s.id}-highlight`,
+              data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
+              radiusUnits: 'pixels',
+              // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+              billboard: is3D,
+              getRadius: s.radii ? 1 : pointSize / 2,
+              radiusMinPixels: 0.5,
+              stroked: false,
+              filled: true,
+              antialiasing: !density,
+              opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
+              pickable: false,
+              parameters: setParams as any,
+              updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+              extensions: [this.dataFilter],
+              filterRange: [0.5, 1.5] as [number, number],
+            }));
+          }
+        } else if (s.symbolCode && s.symbolCode > 0) {
+          // No search, non-circle symbol: IconLayer with canvas sprite atlas (mask: true per icon).
+          const { iconAtlas: ia2, iconMapping } = getSymbolAtlas();
+          const iconAtlas = ia2 as any; // deck.gl accepts HTMLCanvasElement at runtime
+          const icon = symbolName(s.symbolCode);
+          layers.push(new IconLayer({
+            id: `points-${s.id}`,
+            data: { length: s.length, attributes: {
+              getPosition: { value: s.positions, size: nd },
+              getColor: { value: s.colors, size: 4, normalized: true },
+              getFilterValue: { value: legendValues, size: 1 },
+            }} as any,
+            iconAtlas, iconMapping, getIcon: () => icon,
+            sizeUnits: 'pixels', getSize: s.radii ? 1 : pointSize, billboard: is3D,
             opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
-            pickable: false,
-            parameters: setParams as any,
-            updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-            extensions: [this.dataFilter],
-            filterRange: [0.5, 1.5] as [number, number],
+            pickable: false, parameters: setParams as any,
+            updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
+            extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
           }));
         } else {
           // No search: single layer with combined legend+histogram filter.

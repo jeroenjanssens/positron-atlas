@@ -420,7 +420,9 @@ Details are in the research notes of 2026-11-22.
 
 - **What:** Explore → **Symbol by** a categorical column (≤ 8 categories): circle, square, triangle, diamond, cross, star … with a symbol legend. Per layer (item 5): a fixed symbol for an overlay layer.
 - **To-do:**
-  - [ ] SDF symbol atlas or deck.gl `IconLayer` with symbol codes (binary attribute); keep `ScatterplotLayer` for the circle-only fast path.
+  - [x] SDF symbol atlas or deck.gl `IconLayer` with symbol codes (binary attribute); keep `ScatterplotLayer` for the circle-only fast path.
+  - [x] Fixed symbol per overlay layer (`overlaySymbolCode`, stored in `LayerState.symbol`, rendered via `IconLayer`).
+  - [x] Vitest for `symbolName`, `overlaySymbolCode`, `N_SYMBOLS` (11 tests).
   - [ ] Legend for symbols; hover card mentions the symbol category; PNG and HTML export.
   - [ ] Harness: pixel check that two categories render different shapes.
 

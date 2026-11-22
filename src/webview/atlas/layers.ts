@@ -41,6 +41,8 @@ export interface LayerState {
   order: number;
   /** B3: Python variable name the overlay was loaded from. */
   sourceName?: string;
+  /** B3 / Item 9: symbol code for point-overlay layers (0 = circle, 1–7 = other shapes). */
+  symbol?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +162,7 @@ export function removeLayer(layers: LayerState[], id: string): LayerState[] {
 }
 
 /** Add a new point-overlay layer at the top of the stack (highest order). */
-export function addOverlayLayer(layers: LayerState[], id: string, name: string, sourceName: string): LayerState[] {
+export function addOverlayLayer(layers: LayerState[], id: string, name: string, sourceName: string, symbol?: number): LayerState[] {
   const maxOrder = layers.reduce((m, l) => Math.max(m, l.order), 0);
   const layer: LayerState = {
     id,
@@ -171,6 +173,7 @@ export function addOverlayLayer(layers: LayerState[], id: string, name: string, 
     blending: 'normal',
     order: maxOrder + 10,
     sourceName,
+    symbol,
   };
   return [...layers, layer];
 }
@@ -217,6 +220,7 @@ export function restoreLayers(saved: LayerState[] | undefined): LayerState[] {
         blending: (s.blending === 'additive' ? 'additive' : 'normal') as LayerBlending,
         order: typeof s.order === 'number' ? s.order : 100,
         sourceName: typeof s.sourceName === 'string' ? s.sourceName : undefined,
+        symbol: typeof s.symbol === 'number' ? s.symbol : undefined,
       });
     }
   }

@@ -10,6 +10,7 @@ import type { Atlas } from '../atlas.svelte';
 import type { FileRef } from '../../shared/protocol';
 import { vscode, fetchTyped } from '../vscode';
 import { addOverlayLayer, removeLayer } from './layers';
+import { overlaySymbolCode } from './symbols';
 
 /** Distinct overlay colors (RGBA). Assigned in rotation as overlays are added. */
 const OVERLAY_COLORS: [number, number, number, number][] = [
@@ -41,7 +42,8 @@ export function onOverlayPrepared(
   // Add the layer to the layer list (if not already there).
   if (!atlas.layers.find((l) => l.id === layerId)) {
     const overlayIdx = atlas.layers.filter((l) => l.kind === 'point-overlay').length;
-    atlas.layers = addOverlayLayer(atlas.layers, layerId, variable, variable);
+    const symCode = overlaySymbolCode(overlayIdx);
+    atlas.layers = addOverlayLayer(atlas.layers, layerId, variable, variable, symCode);
     // Pre-allocate XY and colors for the overlay.
     const nd = atlas.dims;
     atlas.overlayXY.set(layerId, new Float32Array(nKept * nd));
