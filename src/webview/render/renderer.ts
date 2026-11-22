@@ -467,17 +467,59 @@ export class ScatterRenderer {
     const h = fullH - top;
     const dx = Math.max(b[2] - b[0], 1e-6);
     const dy = Math.max(b[3] - b[1], 1e-6);
+    // A rotated 2D map needs room for the rotated bounding box.
+    const vs = this.viewState as OrbitViewState;
+    const theta = this.dims === 2 ? ((vs.rotationOrbit ?? 0) * Math.PI) / 180 : 0;
+    const c = Math.abs(Math.cos(theta));
+    const sn = Math.abs(Math.sin(theta));
+    const rw = dx * c + dy * sn;
+    const rh = dx * sn + dy * c;
     // padExtra shrinks the effective viewport so the point cloud occupies only the
     // inner (1 - 2·padExtra) fraction, leaving room around it for label rings.
-    const scale = Math.min(w / dx, h / dy) * 0.9 * (1 - 2 * padExtra);
+    const scale = Math.min(w / rw, h / rh) * 0.9 * (1 - 2 * padExtra);
     const zoom = Math.log2(scale);
-    // Shift the center left so the data sits in the area not covered by the legend,
-    // and by half the top band so the data sits below the toolbar.
-    const cx = (b[0] + b[2]) / 2 + pad / 2 / scale;
-    const cy = (b[1] + b[3]) / 2 + top / 2 / scale;
-    this.viewState = { target: [cx, cy, 0], zoom };
+    // Shift the target so the data sits left of the legend and below the toolbar:
+    // the data centre must appear (-pad/2, +top/2) screen pixels from the screen centre.
+    const [ox, oy] = this.worldPerScreenPixel(-pad / 2, top / 2, scale);
+    const cx = (b[0] + b[2]) / 2 - ox;
+    const cy = (b[1] + b[3]) / 2 - oy;
+    this.viewState = { ...this.view2DOrientation(), target: [cx, cy, 0], zoom };
     this.fittedZoom = zoom; // A8: record overview zoom for fine-label threshold
     this.deck.setProps({ viewState: this.viewState as any });
+  }
+
+  /** The fixed top-down tilt and the current rotation of the 2D map (kept by every fit). */
+  private view2DOrientation(): Partial<OrbitViewState> {
+    if (this.dims !== 2) return {};
+    const vs = this.viewState as OrbitViewState;
+    return {
+      rotationX: ORBIT_2D_ROTATION_X,
+      rotationOrbit: vs.rotationOrbit ?? 0,
+      minRotationX: ORBIT_2D_ROTATION_X,
+      maxRotationX: ORBIT_2D_ROTATION_X,
+    };
+  }
+
+  /**
+   * The world-space vector that a screen offset of (sx, sy) pixels (y down) covers at
+   * `scale` pixels per world unit, in the current 2D orientation. Uses the live viewport
+   * when there is one, so it follows deck.gl's own rotation convention.
+   */
+  private worldPerScreenPixel(sx: number, sy: number, scale: number): [number, number] {
+    const vp = (this.deck as any)?.getViewports?.()[0];
+    if (vp && this.dims === 2) {
+      const vpScale = Math.pow(2, vp.zoom);
+      const o = vp.unproject([vp.width / 2, vp.height / 2]);
+      const ux = vp.unproject([vp.width / 2 + 1, vp.height / 2]);
+      const uy = vp.unproject([vp.width / 2, vp.height / 2 + 1]);
+      const k = vpScale / scale;
+      return [
+        (sx * (ux[0] - o[0]) + sy * (uy[0] - o[0])) * k,
+        (sx * (ux[1] - o[1]) + sy * (uy[1] - o[1])) * k,
+      ];
+    }
+    // No viewport yet: north-up (screen y points down, world y up).
+    return [sx / scale, -sy / scale];
   }
 
   private render(): void {

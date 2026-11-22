@@ -2,7 +2,10 @@
   "description": "Rotation correctness (item 14): after 2D rotation hover hits correct row, lasso selects correct rows, fit preserves angle, and PNG export is non-blank.",
   "variable": "df",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 3, 3000)\ncenters = rng.normal(0, 5, (3, 8))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (3000, 8)), columns=[f'f{i}' for i in range(8)])\ndf['cat'] = [f'g{v}' for v in k]\n",
-  "settings": { "maxAnchorsCpu": 5000, "nativeCore": false },
+  "settings": {
+    "maxAnchorsCpu": 5000,
+    "nativeCore": false
+  },
   "screenshot": "rotation-correctness.png",
   "steps": [
     {
@@ -23,32 +26,47 @@
       "report": "{ rotation: a.rotation2D }"
     },
     {
-      "name": "baseline: hover anchor 0 at rotation 0",
-      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; const sc = a.renderer.projectWorld(wx, wy); a['onPointer']({ x: sc[0], y: sc[1], world: [wx, wy] }); window.__baseHoverRow = a.tooltip?.row;",
-      "until": "a.tooltip !== null",
-      "assert": ["window.__baseHoverRow >= 0"],
-      "report": "{ row: window.__baseHoverRow }"
+      "name": "baseline: screen vector between two far-apart points at rotation 0",
+      "eval": "window.__v0 = (() => { const xy = a.anchorXY, n = a.prepared.nAnchors; let j = 1, best = 0; for (let i = 1; i < n; i++) { const dd = (xy[2*i]-xy[0])**2 + (xy[2*i+1]-xy[1])**2; if (dd > best) { best = dd; j = i; } } const p = a.renderer.projectWorld(xy[0], xy[1]), q = a.renderer.projectWorld(xy[2*j], xy[2*j+1]); return [q[0]-p[0], q[1]-p[1]]; })()",
+      "report": "window.__v0"
     },
     {
       "name": "rotate 90 degrees",
       "eval": "a.setRotation2D(90);",
-      "assert": ["Math.abs(a.rotation2D - 90) < 1"],
+      "assert": [
+        "Math.abs(a.rotation2D - 90) < 1"
+      ],
       "report": "{ rotation2D: a.rotation2D }"
     },
     {
-      "name": "hover same world point after 90 degree rotation",
-      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; a['onPointer']({ x: 400, y: 300, world: [wx, wy] });",
-      "until": "a.tooltip !== null",
-      "assert": ["a.tooltip.row === window.__baseHoverRow"],
-      "report": "{ row: a.tooltip?.row, expected: window.__baseHoverRow, rotation: a.rotation2D }"
+      "name": "the drawn map turned by 90 degrees (screen vector rotated, same length)",
+      "eval": "window.__v90 = (() => { const xy = a.anchorXY, n = a.prepared.nAnchors; let j = 1, best = 0; for (let i = 1; i < n; i++) { const dd = (xy[2*i]-xy[0])**2 + (xy[2*i+1]-xy[1])**2; if (dd > best) { best = dd; j = i; } } const p = a.renderer.projectWorld(xy[0], xy[1]), q = a.renderer.projectWorld(xy[2*j], xy[2*j+1]); return [q[0]-p[0], q[1]-p[1]]; })()",
+      "assert": [
+        "(() => { const [x0,y0] = window.__v0, [x1,y1] = window.__v90; const l0 = Math.hypot(x0,y0), l1 = Math.hypot(x1,y1); return Math.abs(l1 - l0) / l0 < 0.02 && Math.abs((x0*x1 + y0*y1) / (l0*l1)) < 0.02; })()"
+      ],
+      "report": "{ v0: window.__v0, v90: window.__v90 }"
+    },
+    {
+      "name": "hover by screen position finds the point drawn there",
+      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; const sc = a.renderer.projectWorld(wx, wy); const w = a.renderer.unproject(sc[0], sc[1]); window.__unproj = w; if (w) a['onPointer']({ x: sc[0], y: sc[1], world: w });",
+      "until": "window.__unproj === null || a.tooltip !== null",
+      "assert": [
+        "window.__unproj !== null",
+        "Math.abs(window.__unproj[0] - a.anchorXY[0]) < 1e-3 && Math.abs(window.__unproj[1] - a.anchorXY[1]) < 1e-3"
+      ],
+      "report": "{ unproj: window.__unproj, row: a.tooltip?.row }"
     },
     {
       "name": "fit does not reset rotation",
       "eval": "a.fitView();",
       "until": "a.phase === 'ready'",
       "screenshot": "rotation-correctness-90.png",
-      "assert": ["Math.abs(a.rotation2D - 90) < 1"],
-      "report": "{ rotation2D: a.rotation2D }"
+      "assert": [
+        "Math.abs(a.rotation2D - 90) < 1",
+        "Math.abs(a.renderer.getRotation2D() - 90) < 1",
+        "(() => { const xy = a.anchorXY, n = a.prepared.nAnchors, c = a.renderer.container; let out = 0; for (let i = 0; i < n; i += 7) { const p = a.renderer.projectWorld(xy[2*i], xy[2*i+1]); if (!p || p[0] < 0 || p[1] < 0 || p[0] > c.clientWidth || p[1] > c.clientHeight) out++; } return out; })() === 0"
+      ],
+      "report": "{ rotation2D: a.rotation2D, renderer: a.renderer.getRotation2D(), outside: (() => { const xy = a.anchorXY, n = a.prepared.nAnchors, c = a.renderer.container; let out = 0; for (let i = 0; i < n; i += 7) { const p = a.renderer.projectWorld(xy[2*i], xy[2*i+1]); if (!p || p[0] < 0 || p[1] < 0 || p[0] > c.clientWidth || p[1] > c.clientHeight) out++; } return out; })() }"
     },
     {
       "name": "hide a category to force render",
@@ -59,13 +77,18 @@
       "report": "{ anyHidden: a.anyHidden, rotation: a.rotation2D }"
     },
     {
-      "name": "canvas has drawn pixels after rotation (deck.gl renders correctly via screenshot)",
-      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
+      "name": "PNG export after rotation has the points (pixels)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) n++; window.__px = n;",
+      "until": "window.__px !== undefined",
+      "assert": "window.__px > 500",
+      "report": "{ drawnPixels: window.__px }"
     },
     {
       "name": "rotation resets to 0 on resetRotation2D",
       "eval": "a.resetRotation2D();",
-      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "assert": [
+        "Math.abs(a.rotation2D) < 1"
+      ],
       "report": "{ rotation2D: a.rotation2D }"
     }
   ]

@@ -1,7 +1,9 @@
 {
   "variable": "df",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 4, 8000)\ncenters = rng.normal(0, 7, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (8000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = pd.Categorical(['North', 'South', 'East', 'West'][v] for v in k)\ndf.shape",
-  "settings": { "maxAnchorsCpu": 3000 },
+  "settings": {
+    "maxAnchorsCpu": 3000
+  },
   "screenshot": "label-drag-0.png",
   "theme": "dark",
   "steps": [
@@ -47,7 +49,10 @@
     },
     {
       "name": "dragged label still visible in export (pixels present)",
-      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__dragPixels = n",
+      "until": "window.__dragPixels !== undefined",
+      "assert": "window.__dragPixels > 500",
+      "report": "{ drawnPixels: window.__dragPixels }"
     },
     {
       "name": "state persists: harness.state.labels.dragOffsets is serialized",
