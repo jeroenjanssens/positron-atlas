@@ -437,6 +437,12 @@ export interface PanelState {
   animate?: AnimateOptions;
   /** Tracks options (C2, item 11). */
   tracks?: TracksOptions;
+  /** Grid mode (small multiples) configuration (C1, item 4). */
+  grid?: {
+    enabled: boolean;
+    layout: '1x2' | '2x2' | '2x3' | '3x3';
+    panels: { colorColumn: number | null; title: string | null }[];
+  };
 }
 
 /** A user-overridden keybinding from keybindings.json (item 2 cheat sheet). */
