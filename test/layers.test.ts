@@ -296,8 +296,8 @@ describe('restoreLayers with point-overlay', () => {
       { id: 'ov-1', kind: 'point-overlay', name: 'Overlay A', visible: false, opacity: 0.7, blending: 'additive', order: 100, sourceName: 'df2' },
     ];
     const result = restoreLayers(saved);
-    // Should have all 6 defaults plus the one overlay.
-    expect(result).toHaveLength(7);
+    // All built-in layers plus the one overlay.
+    expect(result).toHaveLength(createInitialLayers().length + 1);
     const ov = getLayer(result, 'ov-1')!;
     expect(ov.kind).toBe('point-overlay');
     expect(ov.visible).toBe(false);
