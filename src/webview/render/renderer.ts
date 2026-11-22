@@ -1,4 +1,4 @@
-import { Deck, OrthographicView, OrbitView, type OrthographicViewState, type OrbitViewState } from '@deck.gl/core';
+import { Deck, OrbitView, type OrbitViewState } from '@deck.gl/core';
 import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 import { compositeOverlay } from './composite';
@@ -123,13 +123,19 @@ export interface OverlayDescriptor {
   opacity: number;
 }
 
-/** deck.gl scatter renderer with binary attributes and a controlled orthographic or orbit view. */
+/**
+ * rotationX value used for the top-down 2D OrbitView (looking straight down the Z axis).
+ * Empirically: orbitAxis='Z', rotationX=90 places the camera above the XY plane looking down.
+ */
+const ORBIT_2D_ROTATION_X = 90;
+
+/** deck.gl scatter renderer with binary attributes and a controlled orbit view (2D and 3D). */
 export class ScatterRenderer {
-  private deck: Deck<OrthographicView | OrbitView>;
+  private deck: Deck<OrbitView>;
   private sets: PointSet[] = [];
   private style: RenderStyle = { pointSize: 3, opacity: 0.8, mode: 'points' };
-  private viewState: OrthographicViewState | OrbitViewState = { target: [0, 0, 0], zoom: 0 };
-  /** Current output dimensionality: 2 = OrthographicView, 3 = OrbitView (T2/T3). */
+  private viewState: OrbitViewState = { target: [0, 0, 0], zoom: 0 };
+  /** Current output dimensionality: 2 = top-down OrbitView (orthographic), 3 = OrbitView (T2/T3). */
   private dims: 2 | 3 = 2;
   private version = 0;
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
@@ -188,11 +194,29 @@ export class ScatterRenderer {
   private searchFilters: (Float32Array | null)[] = [];
 
   constructor(private readonly container: HTMLElement) {
+    // 2D uses an OrbitView in orthographic top-down mode (rotationX=90, orbitAxis='Z').
+    // This keeps deck.gl's own unproject/project correct through rotation, so hover, lasso,
+    // labels and annotations need no extra inverse-rotation math (Q9 rationale).
+    // With dragMode:'pan' the left button pans; right button (alternateMode) rotates the orbit
+    // (rotationOrbit only, since minRotationX=maxRotationX=90 locks the tilt).
+    const initState: OrbitViewState = {
+      target: [0, 0, 0],
+      zoom: 0,
+      rotationX: ORBIT_2D_ROTATION_X,
+      rotationOrbit: 0,
+      minRotationX: ORBIT_2D_ROTATION_X,
+      maxRotationX: ORBIT_2D_ROTATION_X,
+    };
+    this.viewState = initState;
     this.deck = new Deck({
       parent: container,
-      views: new OrthographicView({ id: 'ortho', flipY: false }),
+      views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: true }),
       viewState: this.viewState as any,
-      controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: true, dragRotate: false } as any,
+      controller: {
+        scrollZoom: { speed: 0.01, smooth: false },
+        doubleClickZoom: true,
+        dragMode: 'pan',
+      } as any,
       onViewStateChange: ({ viewState, interactionState }: any) => {
         this.viewState = viewState;
         if (interactionState?.isDragging || interactionState?.isZooming || interactionState?.isPanning) {
@@ -720,8 +744,14 @@ export class ScatterRenderer {
   }
 
   /**
-   * Switch between 2D (OrthographicView) and 3D (OrbitView) rendering (T2/T3).
+   * Switch between 2D (top-down orthographic OrbitView) and 3D (perspective OrbitView) (T2/T3).
    * Resets the view state and rebuilds the Deck instance properties.
+   *
+   * Both modes use OrbitView, so we only change the view props and controller options.
+   * In 2D: orthographic=true, rotationX locked to ORBIT_2D_ROTATION_X, dragMode:'pan'
+   *         → left drag pans, right drag rotates the 2D map (rotationOrbit only).
+   * In 3D: perspective, standard 20° tilt, dragMode:'rotate'
+   *         → left drag orbits, Shift-drag/right-drag pans.
    */
   setDims(dims: 2 | 3): void {
     if (this.dims === dims) return;
@@ -738,16 +768,27 @@ export class ScatterRenderer {
       this.deck.setProps({
         views: new OrbitView({ id: 'orbit', orbitAxis: 'Z' }),
         viewState: orbitState as any,
-        // Drag rotates; Shift-drag pans; scroll zooms.
-        controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: false, dragRotate: true } as any,
+        // Drag rotates; Shift-drag/right-drag pans; scroll zooms.
+        controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: false, dragMode: 'rotate' } as any,
       });
     } else {
-      const orthoState: OrthographicViewState = { target: [0, 0, 0], zoom: 0 };
+      const orthoState: OrbitViewState = {
+        target: [0, 0, 0],
+        zoom: 0,
+        rotationX: ORBIT_2D_ROTATION_X,
+        rotationOrbit: 0,
+        minRotationX: ORBIT_2D_ROTATION_X,
+        maxRotationX: ORBIT_2D_ROTATION_X,
+      };
       this.viewState = orthoState;
       this.deck.setProps({
-        views: new OrthographicView({ id: 'ortho', flipY: false }),
+        views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: true }),
         viewState: orthoState as any,
-        controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: true, dragRotate: false } as any,
+        controller: {
+          scrollZoom: { speed: 0.01, smooth: false },
+          doubleClickZoom: true,
+          dragMode: 'pan',
+        } as any,
       });
     }
     this.version++;
@@ -820,6 +861,100 @@ export class ScatterRenderer {
     this.userMoved = false;
     const vs = this.viewState as OrbitViewState;
     const next: OrbitViewState = { ...vs, rotationX: 20, rotationOrbit: 0 };
+    this.viewState = next;
+    this.deck.setProps({ viewState: next as any });
+  }
+
+  // ---- 2D rotation (item 14) ---------------------------------------------------
+
+  /**
+   * Set the 2D map rotation angle (degrees, clockwise positive).
+   * Only active in 2D mode; no-op in 3D.
+   */
+  setRotation2D(angleDeg: number): void {
+    if (this.dims !== 2) return;
+    const vs = this.viewState as OrbitViewState;
+    const next: OrbitViewState = {
+      ...vs,
+      rotationOrbit: angleDeg % 360,
+      minRotationX: ORBIT_2D_ROTATION_X,
+      maxRotationX: ORBIT_2D_ROTATION_X,
+    };
+    this.viewState = next;
+    this.deck.setProps({ viewState: next as any });
+  }
+
+  /**
+   * Adjust the 2D map rotation by a delta (degrees, positive = clockwise).
+   * Only active in 2D mode.
+   */
+  adjustRotation2D(deltaDeg: number): void {
+    if (this.dims !== 2) return;
+    const current = (this.viewState as OrbitViewState).rotationOrbit ?? 0;
+    this.setRotation2D(current + deltaDeg);
+  }
+
+  /**
+   * Return the current 2D rotation angle in degrees (0 = north-up).
+   * Returns 0 in 3D mode.
+   */
+  getRotation2D(): number {
+    if (this.dims !== 2) return 0;
+    return (this.viewState as OrbitViewState).rotationOrbit ?? 0;
+  }
+
+  // ---- Keyboard pan / zoom helpers (used by InputDispatcher) --------------------
+
+  /**
+   * Pan the view by a fraction of the viewport size (positive x = right, positive y = down).
+   * Works in both 2D and 3D.
+   */
+  panByFraction(fracX: number, fracY: number): void {
+    const vp = (this.deck as any).getViewports?.()[0];
+    const vs = this.viewState as OrbitViewState;
+    if (vp) {
+      const cx = this.container.clientWidth / 2;
+      const cy = this.container.clientHeight / 2;
+      const dx = fracX * this.container.clientWidth;
+      const dy = fracY * this.container.clientHeight;
+      // Unproject center and center+delta to get world-space delta.
+      const c = vp.unproject([cx, cy]);
+      const p = vp.unproject([cx + dx, cy + dy]);
+      const target = vs.target as number[];
+      const next: OrbitViewState = {
+        ...vs,
+        target: [
+          target[0] + (c[0] - p[0]),
+          target[1] + (c[1] - p[1]),
+          target[2] ?? 0,
+        ] as [number, number, number],
+      };
+      this.viewState = next;
+      this.deck.setProps({ viewState: next as any });
+    } else {
+      // Fallback: use zoom to compute world units.
+      const scale = Math.pow(2, vs.zoom as number);
+      const target = vs.target as number[];
+      const dx = (fracX * this.container.clientWidth) / scale;
+      const dy = (fracY * this.container.clientHeight) / scale;
+      const next: OrbitViewState = {
+        ...vs,
+        target: [target[0] + dx, target[1] + dy, target[2] ?? 0] as [number, number, number],
+      };
+      this.viewState = next;
+      this.deck.setProps({ viewState: next as any });
+    }
+  }
+
+  /**
+   * Adjust the zoom level by `delta` deck.gl zoom units (positive = zoom in).
+   */
+  adjustZoom(delta: number): void {
+    const vs = this.viewState as OrbitViewState;
+    const next: OrbitViewState = {
+      ...vs,
+      zoom: (vs.zoom as number) + delta,
+    };
     this.viewState = next;
     this.deck.setProps({ viewState: next as any });
   }
