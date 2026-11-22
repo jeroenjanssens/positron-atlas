@@ -72,6 +72,14 @@ export class ScatterRenderer {
   private hoveredIdx = -1;
   /** Prepared-row index of the pinned point (for the ring), or -1. */
   private pinnedIdx = -1;
+  /** Shared all-ones filter values (no category hidden), grown as needed. */
+  private ones = new Float32Array(0);
+
+  private allVisible(n: number): Float32Array {
+    if (this.ones.length < n) this.ones = new Float32Array(Math.max(n, this.ones.length * 2)).fill(1);
+    return this.ones.subarray(0, n);
+  }
+
   /** Per-point-set filter attributes (category codes + hidden set). */
   private filters: (FilterAttribute | null)[] = [];
 
@@ -198,10 +206,10 @@ export class ScatterRenderer {
       .map((s, si) => {
         const filter = this.filters[si] ?? null;
         const hasFilter = filter !== null && filter.hidden.size > 0;
-        // Build a Float32Array with the filter value (1 = visible, 0 = hidden) if needed.
-        // Only use the binary attribute form — no function accessor, which deck.gl ignores in
-        // binary data mode and would cause the extension default (0 = hidden) to apply instead.
-        const filterValues = hasFilter ? buildFilterValues(filter) : null;
+        // Always attach the DataFilterExtension and a filter value per point (1 = visible,
+        // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
+        // the layer exists does not rebuild its shaders, which hid every point.
+        const filterValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
         return new ScatterplotLayer({
           id: `points-${s.id}`,
           data: {
@@ -209,9 +217,7 @@ export class ScatterRenderer {
             attributes: {
               getPosition: { value: s.positions, size: 2 },
               getFillColor: { value: s.colors, size: 4, normalized: true },
-              // Attribute is only present when there is an active filter; the
-              // DataFilterExtension reads it via the name 'getFilterValue'.
-              ...(filterValues ? { getFilterValue: { value: filterValues, size: 1 } } : {}),
+              getFilterValue: { value: filterValues, size: 1 },
             },
           } as any,
           radiusUnits: 'pixels',
@@ -224,10 +230,9 @@ export class ScatterRenderer {
           pickable: false,
           parameters: (density ? ADDITIVE : NORMAL) as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-          // Include the extension and filterRange only when there is an active filter.
           // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
-          extensions: hasFilter ? [this.dataFilter] : [],
-          ...(hasFilter ? { filterRange: [0.5, 1.5] as [number, number] } : {}),
+          extensions: [this.dataFilter],
+          filterRange: [0.5, 1.5] as [number, number],
         });
       });
     if (this.outlines.length) {

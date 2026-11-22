@@ -73,6 +73,13 @@
       "report": "{ hidden: [...(a.hiddenCategories.get(a.colorColumn) || [])], visibleCount: a.renderVisibleCount, totalCount: a.nAnchors }"
     },
     {
+      "name": "solo: the visible category is actually drawn (pixels)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) n++; window.__drawnPixels = n;",
+      "until": "window.__drawnPixels !== undefined",
+      "assert": "window.__drawnPixels > 500",
+      "report": "{ drawnPixels: window.__drawnPixels }"
+    },
+    {
       "name": "alt-click again to show all (toggle off solo)",
       "eval": "a.toggleCategory(2, true)",
       "until": "!a.anyHidden",
