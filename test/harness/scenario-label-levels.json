@@ -35,7 +35,7 @@
     },
     {
       "name": "AT OVERVIEW ZOOM: only coarse labels are drawn (fine alpha=0)",
-      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: fz }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
+      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; window.__overviewTarget = vs.target; a.renderer['viewState'] = { ...vs, zoom: fz, target: vs.target }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
       "until": "true",
       "assert": [
         "a.fittedZoom > -Infinity",
@@ -53,7 +53,7 @@
     },
     {
       "name": "ZOOM IN past threshold (fittedZoom+1.5): fine labels appear",
-      "eval": "const fz = a.fittedZoom; const newZoom = fz + 1.8; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 600))",
+      "eval": "const fz = a.fittedZoom; const newZoom = fz + 1.8; const vs = a.renderer['viewState']; const firstLabel = a.renderer.labels[0]; const target = firstLabel ? [firstLabel.position[0], firstLabel.position[1], 0] : vs.target; a.renderer['viewState'] = { ...vs, zoom: newZoom, target }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 1000))",
       "until": "a.renderer.labels.length > a.clusterCount",
       "timeout": 5000,
       "assert": [
@@ -73,7 +73,7 @@
     },
     {
       "name": "zoom back to overview: fine labels disappear",
-      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: fz }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
+      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; const ovrTarget = window.__overviewTarget ?? vs.target; a.renderer['viewState'] = { ...vs, zoom: fz, target: ovrTarget }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
       "until": "a.renderer.labels.length === a.clusterCount",
       "timeout": 5000,
       "assert": [
@@ -84,7 +84,7 @@
     },
     {
       "name": "zoom in again and verify collision priorities: coarse always beats fine",
-      "eval": "const fz = a.fittedZoom; const newZoom = fz + 2; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 600)); const coarseLabels = a.renderer.labels.filter((l, i) => i < a.clusterCount); const fineLabels = a.renderer.labels.filter((l, i) => i >= a.clusterCount); const minCoarse = coarseLabels.length ? Math.min(...coarseLabels.map(l => l.priority ?? 0)) : 0; const maxFine = fineLabels.length ? Math.max(...fineLabels.map(l => l.priority ?? 0)) : -Infinity; window.__priorityOk = coarseLabels.length > 0 && fineLabels.length > 0 && minCoarse > maxFine",
+      "eval": "const fz = a.fittedZoom; const newZoom = fz + 2; const vs = a.renderer['viewState']; const firstLabel = a.renderer.labels[0]; const target = firstLabel ? [firstLabel.position[0], firstLabel.position[1], 0] : vs.target; a.renderer['viewState'] = { ...vs, zoom: newZoom, target }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 600)); const coarseLabels = a.renderer.labels.filter((l, i) => i < a.clusterCount); const fineLabels = a.renderer.labels.filter((l, i) => i >= a.clusterCount); const minCoarse = coarseLabels.length ? Math.min(...coarseLabels.map(l => l.priority ?? 0)) : 0; const maxFine = fineLabels.length ? Math.max(...fineLabels.map(l => l.priority ?? 0)) : -Infinity; window.__priorityOk = coarseLabels.length > 0 && fineLabels.length > 0 && minCoarse > maxFine",
       "until": "window.__priorityOk !== undefined",
       "timeout": 5000,
       "assert": [

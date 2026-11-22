@@ -40,9 +40,10 @@
       "eval": "const name = window.__labelName; const offset = a.labels.dragOffsets[name]; const lbl = a.renderer.labels.find(l => (l.key ?? l.text) === name); window.__offsetMatch = lbl && offset && Math.abs(lbl.position[0] - (a.renderer.labels.find(l2 => (l2.key ?? l2.text) === name)?.position[0] ?? 0)) >= 0",
       "until": "window.__offsetMatch !== undefined",
       "assert": [
-        "a.renderer.labels.some(l => (l.key ?? l.text) === window.__labelName)"
+        "a.renderer.labels.some(l => (l.key ?? l.text) === window.__labelName)",
+        "a.pinnedCard === null"
       ],
-      "report": "{ name: window.__labelName, offset: a.labels.dragOffsets[window.__labelName], renderedPos: a.renderer.labels.find(l => (l.key ?? l.text) === window.__labelName)?.position }"
+      "report": "{ name: window.__labelName, offset: a.labels.dragOffsets[window.__labelName], renderedPos: a.renderer.labels.find(l => (l.key ?? l.text) === window.__labelName)?.position, pinnedCard: a.pinnedCard }"
     },
     {
       "name": "dragged label still visible in export (pixels present)",

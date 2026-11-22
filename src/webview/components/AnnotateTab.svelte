@@ -27,8 +27,12 @@
   const detailNames = ['Coarsest', 'Coarse', 'Medium', 'Fine', 'Finest'];
   let tag = $state('');
   let tagColumn = $state('atlas_tag');
-  // A9: highlight groups text input
-  let highlightInput = $state('');
+  // A9: available group names for the highlight picker
+  const availableGroups = $derived(
+    atlas.labels.clusters
+      ? atlas.clusterNames
+      : (atlas.labelMeta?.categories ?? [])
+  );
 
   function onLabelChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
@@ -47,14 +51,13 @@
   const movedLabels = $derived(Object.keys(atlas.labels.dragOffsets ?? {}));
 
   // A9: add/remove highlight groups
-  function addHighlight() {
-    const name = highlightInput.trim();
-    if (!name) return;
+  function toggleHighlight(name: string, on: boolean) {
     const existing = atlas.labels.highlightGroups ?? [];
-    if (!existing.includes(name)) {
+    if (on && !existing.includes(name)) {
       atlas.setLabelOptions({ highlightGroups: [...existing, name] });
+    } else if (!on) {
+      atlas.setLabelOptions({ highlightGroups: existing.filter((g) => g !== name) });
     }
-    highlightInput = '';
   }
   function removeHighlight(name: string) {
     atlas.setLabelOptions({ highlightGroups: (atlas.labels.highlightGroups ?? []).filter((g) => g !== name) });
@@ -196,7 +199,6 @@
       onchange={(e) => atlas.setLabelOptions({ wrapWidth: Number((e.target as HTMLInputElement).value) })} />
   </div>
   <Slider label="Line spacing" value={atlas.labels.lineSpacing ?? 0.95} min={0.5} max={3} step={0.05}
-    format={(v) => v.toFixed(2)}
     hint="Line height multiplier for multi-line labels"
     onchange={(v) => atlas.setLabelOptions({ lineSpacing: v })} infoId="labels.lineSpacing" />
   <!-- Halo / outline -->
@@ -222,13 +224,20 @@
 
 <!-- A9: Highlighted labels -->
 <Section {atlas} id="labelHighlights" title="Highlighted labels">
-  <div class="hint muted">Groups shown as filled badges (cluster color, white text), like DataMapPlot's highlight_labels.</div>
-  <div class="select">
-    <span>Add group <Info id="labels.highlightGroups" /></span>
-    <input class="ctrl-text" type="text" placeholder="Group name" bind:value={highlightInput} aria-label="Group name to highlight"
-      onkeydown={(e) => e.key === 'Enter' && addHighlight()} />
-    <button class="small" onclick={addHighlight} disabled={!highlightInput.trim()}>Add</button>
-  </div>
+  <div class="hint muted">Groups shown as filled badges (cluster color, white text), like DataMapPlot's highlight_labels. <Info id="labels.highlightGroups" /></div>
+  {#if availableGroups.length === 0}
+    <div class="hint muted">Enable labels above to pick groups to highlight.</div>
+  {:else}
+    <div class="highlight-group-list">
+      {#each availableGroups as g (g)}
+        <Checkbox
+          checked={(atlas.labels.highlightGroups ?? []).includes(g)}
+          onchange={(v) => toggleHighlight(g, v)}>
+          {g}
+        </Checkbox>
+      {/each}
+    </div>
+  {/if}
   {#if (atlas.labels.highlightGroups ?? []).length}
     <div class="tag-list">
       {#each atlas.labels.highlightGroups ?? [] as g}
@@ -238,8 +247,6 @@
         </span>
       {/each}
     </div>
-  {:else}
-    <div class="hint muted">No highlighted groups yet.</div>
   {/if}
 </Section>
 
@@ -317,17 +324,15 @@
     cursor: pointer;
     background: none;
   }
-  .ctrl-text {
-    flex: 1;
-    padding: 2px 6px;
-    border: 1px solid var(--vscode-input-border, #3c3c3c);
-    border-radius: 3px;
-    background: var(--vscode-input-background, #1e1e1e);
-    color: var(--vscode-input-foreground, #cccccc);
-    font-size: 12px;
-  }
   button.small {
     padding: 2px 8px;
     font-size: 12px;
+  }
+  .highlight-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 160px;
+    overflow-y: auto;
   }
 </style>

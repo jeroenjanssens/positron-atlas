@@ -95,6 +95,8 @@ export class ScatterRenderer {
   private draggingLabel: MapLabel | null = null;
   private dragStartScreen: [number, number] = [0, 0];
   private labelHovered = false;
+  /** Set to true when a label drag with meaningful movement ends; consumed by onClick to suppress card pinning. */
+  private suppressNextClick = false;
   private labelDragCallback: {
     onStart?: (label: MapLabel, screenPos: [number, number]) => void;
     onMove?: (label: MapLabel, screenDelta: [number, number]) => void;
@@ -159,6 +161,10 @@ export class ScatterRenderer {
       onDragEnd: (info: any) => {
         if (this.draggingLabel) {
           const delta: [number, number] = [info.x - this.dragStartScreen[0], info.y - this.dragStartScreen[1]];
+          // If the drag moved more than 3 px, suppress the subsequent click so it doesn't pin a hover card.
+          if (Math.hypot(delta[0], delta[1]) > 3) {
+            this.suppressNextClick = true;
+          }
           this.labelDragCallback.onEnd?.(this.draggingLabel, delta);
           this.draggingLabel = null;
         }
@@ -209,6 +215,18 @@ export class ScatterRenderer {
   /** Register a callback fired when the zoom level changes (A8). */
   onViewChange(cb: (zoom: number) => void): void {
     this.viewChangeCallback = cb;
+  }
+
+  /**
+   * Returns true (and clears the flag) when a label drag with meaningful movement just ended.
+   * Call from onClick to suppress card pinning after a label drag.
+   */
+  consumeSuppressClick(): boolean {
+    if (this.suppressNextClick) {
+      this.suppressNextClick = false;
+      return true;
+    }
+    return false;
   }
 
   /** World coordinates of a point in CSS pixels relative to the plot. */

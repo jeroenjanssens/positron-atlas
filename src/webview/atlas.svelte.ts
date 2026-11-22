@@ -550,7 +550,12 @@ export class Atlas {
   // ---- hover -------------------------------------------------------------------
   /** @internal Accessible via a['onPointer'] in harness tests. */
   onPointer(p: { x: number; y: number; world: [number, number] } | null): void { onPointerImpl(this, p); }
-  onClick(e: MouseEvent): void { onClickImpl(this, e); }
+  onClick(e: MouseEvent): void {
+    // Suppress click if it follows a label drag (the mouse-up after dragging a label would
+    // otherwise be treated as a point click and pin a hover card — H7).
+    if (this.renderer?.consumeSuppressClick()) return;
+    onClickImpl(this, e);
+  }
   closePinnedCard(): void { closePinnedCardImpl(this); }
   openPinnedLink(): void { openPinnedLinkImpl(this); }
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
