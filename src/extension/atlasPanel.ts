@@ -2,7 +2,6 @@ import { webviewCsp } from '../shared/csp';
 import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
 import * as fssync from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { KernelBridge, KernelError } from './kernelBridge';
@@ -940,10 +939,19 @@ export class AtlasPanel {
       }
       // --- C2: Save video (item 10) --------------------------------------------
       case 'saveVideo': {
-        const buf = Buffer.from(m.bytes, 'base64');
-        const savePath = path.join(os.tmpdir(), m.filename);
-        fssync.writeFileSync(savePath, buf);
-        this.post({ type: 'videoSaved', path: savePath });
+        // A save dialog, like the PNG export. ATLAS_E2E_SAVE_DIR (set only by the e2e runner)
+        // skips the dialog so the e2e test can check the written file.
+        const e2eDir = this.ctx.extension.extensionMode === vscode.ExtensionMode.Development ? process.env.ATLAS_E2E_SAVE_DIR : undefined;
+        const uri = e2eDir
+          ? vscode.Uri.file(path.join(e2eDir, m.filename))
+          : await vscode.window.showSaveDialog({
+              filters: { 'WebM video': ['webm'] },
+              defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', m.filename)),
+            });
+        if (uri) {
+          await vscode.workspace.fs.writeFile(uri, bytesFromPayload(m.bytes));
+          this.post({ type: 'videoSaved', path: uri.fsPath });
+        }
         break;
       }
       // --- C3: Python API comm replies -------------------------------------------

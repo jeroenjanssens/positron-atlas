@@ -25,8 +25,8 @@
       "timeout": 10000,
       "assert": [
         "window.__harness.video !== undefined",
-        "(() => { const b = Uint8Array.from(atob(window.__harness.video), c => c.charCodeAt(0)); return b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3; })()",
-        "atob(window.__harness.video).length > 10240"
+        "(() => { const b = window.__harness.video; return b instanceof Uint8Array && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3; })()",
+        "window.__harness.video.length > 10240"
       ],
       "report": "{ videoBytes: atob(window.__harness.video).length }"
     }

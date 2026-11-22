@@ -1127,10 +1127,10 @@ export class Atlas {
     await new Promise<void>((r) => setTimeout(r, dur));
     if (opts.mode === 'time') this.stopAnimation();
     else if (opts.mode === 'turntable' && this.autoRotate) this.toggleAutoRotate();
-    const b64 = await rec.stop();
+    const bytes = await rec.stop();
     this.videoRecording = false;
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    this.post({ type: 'saveVideo', bytes: b64, filename: `atlas-${opts.mode}-${ts}.webm` });
+    this.post({ type: 'saveVideo', bytes, filename: `atlas-${opts.mode}-${ts}.webm` });
   }
 
   // ---- C2: Tracks + Vectors methods ---------------------------------------------

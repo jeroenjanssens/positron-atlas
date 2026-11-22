@@ -740,7 +740,7 @@ export type ToHost =
    * (e.g. browser-side UMAP with needsProjection=false). */
   | { type: 'tracks'; idColumn: number; timeColumn: number; nd: 2 | 3; anchorXY?: Uint8Array | string }
   /** Save a video clip to a .webm file (C2, item 10). */
-  | { type: 'saveVideo'; bytes: string /* base64 WebM */; filename: string }
+  | { type: 'saveVideo'; bytes: Uint8Array /* WebM */; filename: string }
   /**
    * Sent by the webview once the HTML bytes are assembled (X2).
    * The host writes these bytes to the file chosen in the save dialog.
