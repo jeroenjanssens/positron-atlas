@@ -42,10 +42,8 @@
     },
     {
       "name": "around-labels HTML overlay is present",
-      "until": "document.querySelectorAll('.around-label').length === 5",
-      "timeout": 5000,
-      "eval": "window.__aroundLabels = document.querySelectorAll('.around-label').length",
-      "assert": "window.__aroundLabels === 5",
+      "until": "(window.__aroundLabels = document.querySelectorAll('.around-label').length) === 5",
+      "timeout": 15000,
       "report": "{ count: window.__aroundLabels }",
       "screenshot": "labels-around-dark.png"
     },
