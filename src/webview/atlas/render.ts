@@ -18,6 +18,13 @@ export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>)
   const paletteChanged = v.palette !== undefined && v.palette !== atlas.view.palette;
   const backgroundChanged = v.background !== undefined && v.background !== atlas.view.background;
   const glowChanged = v.glow !== undefined || v.glowStrength !== undefined || v.glowRadius !== undefined;
+  // B2: changing any 3D overlay flag requires a full atlas.render() so that setDataBox()
+  // is called with the updated values (renderer.setStyle only triggers renderer.render()
+  // which re-uses the renderer's cached dataBoxShowGrid/dataBoxShowGizmo).
+  const dataBoxChanged =
+    v.show3DDataBox !== undefined ||
+    v.show3DFloorGrid !== undefined ||
+    v.show3DGizmo !== undefined;
   if (v.images !== undefined && v.images !== atlas.view.images) {
     atlas.tooltip = null;
   }
@@ -34,6 +41,9 @@ export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>)
   }
   if (glowChanged) {
     atlas.glowVersion++;
+  }
+  if (dataBoxChanged && atlas.dims === 3 && (atlas.phase === 'ready' || atlas.paused)) {
+    render(atlas);
   }
 }
 
