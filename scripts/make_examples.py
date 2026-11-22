@@ -654,11 +654,14 @@ still takes ~1 minute for a small subset of named compounds).
 """
 
 CHEMBL_THINGS = """\
+- **Features only** (`Map → Data`): Atlas includes `mw` as a numeric feature by
+  default. For a pure fingerprint-space map, deselect `mw` and keep only `f0`–`f63`.
+  Try **Cosine** as the UMAP metric — it is natural for SVD-projected bit vectors.
 - **Color by `phase`.**  Approved drugs form a distinctive population; most compounds
   have no clinical-phase data (shown as missing).
 - **Color by `mw`** and use the histogram filter to zoom in on drug-like compounds
   (MW 150–500).  The Lipinski "rule of five" space becomes visible.
-- **Hover** a compound: the structure image is loaded from the ChEMBL image API (PNG).
+- **Hover** a compound: the structure image is loaded from the ChEMBL image API (SVG).
   Set `image_url` as the **Image URL column** in the **Tooltip** tab if Atlas does not
   auto-detect it.
 - **Cmd/Ctrl-click** (when `url` is the link column) to open the compound card on
@@ -924,7 +927,7 @@ else:
                 pl.col("chembl_id"),
             ).alias("url"),
             pl.format(
-                "https://www.ebi.ac.uk/chembl/api/data/image/{}.png",
+                "https://www.ebi.ac.uk/chembl/api/data/image/{}.svg",
                 pl.col("chembl_id"),
             ).alias("image_url"),
             (
@@ -1005,6 +1008,8 @@ half will be exact anchors and the rest will be placed.  For a fully exact run, 
 """
 
 UNIPROT_THINGS = """\
+- **Features only** (`Map → Data`): Atlas includes `length` as a numeric feature by
+  default. For a pure embedding-space map, deselect `length` and keep only `e0`–`e1023`.
 - **Color by `family`.** Protein families (kinases, GPCRs, immunoglobulins, …) form
   distinct clusters.  The legend lets you toggle families on and off.
 - **Color by `length`** and use the histogram slider to isolate short peptides or
@@ -1216,6 +1221,9 @@ a few minutes).
 """
 
 TRIALS_THINGS = """\
+- **Features only** (`Map → Data`): Atlas includes `enrollment` as a numeric feature
+  by default. For a pure title-embedding map, deselect `enrollment` and keep only
+  `f0`–`f63`.
 - **Color by `phase`.**  Phase 3 and 4 trials cluster together; Phase 1 (first-in-human)
   sits in a broad, dispersed region.
 - **Color by `sponsor_class`.**  Industry-sponsored and NIH-funded trials have distinct

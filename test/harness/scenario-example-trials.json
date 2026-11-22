@@ -1,6 +1,6 @@
 {
   "variable": "df",
-  "setup": "import polars as pl\nCAP = 5000\ncache = __import__('pathlib').Path.home() / '.cache/positron-atlas/datasets/trials/trials.parquet'\nif not cache.exists():\n    raise FileNotFoundError(f'Run examples/09-clinical-trials.ipynb first (expected: {cache})')\nfull = pl.read_parquet(cache)\ndf = full.sample(n=min(CAP, len(full)), seed=42)\ndel full\n",
+  "setup": "import polars as pl\nCAP = 5000\ncache = __import__('pathlib').Path.home() / '.cache/positron-atlas/datasets/trials/trials.parquet'\nif not cache.exists():\n    raise FileNotFoundError(f'Run examples/09-clinical-trials.ipynb first (expected: {cache})')\nfull = pl.read_parquet(cache).drop_nulls(subset=['enrollment'])\ndf = full.sample(n=min(CAP, len(full)), seed=42)\ndel full\n",
   "settings": {
     "pcaEnabled": false,
     "maxAnchorsCpu": 5000
@@ -28,17 +28,32 @@
       "report": "{ linkCol: a.describe.columns[a.tooltipOpts.linkColumn]?.name }"
     },
     {
-      "name": "hover shows tooltip",
+      "name": "first hover triggers texts blob request",
       "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
       "until": "a.tooltip !== null",
       "timeout": 10000
     },
     {
+      "name": "wait for title texts blob to load",
+      "until": "a.textsStore.ready",
+      "timeout": 20000
+    },
+    {
+      "name": "re-hover so title is populated from loaded texts",
+      "eval": "a.tooltip = null; const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip && a.tooltip.title",
+      "timeout": 10000
+    },
+    {
       "name": "click pins card with trial title and link",
       "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
-      "until": "a.pinnedCard !== null",
+      "until": "a.pinnedCard && a.pinnedCard.title",
       "timeout": 5000,
       "screenshot": "trials-pinned-card.png",
+      "assert": [
+        "typeof a.pinnedCard.title === 'string'",
+        "a.pinnedCard.title.length > 0"
+      ],
       "report": "{ title: a.pinnedCard.title, row: a.pinnedCard.row, linkValue: a.pinnedCard.linkValue }"
     }
   ]

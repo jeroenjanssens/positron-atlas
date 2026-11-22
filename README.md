@@ -53,6 +53,8 @@ Positron does not yet let extensions add items to the Variables pane itself, so 
 
 The `examples/` folder in the source repository has notebooks with real data: MNIST and Fashion-MNIST (70,000 × 784 each), Covertype (581,012 rows), HIGGS (11,000,000 × 28), and **Wikipedia titles** (11.8 million English, German and French articles with titles and URLs, embedded with a static embedding model on the CPU), all as polars DataFrames. Each one downloads its dataset once; the Wikipedia notebook needs `uv sync --group wikipedia` in `examples/` and about 40 minutes on the first run (mostly downloading).
 
+Three pharma/bio notebooks are also included: **ChEMBL chemical space** (100,000 small molecules as 64-component Morgan-fingerprint projections with structure images and phase metadata), **UniProt protein embeddings** (the full human proteome — ~20,000 proteins — using 1,024-dim ProtT5 embeddings from the UniProt FTP), and **ClinicalTrials.gov** (612,000+ studies embedded from their titles with model2vec).
+
 ### Anchors
 
 UMAP runs in the browser on the *anchors*, a random subset of the (sampled) rows. Every other row is placed in the kernel at the weighted average position of its 10 nearest anchors (measured in the original feature space). By default the number of anchors is the smallest of:
