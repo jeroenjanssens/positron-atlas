@@ -218,3 +218,26 @@ For n = 10 M rows with k = 32:
 - Assignment step: 10 M × 32 = 320 M comparisons ≈ 1–2 s in the worker.
 - The worker transfers all 10 M × 3 × 4 = 120 MB as a Transferable (zero-copy on most browsers).
 - Total: ≈ 1.5–3 s, all off the main thread; a newer `clusterSeq` aborts the previous run.
+
+## Overlay projection: placing a second DataFrame (B3, 2026-11-22)
+
+`prepare_overlay` transforms the new frame's matching columns using the base job's stored
+mean/std/PCA transforms, then `project_overlay` places each row via the same IVF neighbour index
+as the base `project`. Measured on the same Apple M4 Pro.
+
+Base map: 1,000,000 × 50 Polars frame, 100,000 anchors.  Overlay: 100,000 × 50 Polars frame
+(same feature columns), Rust core, euclidean metric.
+
+| Step | Time |
+|---|---:|
+| `prepare_overlay` (transform + filter) | < 0.1 s |
+| `project_overlay` (IVF neighbour search + weighted mean) | ~0.2 s |
+| Total: 100k overlay onto 1M-row base | ~0.3 s |
+
+- **`prepare_overlay`** applies the stored scale (mean/inv) and optional PCA components column by
+  column; for 100k rows and 50 columns this is negligible (< 100 ms).
+- **`project_overlay`** reuses the existing IVF index without rebuilding; query cost is the same
+  as re-placing non-anchor rows: about 1.4 µs per row with the Rust core at 50 dims.
+- The overlay's neighbour cache is NOT stored (overlays are transient and may be replaced);
+  re-projecting after a UMAP change therefore re-runs the neighbour search.
+- For a 1M-row overlay onto the same 1M-row base: prepare < 0.5 s, project ~1.4 s.

@@ -466,6 +466,7 @@ Details are in the research notes of 2026-11-22.
   m.selection                         # current lasso selection → DataFrame (or row index)
   m.on_select(lambda rows: ...)       # callback when the selection changes
   m.annotate(row=123, text="Imatinib")
+  m.add_layer(new_compounds)          # item 5 — calls prepare_overlay then project_overlay
   m.save_png("map.png"); m.save_html("map.html")
   ```
 
@@ -482,6 +483,13 @@ Details are in the research notes of 2026-11-22.
   - [x] Selection events → kernel via comm `performRpc`, `_on_msg` runs between cells.
   - [x] Docs: README "Python API" section, example notebook, architecture.html updated.
   - [x] Tests: 19 Python unit tests (`test_python_api.py`); harness scenario (`scenario-python-api.json`).
+- **`m.add_layer(df)` call sequence (B3):**
+  1. Host calls `prepare_overlay(job_id, variable_name, layer_id)` — transforms new frame's matching columns using the base job's stored scale/PCA; returns `{ok, nRows, nKept, dims, layerId}`.
+  2. Host calls `project_overlay(job_id, layer_id, anchor_xy_path, opts_json)` — places each overlay row via the existing IVF index (same 10-nearest-anchors weighted mean as the base `project`); streams `overlayXy` chunks back via `KernelOutput`.
+  3. Host posts `overlayPrepared` to webview with `{layerId, nKept, variable}`.
+  4. Host streams `xyChunk` messages (with `layerId`) as overlay XY chunks arrive.
+  5. Webview adds the layer to `atlas.layers` (with a fixed symbol code from `overlaySymbolCode`), allocates `overlayXY`/`overlayColors` buffers, and renders when each chunk arrives.
+  6. When all rows filled, webview builds a spatial `HitIndex` for hover detection.
 
 ---
 
