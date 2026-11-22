@@ -18,8 +18,17 @@
       "screenshot": "label-fonts-default.png"
     },
     {
-      "name": "apply Cinzel font",
-      "eval": "const sel = document.querySelector('select[aria-label=\"Label font\"]'); sel.value = 'Cinzel'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "name": "FontPicker combobox is rendered (input element present)",
+      "eval": "const inp = document.querySelector('input[aria-label=\"Label font\"]'); window.__fontPickerPresent = !!inp && inp.getAttribute('role') === 'combobox'",
+      "until": "window.__fontPickerPresent !== undefined",
+      "assert": [
+        "window.__fontPickerPresent === true"
+      ],
+      "report": "{ fontPickerPresent: window.__fontPickerPresent, role: document.querySelector('input[aria-label=\"Label font\"]')?.getAttribute('role') }"
+    },
+    {
+      "name": "apply Cinzel font via Atlas API",
+      "eval": "a.setLabelOptions({ fontFamily: 'Cinzel' })",
       "until": "a.labels.fontFamily === 'Cinzel'",
       "timeout": 5000,
       "assert": [
@@ -56,8 +65,8 @@
       "screenshot": "label-fonts-uppercase.png"
     },
     {
-      "name": "revert to default font",
-      "eval": "const sel = document.querySelector('select[aria-label=\"Label font\"]'); sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "name": "revert to default font via Atlas API",
+      "eval": "a.setLabelOptions({ fontFamily: '' })",
       "until": "a.labels.fontFamily === ''",
       "assert": [
         "a.labels.fontFamily === ''"
