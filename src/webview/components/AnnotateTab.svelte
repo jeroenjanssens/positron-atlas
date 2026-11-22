@@ -121,7 +121,7 @@
 </script>
 
 <Section {atlas} id="labels" title="Labels">
-  {#if atlas.dims === 3}<div class="hint muted">In 3D, labels are drawn over the points; automatic clusters, outlines, labels around the map and dragging labels need 2D (Map → UMAP → Dimensions).</div>{/if}
+  {#if atlas.dims === 3}<div class="hint muted">In 3D, labels are drawn over the points; automatic clusters, outlines and labels around the map need 2D (Map → UMAP → Dimensions). Label drag moves in the camera plane at the label's depth; offsets are stored in map (XY) coordinates.</div>{/if}
   <div class="select">
     <span>Label by <Info id="labels.labelBy" /></span>
     <Select value={source} ariaLabel="Label by" onchange={onLabelChange}>
@@ -429,6 +429,16 @@
             <span class="codicon codicon-location" aria-hidden="true"></span>
           </button>
           <span class="ann-item-text" title={ann.text}>{ann.text || `Row ${ann.row}`}</span>
+          <!-- Q12: keep-near-point toggle — clamps the callout box to 200 px from its anchor on screen -->
+          <button
+            class="ann-clamp icon-btn"
+            class:active={ann.clampToAnchor}
+            title={ann.clampToAnchor ? 'Keep near point: on — click to disable' : 'Keep near point: off — click to enable'}
+            aria-label={ann.clampToAnchor ? 'Disable keep near point' : 'Enable keep near point'}
+            onclick={() => atlas.updateAnnotationClamp(ann.id, !ann.clampToAnchor)}
+          >
+            <span class="codicon codicon-pin" aria-hidden="true"></span>
+          </button>
           <button class="ann-del icon-btn" title="Delete" onclick={() => atlas.removeAnnotation(ann.id)}>
             <span class="codicon codicon-trash" aria-hidden="true"></span>
           </button>
@@ -527,9 +537,10 @@
   .ann-list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
   .ann-item { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
   .ann-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9em; }
-  .ann-goto, .ann-del { background: none; border: none; cursor: pointer; color: var(--muted); padding: 0 2px; display: flex; align-items: center; }
-  .ann-goto:hover, .ann-del:hover { color: var(--vscode-editor-foreground, #ccc); }
-  .ann-goto .codicon, .ann-del .codicon { font-size: 13px; }
+  .ann-goto, .ann-del, .ann-clamp { background: none; border: none; cursor: pointer; color: var(--muted); padding: 0 2px; display: flex; align-items: center; }
+  .ann-goto:hover, .ann-del:hover, .ann-clamp:hover { color: var(--vscode-editor-foreground, #ccc); }
+  .ann-goto .codicon, .ann-del .codicon, .ann-clamp .codicon { font-size: 13px; }
+  .ann-clamp.active { color: var(--vscode-textLink-foreground, #3794ff); }
   .file-btn { display: inline-block; padding: 3px 10px; background: var(--btn-bg); border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; cursor: pointer; font: inherit; color: var(--btn-fg); }
   .file-btn:hover { background: var(--btn-hover-bg, var(--btn-bg)); }
   .hint.error { color: var(--vscode-errorForeground, #f14c4c); }

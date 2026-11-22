@@ -409,6 +409,28 @@ export function updateLabels(atlas: Atlas): void {
   // ---- Drag offsets (A3/B5: map-coordinate offsets) ----
   const dragOffsets = opts.dragOffsets ?? {};
 
+  // ---- 3D worldZ per group (B5): mean Z of each group's points for depth-correct drag ----
+  // Only computed in 3D mode; each placed label gets worldZ so the drag uses depth-correct unproject.
+  let groupWorldZ: Map<string, number> | null = null;
+  if (atlas.dims === 3) {
+    const xy = (atlas.projection === 'done' && atlas.allXY) ? atlas.allXY : atlas.anchorXY;
+    const codes = (atlas.projection === 'done' && atlas.allXY) ? groups.all : groups.anchors;
+    const n = (atlas.projection === 'done' && atlas.allXY) ? atlas.nKept : atlas.prepared.nAnchors;
+    const groupNames = groups.names;
+    const sumZ: Record<string, number> = {};
+    const cntZ: Record<string, number> = {};
+    for (let i = 0; i < n; i++) {
+      const code = codes[i];
+      if (code < 0 || code >= groupNames.length) continue;
+      const z = xy[i * 3 + 2];
+      if (!isFinite(z)) continue;
+      const name = groupNames[code];
+      sumZ[name] = (sumZ[name] ?? 0) + z;
+      cntZ[name] = (cntZ[name] ?? 0) + 1;
+    }
+    groupWorldZ = new Map(Object.keys(sumZ).map((name) => [name, sumZ[name] / cntZ[name]]));
+  }
+
   // ---- Zoom-dependent fine label opacity (A8) ----
   // Fine labels fade in between fittedZoom+1 and fittedZoom+1.5.
   // At the overview zoom, fine labels are invisible; they appear as the user zooms in.
@@ -532,6 +554,7 @@ export function updateLabels(atlas: Atlas): void {
       weight: weights[i],
       badge,
       key: rawText,
+      worldZ: groupWorldZ?.get(rawText),
     });
   }
 

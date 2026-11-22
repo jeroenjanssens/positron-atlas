@@ -444,6 +444,36 @@ export function updateAnnotationStyle(atlas: Atlas, id: string, style: Annotatio
   });
 }
 
+/** Toggle the Q12 "keep box near point on screen" clamp per annotation. */
+export function updateAnnotationClamp(atlas: Atlas, id: string, clamp: boolean): void {
+  const ann = atlas.annotations.get(id);
+  if (!ann) return;
+  const oldClamp = ann.clampToAnchor ?? false;
+  const next = new Map(atlas.annotations);
+  next.set(id, { ...ann, clampToAnchor: clamp });
+  atlas.annotations = next;
+  syncRenderer(atlas);
+  atlas.recordHistory({
+    label: clamp ? 'Enable keep-near-point' : 'Disable keep-near-point',
+    undo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, clampToAnchor: oldClamp });
+      atlas.annotations = m;
+      syncRenderer(atlas);
+    },
+    redo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, clampToAnchor: clamp });
+      atlas.annotations = m;
+      syncRenderer(atlas);
+    },
+  });
+}
+
 /**
  * Export all annotations as a JSON string (B5: includes format version).
  * Format: { v: 2, annotations: AnnotationData[] }

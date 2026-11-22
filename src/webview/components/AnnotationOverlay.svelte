@@ -29,6 +29,9 @@
 
   let rafId = 0;
 
+  /** Maximum distance (px) the callout box can be from its anchor when clampToAnchor is on (Q12). */
+  const CLAMP_MAX_PX = 200;
+
   function updatePositions() {
     if (!atlas.renderer) return;
     const next = new Map<string, AnnPos>();
@@ -36,7 +39,17 @@
       // B5: anchor and box positions derived from world coordinates each frame.
       const anchor = atlas.renderer.projectWorld(ann.worldX, ann.worldY, ann.worldZ ?? 0);
       if (!anchor) continue;
-      const box = atlas.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0) ?? anchor;
+      let box = atlas.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0) ?? anchor;
+      // Q12: clamp box to within CLAMP_MAX_PX of the anchor on screen.
+      if (ann.clampToAnchor) {
+        const dx = box[0] - anchor[0];
+        const dy = box[1] - anchor[1];
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > CLAMP_MAX_PX) {
+          const scale = CLAMP_MAX_PX / dist;
+          box = [anchor[0] + dx * scale, anchor[1] + dy * scale];
+        }
+      }
       next.set(ann.id, { anchor, box });
     }
     positions = next;

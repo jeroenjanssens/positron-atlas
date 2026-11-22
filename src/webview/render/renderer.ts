@@ -61,6 +61,8 @@ export interface MapLabel {
   badge?: [number, number, number, number];
   /** Original group name used as the drag-offset key. */
   key?: string;
+  /** World z of the group centre (3D only). Used for depth-correct drag (B5). */
+  worldZ?: number;
 }
 
 export interface LabelStyle {
@@ -752,7 +754,7 @@ export class ScatterRenderer {
         wordBreak: 'break-word',
         getTextAnchor: 'middle',
         getAlignmentBaseline: 'center',
-        pickable: !is3D,  // disable drag/context menu in 3D (T5); billboard labels don't support drag
+        pickable: true,  // pickable in both 2D and 3D — needed for label drag (B5)
         extensions: [this.collision],
         collisionEnabled: true,
         getCollisionPriority: (d: MapLabel) => d.priority,
@@ -763,6 +765,9 @@ export class ScatterRenderer {
         ...(is3D ? { billboard: true } : {}),
       } as const;
 
+      // In 3D mode, include worldZ so labels depth-sort and depth-correct drag works.
+      const getPos3D = (d: MapLabel): [number, number, number] => [d.position[0], d.position[1], d.worldZ ?? 0];
+
       // Normal labels – one TextLayer per distinct weight bucket.
       for (const w of weights) {
         const bucket = normalLabels.filter((l) => (l.weight ?? baseFontWeight) === w);
@@ -772,7 +777,7 @@ export class ScatterRenderer {
             id: `labels-w${w}`,
             data: bucket,
             getText: (d: MapLabel) => d.text,
-            getPosition: (d: MapLabel) => d.position,
+            getPosition: is3D ? getPos3D : (d: MapLabel) => d.position,
             getSize: (d: MapLabel) => d.size,
             getColor: (d: MapLabel) => d.color,
             fontWeight: w,
@@ -788,7 +793,7 @@ export class ScatterRenderer {
             id: 'labels-badges',
             data: badgeLabels,
             getText: (d: MapLabel) => d.text,
-            getPosition: (d: MapLabel) => d.position,
+            getPosition: is3D ? getPos3D : (d: MapLabel) => d.position,
             getSize: (d: MapLabel) => d.size,
             getColor: [255, 255, 255, 255],
             fontWeight: 800,

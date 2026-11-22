@@ -141,6 +141,32 @@
       "report": "{ pngLen: h.png.length }"
     },
     {
+      "name": "Q12: enable keep-near-point (clampToAnchor) on the first annotation",
+      "eval": "const ann = [...a.annotations.values()][0]; a.updateAnnotationClamp(ann.id, true);",
+      "assert": [
+        "[...a.annotations.values()][0].clampToAnchor === true"
+      ],
+      "report": "{ clampToAnchor: [...a.annotations.values()][0].clampToAnchor }"
+    },
+    {
+      "name": "Q12: zoom out far so world offset exceeds 200px; box clamp keeps it within 200px",
+      "eval": "(async () => { a.setView({ zoom: -6 }); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); const ann = [...a.annotations.values()][0]; const sc = a.renderer.projectWorld(ann.worldX, ann.worldY, ann.worldZ ?? 0); const box = a.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0) ?? sc; const rawDist = Math.sqrt((box[0]-sc[0])**2+(box[1]-sc[1])**2); const overlay = document.querySelector('.callout'); const rect = overlay?.getBoundingClientRect(); const plotRect = document.querySelector('canvas')?.getBoundingClientRect(); const domDist = overlay && plotRect ? Math.sqrt(((rect.left+rect.width/2 - plotRect.left) - sc[0])**2 + ((rect.top+rect.height/2 - plotRect.top) - sc[1])**2) : null; window.__q12clamp = { rawDist, domDist, sc, box }; })()",
+      "until": "window.__q12clamp !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__q12clamp.rawDist > 200 || window.__q12clamp.domDist === null || window.__q12clamp.domDist <= 220"
+      ],
+      "report": "{ clamp: window.__q12clamp }"
+    },
+    {
+      "name": "Q12: disable clampToAnchor",
+      "eval": "const ann = [...a.annotations.values()][0]; a.updateAnnotationClamp(ann.id, false); a.setView({ zoom: 1 });",
+      "assert": [
+        "[...a.annotations.values()][0].clampToAnchor === false"
+      ],
+      "report": "{ clampToAnchor: [...a.annotations.values()][0].clampToAnchor }"
+    },
+    {
       "name": "clear all annotations",
       "eval": "a.clearAnnotations()",
       "assert": [

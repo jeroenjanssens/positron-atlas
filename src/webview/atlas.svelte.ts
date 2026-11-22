@@ -120,6 +120,7 @@ import {
   updateAnnotationOffset as updateAnnotationOffsetImpl,
   updateAnnotationText as updateAnnotationTextImpl,
   updateAnnotationStyle as updateAnnotationStyleImpl,
+  updateAnnotationClamp as updateAnnotationClampImpl,
   exportAnnotationsJson as exportAnnotationsJsonImpl,
   importAnnotationsJson as importAnnotationsJsonImpl,
   handleAnnotateClick as handleAnnotateClickImpl,
@@ -493,14 +494,19 @@ export class Atlas {
     // Label drags and resets are undoable (A3/B5).
     // Store drag start to convert screen delta → world delta (B5: map-coordinate offsets).
     let _labelDragStart: [number, number] = [0, 0];
+    let _labelDragWorldZ: number | undefined;
     this.renderer.onLabelDrag({
-      onStart: (_label, screenPos) => { _labelDragStart = screenPos; },
+      onStart: (label, screenPos) => {
+        _labelDragStart = screenPos;
+        _labelDragWorldZ = label.worldZ; // B5: used for depth-correct 3D drag
+      },
       onEnd: (label, screenDelta) => {
         // Convert screen-pixel delta to world-coordinate delta through the viewport.
-        // This is correct under 2D rotation and in 3D (Q11).
+        // In 3D, pass worldZ so the unproject is at the label's depth plane (B5).
         const worldDelta = this.renderer!.screenDeltaToWorld(
           _labelDragStart[0], _labelDragStart[1],
           screenDelta[0], screenDelta[1],
+          _labelDragWorldZ,
         );
         moveLabelImpl(this, label.key ?? label.text, worldDelta);
       },
@@ -951,6 +957,8 @@ export class Atlas {
   updateAnnotationOffset(id: string, offsetX: number, offsetY: number): void { updateAnnotationOffsetImpl(this, id, offsetX, offsetY); }
   updateAnnotationText(id: string, text: string): void { updateAnnotationTextImpl(this, id, text); }
   updateAnnotationStyle(id: string, style: AnnotationData['style']): void { updateAnnotationStyleImpl(this, id, style); }
+  /** Toggle Q12 "keep box near point on screen" per annotation. */
+  updateAnnotationClamp(id: string, clamp: boolean): void { updateAnnotationClampImpl(this, id, clamp); }
   exportAnnotationsJson(): string { return exportAnnotationsJsonImpl(this); }
   importAnnotationsJson(json: string): void { importAnnotationsJsonImpl(this, json); }
   /** Handle a click in annotate-tool mode; returns the new annotation or null. */

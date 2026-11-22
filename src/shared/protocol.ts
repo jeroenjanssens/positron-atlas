@@ -346,6 +346,11 @@ export interface AnnotationData {
   imageShape?: [number, number] | null;
   /** Data-URL thumbnail for image-URL annotations (base64 PNG; '' = not yet fetched). */
   imageDataUrl?: string;
+  /**
+   * Q12 (B5): when true, the callout box is clamped to within 200 px of the annotated point
+   * on screen. Useful when zoomed far out so the box doesn't float too far from its point.
+   */
+  clampToAnchor?: boolean;
 }
 
 /** Persisted in the webview state so tabs can be restored after a reload. */

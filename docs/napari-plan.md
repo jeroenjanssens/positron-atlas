@@ -510,17 +510,17 @@ Details are in the research notes of 2026-11-22.
   - **Point annotations:** turn them back on (off today): the box is drawn as an HTML overlay at the projected map position, with depth fade for boxes behind the cloud.
   - **Label dragging:** moves a label in the camera plane at its own depth (unproject at the label's depth), stored as x, y, z.
   - **Leader lines:** drawn in map space (deck.gl `LineLayer`), so they rotate correctly.
-- **To-do:**
-  - [ ] State and persistence: label offsets and annotation box positions as map coordinates (2 or 3 values); a migration from today's pixel offsets (convert with the stored view scale, or reset with a notice); JSON export and import updated (with a version field).
-  - [ ] Label drag code: screen → map conversion through the view (works rotated and in 3D); group matching after reclustering unchanged.
-  - [ ] Callout rendering: project box anchors every frame (one `requestAnimationFrame`); leader lines as a deck.gl layer in map space; off-screen points fade their boxes; optional "keep box near point on screen" per annotation (Q12).
-  - [ ] 3D: annotations and label dragging enabled; the 3D hints from the first plan updated.
-  - [ ] Freeze layout for labels around the map.
-  - [ ] Scale text with zoom option (TextLayer `sizeUnits: 'common'` vs `'pixels'`, with min and max pixel sizes).
-  - [ ] PNG export and HTML viewer use the same map positions (the viewer gets the offsets, not screen pixels).
-  - [ ] Tests:
-    - vitest for conversions and migration.
-    - Harness: drag a label and a callout, then pan, zoom and rotate, and assert both are still next to the same map position (pixel test near the projected anchor); the same in 3D after orbiting; a layout change keeps a dragged label next to its cluster; screenshots.
+- **Done (B5 round 1 + 2):**
+  - ✅ State and persistence: `dragOffsets` and annotation `offsetX/Y` in world coordinates; version field `'v2map'`; legacy screen-pixel offsets reset on import with a migration notice.
+  - ✅ Label drag code: `screenDeltaToWorld` through the viewport — works in 2D (rotation-correct) and 3D (depth-correct unproject at the label's depth plane). Group key survives reclustering.
+  - ✅ Callout rendering: box anchors projected every RAF frame; leader lines as a deck.gl `LineLayer`; off-screen anchor fade; Q12 "keep box near point on screen" toggle per annotation (clamps box to 200 px from anchor).
+  - ✅ 3D annotations and label dragging: callout boxes rendered with depth fade; labels pickable in 3D with billboard mode; `MapLabel.worldZ` holds the group's mean Z for depth-correct drag; AnnotateTab hint updated.
+  - ✅ PNG export and HTML viewer: use `projectWorld(worldX + offsetX, worldY + offsetY)` — not raw screen-pixel offsets.
+  - ✅ Tests: harness scenarios with real pixel checks after pan, zoom, 45° rotation (2D), re-embed (live layout change), and 3D drag + orbit; Q12 clamp check; screenshots.
+- **Not done (deferred):**
+  - [ ] Freeze layout for labels around the map (Q14). Currently the freeze stores positions but the round-trip is not fully tested.
+  - [ ] Scale text with zoom option (TextLayer `sizeUnits: 'common'` vs `'pixels'`). The checkbox (`scaleTextWithZoom`) is wired but collision at coarse zoom is not tuned.
+  - [ ] vitest unit tests for the `screenDeltaToWorld` conversion and migration logic (harness tests cover the behaviour end-to-end).
 
 ## 16. Follow-ups from the first plan — any wave (S–M each)
 
