@@ -115,10 +115,11 @@ export function render(atlas: Atlas): void {
   // A12: invalidate glow when point data changes (2D only).
   if (atlas.view.glow && nd === 2) atlas.glowVersion++;
   // In 3D mode, invalidate the screen-space hit index while layout data is
-  // changing (projection running).  Once projection is done the camera hasn't
-  // moved so existing screen positions stay valid; on3DViewChange handles the
-  // camera-movement case.
-  if (nd === 3 && atlas.projection !== 'done') atlas._3dScreenXY = null;
+  // actively changing (projection is running or stale).  'done' and 'none' both
+  // mean data is settled ('none' covers coords mode where no UMAP projection
+  // is needed); in those states the existing screen positions remain valid and
+  // on3DViewChange handles the camera-movement case.
+  if (nd === 3 && (atlas.projection === 'running' || atlas.projection === 'stale')) atlas._3dScreenXY = null;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     if (nd === 3) {

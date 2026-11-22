@@ -6,6 +6,7 @@ Open a pandas or polars DataFrame (or a pyarrow Table, DuckDB relation, or lazy 
 
 ## Features
 
+- **Layout from precomputed columns.** If your DataFrame already has UMAP, t-SNE or PCA coordinates (e.g. `umap_x`, `umap_y`, `umap_z`), switch Map → Layout → From columns, pick the x/y/z axes (auto-detected), and the map appears instantly — no UMAP runs. Hover, legend, search, filters, lasso, clusters, labels, annotations and exports all work normally. 2D and 3D both work.
 - **Live UMAP in the browser.** UMAP runs in a web worker using the Rust/WASM port from [apple/embedding-atlas](https://github.com/apple/embedding-atlas), on the GPU (WebGPU) when available. You watch the layout converge.
 - **Live parameters.** `min_dist`, `spread`, repulsion strength, negative sample rate and learning rate change the running layout. `n_neighbors`, metric, epochs and seed rebuild the neighbor graph.
 - **Large data (10⁴ to 10⁷ rows).** UMAP runs on up to 100,000 *anchor* rows. The remaining rows are placed in the kernel by their nearest anchors, streamed in chunks. Platform builds include a small Rust core that does this 8–13× faster (10⁷ rows in about 15 s on 4 cores); elsewhere, or with `positronAtlas.nativeCore` off, the same algorithm runs in numpy.
@@ -71,6 +72,8 @@ The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zo
 
 | Tab | Section | Control | Effect |
 |---|---|---|---|
+| Map | Layout | Layout mode: UMAP or From columns | Switches between UMAP and precomputed coordinates |
+| Map | Layout | X, Y, Z columns (From columns mode) | Columns to use as layout axes (auto-detected: `umap_x/y/z`, `x/y/z`, `tsne_1/2`, `pc1/2`, …) |
 | Map | Data | Features, sample %, standardize, PCA, anchors, missing values, seed | Click **Apply** to re-prepare in the kernel |
 | Map | UMAP | Neighbors, epochs, metric, seed (`rebuild`) | Restarts UMAP |
 | Map | UMAP | Min distance, spread, advanced (`live`) | Applied to the running layout |

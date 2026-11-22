@@ -13,6 +13,10 @@ import { computeAroundLabels } from '../labels/around';
 import { renderGlow } from './glow';
 
 export function addCoordinates(atlas: Atlas): void {
+  if (atlas.layoutMode === 'columns') {
+    atlas.flash('The layout is already from columns in the DataFrame — no coordinates to add.');
+    return;
+  }
   if (!atlas.prepared || !atlas.anchorXY) {
     return;
   }
@@ -83,12 +87,20 @@ export function savePng(atlas: Atlas): void {
 }
 
 export function copyPython(atlas: Atlas): void {
+  if (atlas.layoutMode === 'columns') {
+    atlas.flash('Python code is not available in "From columns" layout mode.');
+    return;
+  }
   const names = (atlas.describe?.columns ?? []).filter((c) => atlas.prepare.features.includes(c.index)).map((c) => c.name);
   const kind = atlas.describe?.frameKind ?? 'pandas';
   vscode.post({ type: 'copyText', text: pythonSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind, atlas.dims) });
 }
 
 export function copyPolarsUmap(atlas: Atlas): void {
+  if (atlas.layoutMode === 'columns') {
+    atlas.flash('Python code is not available in "From columns" layout mode.');
+    return;
+  }
   const names = (atlas.describe?.columns ?? []).filter((c) => atlas.prepare.features.includes(c.index)).map((c) => c.name);
   const kind = atlas.describe?.frameKind ?? 'pandas';
   vscode.post({ type: 'copyText', text: polarsUmapSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind, atlas.dims) });
@@ -169,6 +181,7 @@ export function persist(atlas: Atlas): void {
     sizeColumn: atlas.sizeColumn ?? undefined,
     histFilter: atlas.histFilter ?? undefined,
     dims: atlas.dims !== 2 ? atlas.dims : undefined,
+    layoutMode: atlas.layoutMode !== 'umap' ? atlas.layoutMode : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

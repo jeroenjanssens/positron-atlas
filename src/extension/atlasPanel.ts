@@ -265,17 +265,39 @@ export class AtlasPanel {
           native: settings.nativeCore,
           neighborCacheMB: settings.neighborCacheMB,
         }));
+        const seenPrepare = new Set<string>();
         const s = await this.bridge.waitForJob(
           job,
           (st) => {
             this.post({ type: 'status', task: 'prepare', status: st });
+            // coords mode: stream xy outputs as they become available
+            if ((st.result as PrepareResult | undefined)?.coordsMode) {
+              for (const o of st.outputs) {
+                if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
+                  seenPrepare.add(o.file);
+                  this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: (st.result as PrepareResult)?.nKept ?? 0 });
+                }
+              }
+            }
           },
           token,
         );
         if (s.stage === 'done') {
           const anchors = s.outputs.find((o) => o.kind === 'anchors')!;
           const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos')!;
-          this.post({ type: 'prepared', result: s.result as PrepareResult, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
+          const result = s.result as PrepareResult;
+          this.post({ type: 'prepared', result, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
+          // coords mode: stream any remaining xy outputs then signal projection done
+          if (result.coordsMode) {
+            for (const o of s.outputs) {
+              if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
+                seenPrepare.add(o.file);
+                this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: result.nKept });
+              }
+            }
+            this.projectionCurrent = true;
+            this.post({ type: 'projected', seconds: 0, exact: true });
+          }
         } else if (s.stage === 'error') {
           throw new KernelError(s.error ?? 'Preparing the data failed', s.result?.traceback);
         }

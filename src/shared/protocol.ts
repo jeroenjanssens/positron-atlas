@@ -34,6 +34,8 @@ export interface PrepareOptions {
   seed: number;
   maxAnchors: number;
   anchorBudget: number;
+  /** When set, use these columns as x/y[/z] layout coordinates instead of running UMAP. */
+  coordsColumns?: { x: number; y: number; z?: number } | null;
 }
 
 export interface PrepareResult {
@@ -47,6 +49,8 @@ export interface PrepareResult {
   needsProjection: boolean;
   explainedVariance: number[] | null;
   featuresBytes: number;
+  /** True when layout comes from precomputed coordinate columns (no UMAP). */
+  coordsMode?: boolean;
 }
 
 export interface KernelOutput {
@@ -300,6 +304,8 @@ export interface PanelState {
   umap?: UmapParams;
   /** Output dimensionality of the UMAP layout: 2 (default) or 3 (T2). */
   dims?: 2 | 3;
+  /** Layout mode: 'umap' (default) or 'columns' (precomputed coordinate columns). */
+  layoutMode?: 'umap' | 'columns';
   colorColumn?: number | null;
   view?: {
     pointSize: number;

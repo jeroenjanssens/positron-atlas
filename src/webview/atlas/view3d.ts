@@ -66,7 +66,7 @@ export function rebuild3DHitIndex(atlas: Atlas): void {
   let n: number;
   let mapFn: (i: number) => number;
 
-  if (atlas.projection === 'done' && atlas.allXY && atlas.placedRows > 0) {
+  if ((atlas.projection === 'done' || atlas.prepared.coordsMode) && atlas.allXY && atlas.placedRows > 0) {
     xyz = atlas.allXY.subarray(0, atlas.placedRows * nd);
     n = atlas.placedRows;
     mapFn = (i) => i;
@@ -78,7 +78,12 @@ export function rebuild3DHitIndex(atlas: Atlas): void {
   }
 
   const screenXY = atlas.renderer.projectAll3D(xyz, n);
-  if (!screenXY) return;
+  if (!screenXY) {
+    // Viewport not ready yet (e.g. first render hasn't completed).
+    // Retry after a short delay so we don't block indefinitely.
+    setTimeout(() => rebuild3DHitIndex(atlas), 150);
+    return;
+  }
   atlas._3dScreenXY = screenXY;
   const idx = new ScreenHitIndex(screenXY, n);
   atlas.hit = { index: idx as unknown as HitIndex, map: mapFn };

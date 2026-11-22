@@ -1162,11 +1162,165 @@ def _prepare_neighbours(job: _Job, x: np.ndarray, anchor_pos: np.ndarray, anchor
         job.nbr_done.set()
 
 
+def _coords_col_to_float32(frame: "_Frame", col: int, rows: np.ndarray) -> np.ndarray:
+    """Read a single column (numeric or datetime) as a float32 array for the given rows.
+
+    Datetime columns are converted to float64 nanoseconds (like _to_float) then cast to float32.
+    Missing values become NaN.
+    """
+    vals = frame.column(col, rows)
+    _, kind = frame.column_kind(col)
+    fv = _to_float(vals, kind)
+    return fv.astype(np.float32)
+
+
+def _coords_prepare_impl(job: "_Job", opts: dict) -> dict:
+    """Prepare using precomputed coordinate columns (no UMAP).
+
+    Reads the x, y and optionally z columns as the layout, samples/NaN-filters as usual,
+    writes xy chunks and dummy anchor files, and stores other numeric columns as features
+    for compare/describe_groups.  Missing-value policy for coordinates is always 'drop'
+    (imputing coordinate positions is meaningless).
+    """
+    # Cancel and reset background neighbours state (same as normal prepare).
+    job.nbr_cancel_event.set()
+    if job.nbr_thread is not None and job.nbr_thread.is_alive():
+        job.nbr_thread.join(timeout=0.5)
+    job.nbr_cancel_event = threading.Event()
+    job.nbr_idx = None
+    job.nbr_sqd = None
+    job.nbr_non_anchor_pos = None
+    job.nbr_key = None
+    job.nbr_done.set()   # no neighbours needed in coords mode
+    job.nbr_error = None
+
+    frame = job.frame
+    n = frame.n_rows
+    cc = opts["coordsColumns"]   # {x: int, y: int, z?: int}
+    x_col = int(cc["x"])
+    y_col = int(cc["y"])
+    z_col = int(cc["z"]) if cc.get("z") is not None else None
+    ndim = 3 if z_col is not None else 2
+    seed = int(opts.get("seed", 42))
+    sample_pct = float(opts.get("samplePct", 100.0))
+    nan_policy = opts.get("nanPolicy", "drop")  # 'impute' is treated as 'drop' for coords
+
+    coord_cols = [x_col, y_col] + ([z_col] if z_col is not None else [])
+
+    # 1. Sample rows ----------------------------------------------------------------
+    job.set("sampling", 0.0, "Sampling rows")
+    sample_idx = sample_rows(n, sample_pct, seed)
+    m = len(sample_idx)
+    if m == 0:
+        raise ValueError("The DataFrame has no rows.")
+
+    # 2. Read coordinate columns and drop rows with missing coords -------------------
+    job.set("reading", 0.1, "Reading coordinate columns")
+    xy_raw = np.empty((m, ndim), dtype=np.float32)
+    for k_dim, col in enumerate(coord_cols):
+        xy_raw[:, k_dim] = _coords_col_to_float32(frame, col, sample_idx)
+
+    keep = np.all(np.isfinite(xy_raw), axis=1)
+    if nan_policy != "drop" and not keep.all():
+        # Warn but still drop: imputing coordinates makes no geometric sense.
+        # (The host will see nDropped > 0, same as normal mode.)
+        pass
+    kept_idx = sample_idx[keep]
+    xy = np.ascontiguousarray(xy_raw[keep], dtype=np.float32)
+    k_rows = len(kept_idx)
+    if k_rows == 0:
+        raise ValueError("All sampled rows have missing values in the coordinate columns.")
+
+    # 3. Determine other numeric/bool columns for compare/describe_groups -----------
+    job.set("features", 0.4, "Reading feature columns")
+    coord_set = set(coord_cols)
+    all_cols = list(range(frame.n_cols))
+    feature_cols = [
+        j for j in all_cols
+        if j not in coord_set and frame.column_kind(j)[1] in ("numeric", "bool")
+    ]
+    if feature_cols:
+        # Read features in a chunk-compatible way (reuse block())
+        chunk = max(1, _CHUNK_VALUES // max(len(feature_cols), 1))
+        feat_raw = _alloc(job, "coords_features.npy", (k_rows, len(feature_cols)))
+        w = 0
+        full = sample_pct >= 100.0
+        for start in range(0, m, chunk):
+            stop = min(m, start + chunk)
+            rows_sel = slice(int(sample_idx[start]), int(sample_idx[stop - 1]) + 1) if full else sample_idx[start:stop]
+            blk = frame.block(feature_cols, rows_sel)
+            # Apply keep mask for this chunk
+            chunk_keep = keep[start:stop]
+            blk_kept = blk[chunk_keep]
+            # Impute missing feature values (median); coordinates were already dropped
+            if nan_policy == "impute":
+                for fi in range(blk_kept.shape[1]):
+                    col_data = blk_kept[:, fi]
+                    nan_mask = ~np.isfinite(col_data)
+                    if nan_mask.any():
+                        med = float(np.nanmedian(col_data))
+                        col_data[nan_mask] = med if np.isfinite(med) else 0.0
+            else:
+                # Drop mode: replace any remaining NaN in features with 0 so compare
+                # doesn't crash (coordinates were already filtered, features are best-effort)
+                nan_mask = ~np.isfinite(blk_kept)
+                if nan_mask.any():
+                    blk_kept[nan_mask] = 0.0
+            feat_raw[w:w + len(blk_kept)] = blk_kept
+            w += len(blk_kept)
+            job.set("features", 0.4 + 0.3 * stop / m, f"Reading features {stop:,}/{m:,}")
+        features = feat_raw[:k_rows]
+    else:
+        features = np.empty((k_rows, 0), dtype=np.float32)
+
+    # 4. Write xy chunks -----------------------------------------------------------
+    job.set("writing", 0.75, "Writing coordinate layout")
+    n_files = _write_xy_chunks(job, xy)
+
+    # 5. Write anchor/anchorPos stubs (all rows are "anchors" in coords mode) ------
+    # We write the xy coordinates as the "anchor features" so that atlas.anchors is
+    # a valid Float32Array (shape [nKept, ndim]).  The UMAP worker is never started
+    # in coords mode, so this data is never used for embedding.
+    anchor_pos = np.arange(k_rows, dtype=np.uint32)
+    _write(job, "anchors.f32", xy)                                # [nKept, ndim]
+    _write(job, "anchor_pos.u32", anchor_pos)
+
+    # 6. Store job state -----------------------------------------------------------
+    job.set("finishing", 0.99)
+    job.kept_idx = kept_idx
+    job.features = features
+    job.anchor_pos = anchor_pos
+    job.anchors = xy   # same as the layout; unused for UMAP in coords mode
+    job.xy = xy
+
+    job.add_output(kind="anchors", file="anchors.f32", dtype="f32", shape=[k_rows, ndim])
+    job.add_output(kind="anchorPos", file="anchor_pos.u32", dtype="u32", shape=[k_rows])
+    job.prepare_gen += 1
+
+    return {
+        "nRows": n,
+        "nSampled": int(m),
+        "nKept": int(k_rows),
+        "nDropped": int(m - k_rows),
+        "dims": ndim,
+        "inputDims": ndim,
+        "nAnchors": int(k_rows),
+        "needsProjection": False,
+        "explainedVariance": None,
+        "featuresBytes": int(features.nbytes),
+        "coordsMode": True,
+    }
+
+
 @_guard
 def prepare(job_id: str, opts_json: str) -> str:
     job = _get(job_id)
     opts = json.loads(opts_json)
-    job.run("prepare", lambda: _prepare_impl(job, opts))
+    cc = opts.get("coordsColumns")
+    if cc and isinstance(cc, dict) and "x" in cc and "y" in cc:
+        job.run("prepare", lambda: _coords_prepare_impl(job, opts))
+    else:
+        job.run("prepare", lambda: _prepare_impl(job, opts))
     return _json({"ok": True, "jobId": job.id})
 
 

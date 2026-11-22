@@ -9,6 +9,7 @@ import { DEFAULT_UMAP } from '../defaults';
 import { DEFAULT_LABELS } from './labels-defaults';
 import { runPrepare } from './prepare.svelte';
 import { detectTitleColumn, detectLinkColumn, detectImageUrlColumn } from '../hover/texts';
+import { detectCoordsColumns } from './coords';
 
 export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
   atlas.describe = d;
@@ -22,6 +23,26 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   const numeric = d.columns.filter((c) => c.kind === 'numeric' || c.kind === 'bool').map((c) => c.index);
   const valid = new Set(d.columns.map((c) => c.index));
   const saved = state?.prepare;
+  // Restore layout mode and coord columns.
+  if (state?.layoutMode === 'columns') {
+    atlas.layoutMode = 'columns';
+  } else {
+    atlas.layoutMode = 'umap';
+  }
+  // Validate saved coordsColumns against current columns.
+  let savedCoords = saved?.coordsColumns ?? null;
+  if (savedCoords) {
+    if (!valid.has(savedCoords.x) || !valid.has(savedCoords.y) ||
+        (savedCoords.z !== undefined && !valid.has(savedCoords.z))) {
+      savedCoords = null;
+    }
+  }
+  // If in columns mode but no valid saved coords, auto-detect.
+  if (atlas.layoutMode === 'columns' && !savedCoords) {
+    savedCoords = detectCoordsColumns(d.columns);
+    // If auto-detection fails, fall back to UMAP mode.
+    if (!savedCoords) atlas.layoutMode = 'umap';
+  }
   atlas.prepare = {
     features: saved?.features?.filter((i) => valid.has(i)).length ? saved.features.filter((i) => valid.has(i)) : numeric,
     samplePct: saved?.samplePct ?? settings.defaultSamplePct,
@@ -32,6 +53,7 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     seed: saved?.seed ?? 42,
     maxAnchors: saved?.maxAnchors ?? (useGpuFor(atlas, settings) ? settings.maxAnchors : Math.min(settings.maxAnchors, settings.maxAnchorsCpu)),
     anchorBudget: settings.anchorBudget,
+    coordsColumns: savedCoords,
   };
   atlas.useGpu = useGpuFor(atlas, settings);
   if (state?.umap) {
@@ -207,7 +229,7 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   atlas.searchCache.clear();
   atlas.renderer?.setSearch(null);
 
-  if (atlas.prepare.features.length === 0) {
+  if (atlas.prepare.features.length === 0 && atlas.layoutMode !== 'columns') {
     atlas.phase = 'error';
     atlas.error = { message: 'This DataFrame has no numeric columns to embed.' };
     return;

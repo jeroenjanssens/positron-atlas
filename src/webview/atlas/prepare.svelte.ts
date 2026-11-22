@@ -29,7 +29,20 @@ export async function onPrepared(atlas: Atlas, result: PrepareResult, anchorsRef
   atlas.anchors = anchors as Float32Array;
   atlas.anchorPos = pos as Uint32Array;
   atlas.prepared = result;
-  atlas.allXY = result.needsProjection ? new Float32Array(result.nKept * 2) : null;
+  // In coords mode, allocate allXY now (xy chunks arrive from the host after prepared).
+  // In regular mode, allocate only when projection is needed.
+  if (result.coordsMode) {
+    const nd = result.dims as 2 | 3;
+    if (atlas.dims !== nd) {
+      atlas.dims = nd;
+      atlas.renderer?.setDims(nd);
+    }
+    atlas.allXY = new Float32Array(result.nKept * nd);
+    atlas.projection = 'running';
+  } else {
+    atlas.allXY = result.needsProjection ? new Float32Array(result.nKept * 2) : null;
+    atlas.projection = 'none';
+  }
   atlas.placedRows = 0;
   atlas.anchorXY = null;
   atlas.hit = null;
@@ -50,7 +63,14 @@ export async function onPrepared(atlas: Atlas, result: PrepareResult, anchorsRef
   if (atlas.labels.column !== null) {
     requestLabelCodes(atlas);
   }
-  startUmap(atlas);
+  if (result.coordsMode) {
+    // Skip UMAP: the host streams xy chunks and then sends 'projected'.
+    // Set phase to 'embedding' so the status bar shows activity while chunks arrive.
+    atlas.phase = 'embedding';
+    atlas.umapProgress = { stage: 'coords', progress: 0, epoch: 0, total: 0 };
+  } else {
+    startUmap(atlas);
+  }
 }
 
 export function onStatus(atlas: Atlas, task: string, s: import('../../shared/protocol').JobStatus): void {

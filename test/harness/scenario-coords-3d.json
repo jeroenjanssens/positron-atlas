@@ -1,0 +1,76 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(2)\nn = 2000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 8, (4, 3))\nxyz = centers[k] + rng.normal(0, 1, (n, 3))\ndf = pd.DataFrame({'umap_x': xyz[:, 0], 'umap_y': xyz[:, 1], 'umap_z': xyz[:, 2], 'score': rng.normal(size=n), 'group': [f'g{v}' for v in k]})\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": "coords-3d.png",
+  "steps": [
+    {
+      "name": "switch to columns mode — auto-detects umap_x/y/z",
+      "eval": "a.setLayoutMode('columns')",
+      "until": "a.layoutMode === 'columns' && a.prepare.coordsColumns !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.layoutMode === 'columns'",
+        "a.prepare.coordsColumns !== null",
+        "typeof a.prepare.coordsColumns.z === 'number'"
+      ],
+      "report": "{ layoutMode: a.layoutMode, coordsColumns: a.prepare.coordsColumns }"
+    },
+    {
+      "name": "run prepare and wait for 3D layout",
+      "eval": "a.runPrepare()",
+      "until": "a.phase === 'ready'",
+      "timeout": 30000,
+      "assert": [
+        "a.phase === 'ready'",
+        "a.prepared.coordsMode === true",
+        "a.prepared.dims === 3",
+        "a.dims === 3",
+        "a.allXY !== null",
+        "a.allXY.length === a.nKept * 3",
+        "a.allXY.every(Number.isFinite)"
+      ],
+      "report": "{ phase: a.phase, dims: a.dims, nKept: a.nKept, allXYLen: a.allXY ? a.allXY.length : null }"
+    },
+    {
+      "name": "color by group",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'group'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.colorMeta.categories.length === 4",
+      "timeout": 10000,
+      "report": "{ colorColumn: a.colorColumn, categories: a.colorMeta ? a.colorMeta.categories.length : null }"
+    },
+    {
+      "name": "wait for 3D screen positions to be computed",
+      "until": "a.hit !== null && a._3dScreenXY !== null",
+      "timeout": 10000,
+      "assert": [
+        "a._3dScreenXY instanceof Float32Array",
+        "a._3dScreenXY.length === a.nKept * 2"
+      ],
+      "report": "{ nScreenPts: a._3dScreenXY ? a._3dScreenXY.length / 2 : 0 }"
+    },
+    {
+      "name": "hover at anchor 0 screen position shows tooltip",
+      "eval": "const sx = a._3dScreenXY[0], sy = a._3dScreenXY[1]; a.onPointer({ x: sx, y: sy, world: [0, 0] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.tooltip !== null",
+        "a.tooltip.row >= 0"
+      ],
+      "report": "{ tooltipRow: a.tooltip ? a.tooltip.row : null }"
+    },
+    {
+      "name": "switch back to UMAP mode clears 3D coords",
+      "eval": "a.setLayoutMode('umap')",
+      "until": "a.layoutMode === 'umap'",
+      "timeout": 5000,
+      "assert": [
+        "a.layoutMode === 'umap'"
+      ],
+      "report": "{ layoutMode: a.layoutMode }"
+    }
+  ]
+}

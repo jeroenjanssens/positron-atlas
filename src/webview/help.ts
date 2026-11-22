@@ -27,6 +27,49 @@ export interface HelpEntry {
 export const HELP: Record<string, HelpEntry> = {
   // ---- Data tab ----------------------------------------------------------------
 
+  'data.layout': {
+    title: 'Layout',
+    what: 'Whether the map coordinates come from UMAP or from existing columns in the DataFrame.',
+    intuition:
+      '"UMAP" runs the dimensionality reduction pipeline (the default). ' +
+      '"From columns" skips UMAP entirely and reads pre-computed x/y (and optionally z) columns as the layout — useful when you already have UMAP, t-SNE or PCA coordinates written back to the DataFrame, or when you receive a DataMapPlot-style frame with pre-computed positions. ' +
+      'In "From columns" mode there is no embedding step, so very large frames load almost instantly.',
+    when: 'Use "From columns" when you have umap_x/umap_y columns already in the DataFrame (written by Atlas, umap-learn, or polars-umap), or any other pre-computed 2D/3D projection.',
+    cost: 'reprepare',
+  },
+
+  'data.coordsX': {
+    title: 'X column',
+    what: 'The numeric or datetime column to use as the horizontal coordinate.',
+    intuition:
+      'Each row\'s value in this column becomes its x position on the map. ' +
+      'Rows with missing values are dropped (imputing coordinate positions is meaningless). ' +
+      'Datetime columns are converted to numeric (nanoseconds since epoch) so they can be positioned on a time axis.',
+    when: 'Choose the column that holds the first dimension of your pre-computed layout (e.g. umap_x, tsne_1, or PC1).',
+    cost: 'reprepare',
+  },
+
+  'data.coordsY': {
+    title: 'Y column',
+    what: 'The numeric or datetime column to use as the vertical coordinate.',
+    intuition:
+      'Each row\'s value in this column becomes its y position on the map. ' +
+      'Datetime columns are converted to numeric so they can be used as an axis.',
+    when: 'Choose the column that holds the second dimension of your pre-computed layout (e.g. umap_y, tsne_2, or PC2).',
+    cost: 'reprepare',
+  },
+
+  'data.coordsZ': {
+    title: 'Z column (optional)',
+    what: 'The numeric or datetime column to use as the depth coordinate, enabling the 3D view.',
+    intuition:
+      'When set, the map switches to 3D (orbit, rotate, zoom). ' +
+      'Leave as "None" for a flat 2D map. ' +
+      'Datetime columns are converted to numeric.',
+    when: 'Choose the third dimension when you have a 3D projection (e.g. umap_z or PC3), or leave as None to keep the 2D view.',
+    cost: 'reprepare',
+  },
+
   'data.features': {
     title: 'Features',
     what: 'The numeric columns used as the input to UMAP.',

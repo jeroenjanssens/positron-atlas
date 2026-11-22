@@ -5,6 +5,7 @@
   import Checkbox from './controls/Checkbox.svelte';
   import Info from './controls/Info.svelte';
   import Select from './controls/Select.svelte';
+  import { coordEligibleColumns } from '../atlas/coords';
   import { formatCount, formatSeconds } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
@@ -24,6 +25,27 @@
   const anchorSeconds = $derived((anchorValue * (atlas.useGpu ? 0.045e-3 : 0.73e-3) * atlas.umap.nEpochs) / 200);
   const wideHint = $derived(!atlas.prepare.pca && atlas.prepare.features.length > 50 && anchorBudgetRows < 20_000 && sampledRows > anchorBudgetRows);
   const busy = $derived(atlas.phase === 'preparing' || atlas.phase === 'loading');
+  const inColumnsMode = $derived(atlas.layoutMode === 'columns');
+  const coordCols = $derived(atlas.describe ? coordEligibleColumns(atlas.describe.columns) : []);
+  const coordsX = $derived(atlas.prepare.coordsColumns?.x ?? null);
+  const coordsY = $derived(atlas.prepare.coordsColumns?.y ?? null);
+  const coordsZ = $derived(atlas.prepare.coordsColumns?.z ?? null);
+
+  function setCoordX(idx: number) {
+    atlas.prepare = { ...atlas.prepare, coordsColumns: { ...(atlas.prepare.coordsColumns ?? { x: idx, y: idx }), x: idx } };
+  }
+  function setCoordY(idx: number) {
+    atlas.prepare = { ...atlas.prepare, coordsColumns: { ...(atlas.prepare.coordsColumns ?? { x: idx, y: idx }), y: idx } };
+  }
+  function setCoordZ(idx: number | null) {
+    const cc = atlas.prepare.coordsColumns ?? { x: 0, y: 0 };
+    if (idx === null) {
+      const { z: _z, ...rest } = cc;
+      atlas.prepare = { ...atlas.prepare, coordsColumns: rest };
+    } else {
+      atlas.prepare = { ...atlas.prepare, coordsColumns: { ...cc, z: idx } };
+    }
+  }
 
   function toggle(i: number) {
     const s = new Set(atlas.prepare.features);
@@ -40,7 +62,50 @@
   const umapChanged = () => atlas.umapChanged();
 </script>
 
+<Section {atlas} id="layout" title="Layout">
+  <div class="select">
+    <span>Layout <Info id="data.layout" /></span>
+    <Select value={atlas.layoutMode} ariaLabel="Layout mode"
+      onchange={(e) => atlas.setLayoutMode((e.target as HTMLSelectElement).value as 'umap' | 'columns')}>
+      <option value="umap">UMAP</option>
+      <option value="columns">From columns</option>
+    </Select>
+  </div>
+  {#if inColumnsMode}
+    <div class="select">
+      <span>X column <Info id="data.coordsX" /></span>
+      <Select value={String(coordsX ?? '')} ariaLabel="X column"
+        onchange={(e) => setCoordX(Number((e.target as HTMLSelectElement).value))}>
+        {#each coordCols as c (c.index)}
+          <option value={String(c.index)}>{c.name}</option>
+        {/each}
+      </Select>
+    </div>
+    <div class="select">
+      <span>Y column <Info id="data.coordsY" /></span>
+      <Select value={String(coordsY ?? '')} ariaLabel="Y column"
+        onchange={(e) => setCoordY(Number((e.target as HTMLSelectElement).value))}>
+        {#each coordCols as c (c.index)}
+          <option value={String(c.index)}>{c.name}</option>
+        {/each}
+      </Select>
+    </div>
+    <div class="select">
+      <span>Z column (optional) <Info id="data.coordsZ" /></span>
+      <Select value={coordsZ !== null && coordsZ !== undefined ? String(coordsZ) : ''} ariaLabel="Z column"
+        onchange={(e) => { const v = (e.target as HTMLSelectElement).value; setCoordZ(v === '' ? null : Number(v)); }}>
+        <option value="">None (2D)</option>
+        {#each coordCols as c (c.index)}
+          <option value={String(c.index)}>{c.name}</option>
+        {/each}
+      </Select>
+    </div>
+    <div class="hint muted">The x, y{coordsZ !== null && coordsZ !== undefined ? ' and z' : ''} columns are used as the map layout. No UMAP is run. All other features (hover, legend, clusters, search, filters, annotations, export) work as usual.</div>
+  {/if}
+</Section>
+
 <Section {atlas} id="data" title="Data">
+    {#if !inColumnsMode}
     <details class="features">
       <summary>Features: {atlas.prepare.features.length} of {numeric.length} numeric columns <Info id="data.features" /></summary>
       <input class="filter" placeholder="Filter columns" bind:value={filter} />
@@ -57,6 +122,7 @@
         {/each}
       </div>
     </details>
+    {/if}
 
     <label class="slider">
       <span class="row">
@@ -69,6 +135,7 @@
       <span class="fmt">{atlas.prepare.samplePct}% → {formatCount(sampledRows)} rows</span>
     </label>
 
+    {#if !inColumnsMode}
     <Checkbox bind:checked={atlas.prepare.standardize}>
       Standardize columns (z-score) <Info id="data.standardize" />
     </Checkbox>
@@ -98,6 +165,8 @@
         · ≈ {formatSeconds(anchorSeconds)} ({atlas.useGpu ? 'GPU' : 'CPU'})
       </span>
     </label>
+    {/if}
+
     <div class="select">
       <span>Missing values <Info id="data.missingValues" /></span>
       <Select value={atlas.prepare.nanPolicy} ariaLabel="Missing values" onchange={(e) => (atlas.prepare.nanPolicy = (e.target as HTMLSelectElement).value as 'drop' | 'impute')}>
@@ -110,13 +179,14 @@
       <input class="num wide" type="number" bind:value={atlas.prepare.seed} />
     </label>
     <div class="btn-row">
-      <button class="primary" disabled={busy || !atlas.prepareDirty || atlas.prepare.features.length === 0} onclick={() => atlas.runPrepare()}>
+      <button class="primary" disabled={busy || !atlas.prepareDirty || (!inColumnsMode && atlas.prepare.features.length === 0) || (inColumnsMode && !atlas.prepare.coordsColumns)} onclick={() => atlas.runPrepare()}>
         {atlas.prepareDirty ? 'Apply' : 'Applied'}
       </button>
       <Info id="data.apply" />
     </div>
 </Section>
 
+{#if !inColumnsMode}
 <Section {atlas} id="umap" title="UMAP">
     {#if atlas.describe?.deps?.umap || atlas.describe?.deps?.polars_umap}
       <div class="select">
@@ -224,4 +294,5 @@
       {#if atlas.projection === 'running'}<button onclick={() => atlas.cancelKernel()}>Cancel</button>{/if}
       <div class="hint muted">UMAP runs on the anchors; this places every other row next to its nearest anchors.</div>
   </Section>
+{/if}
 {/if}

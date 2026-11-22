@@ -1,0 +1,81 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(1)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 8, (5, 2))\nxy = centers[k] + rng.normal(0, 1, (n, 2))\ndf = pd.DataFrame({'umap_x': xy[:, 0], 'umap_y': xy[:, 1], 'score': rng.normal(size=n), 'cluster': [f'c{v}' for v in k]})\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": "coords-2d.png",
+  "steps": [
+    {
+      "name": "switch to columns mode and apply",
+      "eval": "a.setLayoutMode('columns')",
+      "until": "a.layoutMode === 'columns' && a.prepare.coordsColumns !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.layoutMode === 'columns'",
+        "a.prepare.coordsColumns !== null"
+      ],
+      "report": "{ layoutMode: a.layoutMode, coordsColumns: a.prepare.coordsColumns }"
+    },
+    {
+      "name": "run prepare in coords mode and wait for ready",
+      "eval": "a.runPrepare()",
+      "until": "a.phase === 'ready'",
+      "timeout": 30000,
+      "assert": [
+        "a.phase === 'ready'",
+        "a.prepared !== null",
+        "a.prepared.coordsMode === true",
+        "a.prepared.dims === 2",
+        "a.allXY !== null",
+        "a.allXY.length === a.nKept * 2",
+        "a.anchorXY !== null",
+        "a.anchorXY.length > 0",
+        "a.allXY.every(Number.isFinite)"
+      ],
+      "report": "{ phase: a.phase, nKept: a.nKept, coordsMode: a.prepared.coordsMode, dims: a.prepared.dims, allXYLen: a.allXY ? a.allXY.length : null }"
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.colorMeta.categories.length === 5",
+      "timeout": 10000,
+      "report": "{ colorColumn: a.colorColumn, categories: a.colorMeta ? a.colorMeta.categories.length : null }"
+    },
+    {
+      "name": "hover shows tooltip at anchor 0",
+      "eval": "const xy = a.anchorXY; a.onPointer({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.tooltip !== null",
+        "a.tooltip.row >= 0"
+      ],
+      "report": "{ tooltipRow: a.tooltip ? a.tooltip.row : null }"
+    },
+    {
+      "name": "UMAP and Result sections are hidden in columns mode",
+      "assert": [
+        "!document.querySelector('[data-section=\"umap\"]')",
+        "!document.querySelector('[data-section=\"result\"]')"
+      ]
+    },
+    {
+      "name": "switch back to UMAP mode",
+      "eval": "a.setLayoutMode('umap')",
+      "until": "a.layoutMode === 'umap'",
+      "timeout": 5000,
+      "assert": [
+        "a.layoutMode === 'umap'",
+        "a.prepare.coordsColumns === null || a.prepare.coordsColumns === undefined"
+      ],
+      "report": "{ layoutMode: a.layoutMode, coordsColumns: a.prepare.coordsColumns }"
+    },
+    {
+      "name": "UMAP section is visible after switching back",
+      "assert": [
+        "!!document.querySelector('[data-section=\"umap\"]')"
+      ]
+    }
+  ]
+}

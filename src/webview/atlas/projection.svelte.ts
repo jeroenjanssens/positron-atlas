@@ -75,7 +75,8 @@ export function onProjected(atlas: Atlas, seconds: number, exact: boolean): void
   // In 3D mode, the screen-space hit index must be rebuilt after projection
   // completes. Camera movement normally triggers on3DViewChange, but when the
   // camera is static the callback never fires.  Kick the rebuild directly here.
-  if (atlas.dims === 3 && atlas.projection === 'done') {
+  // Also trigger for coords mode (exact=true, needsProjection=false → projection='none').
+  if (atlas.dims === 3 && (atlas.projection === 'done' || exact)) {
     atlas.rebuild3DHitIndex();
   }
 }

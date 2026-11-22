@@ -35,6 +35,7 @@ import { LruCache, type CachedRow } from './hover/cache';
 import { TextsStore } from './hover/texts';
 
 // Sub-module imports
+import { detectCoordsColumns } from './atlas/coords';
 import { onInit as onInitImpl } from './atlas/init';
 import { runPrepare as runPrepareImpl, onPrepared as onPreparedImpl, onStatus as onStatusImpl } from './atlas/prepare.svelte';
 import {
@@ -269,6 +270,8 @@ export class Atlas {
   layoutEngine = $state<string>('');
   /** Output dimensionality of the UMAP layout: 2 (default, full features) or 3 (T2). */
   dims = $state<2 | 3>(2);
+  /** Layout mode: 'umap' uses the browser/kernel UMAP; 'columns' reads precomputed coords. */
+  layoutMode = $state<'umap' | 'columns'>('umap');
   /** True when 3D auto-rotate is active (T3). */
   autoRotate = $state(false);
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
@@ -633,7 +636,32 @@ export class Atlas {
     // Clear 3D-specific state when switching to 2D.
     if (d === 2) this._3dScreenXY = null;
     if (this.phase === 'ready' || this.phase === 'embedding') {
-      this.startUmap();
+      if (this.layoutMode === 'columns') {
+        // In coords mode, changing dims means changing the z column; trigger reprepare.
+        this.runPrepare();
+      } else {
+        this.startUmap();
+      }
+    }
+  }
+
+  /**
+   * Switch between UMAP layout and precomputed column layout.
+   * Auto-detects default coord columns when switching to 'columns'.
+   * Marks prepareDirty; caller should click Apply (or the UI can auto-trigger).
+   */
+  setLayoutMode(mode: 'umap' | 'columns'): void {
+    if (this.layoutMode === mode) return;
+    this.layoutMode = mode;
+    if (mode === 'columns') {
+      // Auto-detect coord columns if none are set yet.
+      if (!this.prepare.coordsColumns) {
+        const detected = this.describe ? detectCoordsColumns(this.describe.columns) : null;
+        this.prepare = { ...this.prepare, coordsColumns: detected };
+      }
+    } else {
+      // Switching back to UMAP: clear coordsColumns.
+      this.prepare = { ...this.prepare, coordsColumns: null };
     }
   }
   stopUmap(): void { stopUmapImpl(this); }
