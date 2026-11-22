@@ -1,0 +1,53 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 5, 10000)\ncenters = rng.normal(0, 6, (5, 15))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (10000, 15)), columns=[f'x{i}' for i in range(15)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "umap-learn is available in the kernel",
+      "assert": [
+        "a.describe.deps.umap === true"
+      ]
+    },
+    {
+      "name": "wait for initial 2D layout",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "switch to 3D and run exact umap-learn in kernel",
+      "eval": "a.setDims(3); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'umap-learn'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.computeMode === 'umap-learn' && a.timings.umap > 0",
+      "timeout": 300000,
+      "assert": [
+        "a.dims === 3",
+        "a.anchorXY !== null",
+        "a.anchorXY.length === a.prepared.nAnchors * 3",
+        "a.anchorXY.every(Number.isFinite)",
+        "a.projection === 'done'"
+      ],
+      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, anchorXYLen: a.anchorXY.length, umap: a.timings.umap }"
+    },
+    {
+      "name": "3D toolbar is shown after kernel projection",
+      "assert": [
+        "!!document.querySelector('button[aria-label=\"Auto-rotate\"]')",
+        "!!document.querySelector('button[aria-label=\"Top view\"]')"
+      ]
+    },
+    {
+      "name": "switching back to 2D from kernel 3D works",
+      "eval": "a.setDims(2)",
+      "until": "a.dims === 2 && a.phase === 'ready'",
+      "timeout": 120000,
+      "assert": [
+        "a.dims === 2",
+        "a.anchorXY && a.anchorXY.length === a.prepared.nAnchors * 2"
+      ],
+      "report": "{ dims: a.dims, anchorXYLen: a.anchorXY.length }"
+    }
+  ]
+}

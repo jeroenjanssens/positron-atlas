@@ -1,0 +1,55 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 4, 5000)\ncenters = rng.normal(0, 8, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (5000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "switch to 3D",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready'",
+      "timeout": 120000,
+      "assert": [
+        "a.dims === 3",
+        "a.anchorXY && a.anchorXY.length === a.prepared.nAnchors * 3",
+        "a.anchorXY.every(Number.isFinite)"
+      ],
+      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, anchorXYLen: a.anchorXY.length }"
+    },
+    {
+      "name": "3D toolbar controls are visible",
+      "assert": [
+        "!!document.querySelector('button[aria-label=\"Auto-rotate\"]')",
+        "!!document.querySelector('button[aria-label=\"Top view\"]')",
+        "!!document.querySelector('button[aria-label=\"Front view\"]')",
+        "!!document.querySelector('button[aria-label=\"Side view\"]')"
+      ]
+    },
+    {
+      "name": "annotate tool is hidden in 3D",
+      "assert": [
+        "!document.querySelector('button[aria-label=\"Annotate\"]')"
+      ]
+    },
+    {
+      "name": "fit view still works in 3D",
+      "eval": "a.fitView()",
+      "until": "a.phase === 'ready'",
+      "timeout": 5000
+    },
+    {
+      "name": "switch back to 2D restores annotate tool",
+      "eval": "a.setDims(2)",
+      "until": "a.dims === 2 && a.phase === 'ready'",
+      "timeout": 120000,
+      "assert": [
+        "a.dims === 2",
+        "a.anchorXY && a.anchorXY.length === a.prepared.nAnchors * 2",
+        "!!document.querySelector('button[aria-label=\"Annotate\"]')"
+      ],
+      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, anchorXYLen: a.anchorXY.length }"
+    }
+  ]
+}
