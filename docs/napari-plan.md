@@ -362,10 +362,11 @@ Details are in the research notes of 2026-11-22.
   - [x] UI: a layer list section (codicons `eye`, `eye-closed`; an opacity slider; drag to reorder), built with the shared controls.
   - [x] UI: "Add DataFrame…" button in the layer list; × button to remove point-overlay layers. *(B3, 2026-11-22: `src/webview/components/LayerList.svelte`)*
   - [x] Overlay PointSets rendered after the base PointSets; fixed RGBA palette per overlay layer. *(B3, 2026-11-22: `src/webview/atlas/overlay.ts`, `src/webview/atlas/render.ts`)*
-  - [ ] Hover cards show the layer name; legend per layer; search and filters can target a layer.
+  - [x] Hover cards show the layer name. *(B3, 2026-11-22: `src/webview/atlas/hover.ts` — overlay tooltip shows `${layerName} · row ${posIdx}`; full column values after 30 ms debounce via kernel `overlay_rows`)*
+  - [ ] Legend per layer; search and filters can target a layer.
   - [ ] Export: PNG (all visible layers); HTML viewer (layers as separate point sets); "New DataFrame from selection" includes the layer.
   - [x] Tests: Python (transforms identical to base; placement of an overlay that equals base rows lands on the same positions; missing columns, pre-prepare errors). *(B3, 2026-11-22: `python/tests/test_overlay.py`)*
-  - [ ] Tests: harness (overlay layer drawn, hidden, reordered: pixel assertions).
+  - [x] Tests: harness (overlay layer drawn, hidden, reordered: pixel assertions). *(B3, 2026-11-22: `test/harness/scenario-overlay.json` — 13 steps: add overlay → pixel count increase → hide → pixel count decrease → restore → reorder → hover → remove → pixel count back to base)*
 
 ---
 

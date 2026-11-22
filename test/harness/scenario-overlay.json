@@ -1,0 +1,118 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 2000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 8, (4, 12))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 12)), columns=[f'x{i}' for i in range(12)])\ndf['group'] = [f'g{v}' for v in k]\ndf['label'] = [f'Base {i}' for i in range(n)]\n# Second DataFrame (overlay) with the same feature columns.\nm = 300\nk2 = rng.integers(0, 4, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 12)), columns=[f'x{i}' for i in range(12)])\ndf2['group'] = [f'g{v}' for v in k2]\ndf2['label'] = [f'Overlay {i}' for i in range(m)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 500
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 90000
+    },
+    {
+      "name": "count base pixels before overlay",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsBase = n",
+      "until": "window.__pixelsBase !== undefined",
+      "screenshot": "overlay-base-only.png",
+      "assert": "window.__pixelsBase > 200",
+      "report": "{ pixelsBase: window.__pixelsBase }"
+    },
+    {
+      "name": "add overlay from df2",
+      "eval": "a.addOverlay('df2'); window.__overlayAdded = true",
+      "until": "a.layers.some(l => l.kind === 'point-overlay')",
+      "timeout": 60000,
+      "report": "{ nLayers: a.layers.length }"
+    },
+    {
+      "name": "wait for overlay XY to be fully projected",
+      "until": "a.layers.some(l => l.kind === 'point-overlay') && (a.overlayFilled.get(a.layers.find(l => l.kind === 'point-overlay').id) ?? 0) >= (a.overlayNKept.get(a.layers.find(l => l.kind === 'point-overlay').id) ?? 1)",
+      "timeout": 60000,
+      "report": "{ nKept: a.overlayNKept.get(a.layers.find(l => l.kind === 'point-overlay').id), filled: a.overlayFilled.get(a.layers.find(l => l.kind === 'point-overlay').id) }"
+    },
+    {
+      "name": "count pixels after overlay — must be more than base only",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsWithOverlay = n",
+      "until": "window.__pixelsWithOverlay !== undefined",
+      "screenshot": "overlay-visible.png",
+      "assert": [
+        "window.__pixelsWithOverlay > window.__pixelsBase",
+        "a.layers.filter(l => l.kind === 'point-overlay').length === 1"
+      ],
+      "report": "{ pixelsWithOverlay: window.__pixelsWithOverlay, diff: window.__pixelsWithOverlay - window.__pixelsBase }"
+    },
+    {
+      "name": "verify overlay layer properties",
+      "assert": [
+        "a.layers.some(l => l.kind === 'point-overlay' && l.visible === true)",
+        "a.layers.some(l => l.kind === 'point-overlay' && l.symbol !== undefined && l.symbol > 0)",
+        "a.layers.some(l => l.kind === 'point-overlay' && l.sourceName === 'df2')"
+      ],
+      "report": "{ ovLayer: a.layers.find(l => l.kind === 'point-overlay') }"
+    },
+    {
+      "name": "hide overlay layer",
+      "eval": "const ovId = a.layers.find(l => l.kind === 'point-overlay').id; a.updateLayer(ovId, { visible: false }); window.__ovId = ovId",
+      "until": "a.layers.some(l => l.kind === 'point-overlay' && l.visible === false)",
+      "timeout": 5000
+    },
+    {
+      "name": "count pixels after hiding overlay — must be <= base pixels",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsHidden = n",
+      "until": "window.__pixelsHidden !== undefined",
+      "screenshot": "overlay-hidden.png",
+      "assert": [
+        "window.__pixelsHidden <= window.__pixelsWithOverlay",
+        "a.layers.some(l => l.kind === 'point-overlay' && l.visible === false)"
+      ],
+      "report": "{ pixelsHidden: window.__pixelsHidden }"
+    },
+    {
+      "name": "restore overlay visibility",
+      "eval": "a.updateLayer(window.__ovId, { visible: true })",
+      "until": "a.layers.some(l => l.kind === 'point-overlay' && l.visible === true)",
+      "timeout": 3000
+    },
+    {
+      "name": "reorder: move overlay layer earlier in the stack",
+      "eval": "const sortedIds = [...a.layers].sort((a,b) => a.order - b.order).map(l => l.id); const ovIdx = sortedIds.indexOf(window.__ovId); if (ovIdx > 0) { a.reorderLayer(window.__ovId, ovIdx - 1); } window.__reorderDone = true",
+      "until": "window.__reorderDone",
+      "timeout": 3000,
+      "assert": "a.layers.length > 6"
+    },
+    {
+      "name": "hover over an overlay point: tooltip shows overlay layer name",
+      "eval": "const ovLayer = a.layers.find(l => l.kind === 'point-overlay'); const xy = a.overlayXY.get(ovLayer.id); if (xy && xy.length >= 2) { a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] }); } window.__hoverTriggered = true",
+      "until": "window.__hoverTriggered",
+      "timeout": 3000
+    },
+    {
+      "name": "tooltip (if overlay hit) has layer name in title",
+      "eval": "const ovLayer = a.layers.find(l => l.kind === 'point-overlay'); const hit = a.overlayHits.get(ovLayer.id); window.__ovHitBuilt = hit !== null && hit !== undefined",
+      "until": "window.__ovHitBuilt !== undefined",
+      "timeout": 5000,
+      "report": "{ ovHitBuilt: window.__ovHitBuilt, tooltip: a.tooltip }"
+    },
+    {
+      "name": "remove overlay layer",
+      "eval": "a.removeOverlay(window.__ovId)",
+      "until": "a.layers.every(l => l.kind !== 'point-overlay')",
+      "timeout": 15000,
+      "screenshot": "overlay-removed.png",
+      "assert": [
+        "a.layers.every(l => l.kind !== 'point-overlay')",
+        "a.layers.length === 6"
+      ],
+      "report": "{ nLayers: a.layers.length }"
+    },
+    {
+      "name": "count pixels after removal — back to base level",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsAfterRemoval = n",
+      "until": "window.__pixelsAfterRemoval !== undefined",
+      "assert": "window.__pixelsAfterRemoval <= window.__pixelsWithOverlay",
+      "report": "{ pixelsAfterRemoval: window.__pixelsAfterRemoval, pixelsBase: window.__pixelsBase }"
+    }
+  ]
+}
