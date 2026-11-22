@@ -143,15 +143,22 @@ messages while executing user code, without blocking on a reply. For the Python 
 (selection changed, label renamed) back to the host while the user is still running
 their notebook.
 
-**What was not measured:** To measure comm latency, add a probe to the helper extension
-that calls `createClient`, sends a message, and writes the round-trip time to the e2e
-log. This is a one-hour task; it was not done in this spike because the API presence was
-sufficient to unblock the C3 wave decision.
+**C3 implementation update (2026-11-22):** Item 12 (Python API) is now implemented
+using `registerClientHandler` / `comm.send` / `comm.on_msg`. The chosen design:
 
-**Recommendation:** Use comms for the Python API (item 12 in the napari plan).
-`evaluateCode` works for one-shot calls but comms are the right primitive for a
-bidirectional event channel. The API is present and the architecture is unblocked; comm
-latency will be measured as part of C3 implementation.
+- Python→host: `comm.send({name, cmdId, args})` — fire-and-forget on the iopub channel.
+  No kernel blocking; ipykernel delivers iopub messages concurrently with cell execution.
+- Host→webview: `panel.post({type: 'apiCommand', commandId, name, args})`.
+- Webview→host: `{type: 'apiReply', commandId, ok, bytes?}` or `{type: 'selectionChanged', mask, nKept}`.
+- Host→kernel (selection): `commClient.performRpc({type: 'selectionChanged', mask_b64, nKept})`.
+  Python `_on_msg` fires between cells; `comm.send({})` acks so `performRpc` resolves.
+- Blocking commands (`save_png`, `save_html`): host writes `api_dir/<cmdId>.json`;
+  Python polls the file every 150 ms (up to 60 s timeout).
+
+**Measured harness latency (colorBy round-trip):** ~200 ms in the headless Chrome harness.
+This includes: Python `comm.send` → host `dispatchCommCommand` → webview `apiCommand` → `setColorColumn` → `colors` kernel call → `apiReply`. In a real Positron session the iopub delivery adds ~5 ms.
+
+**Recommendation:** ✅ Comms are the correct primitive. The architecture validated; item 12 is done.
 
 ---
 

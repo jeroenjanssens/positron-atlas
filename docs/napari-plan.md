@@ -436,7 +436,7 @@ Details are in the research notes of 2026-11-22.
 
 ---
 
-## 12. Python API — S1 then C3 (L)
+## 12. Python API — C3 ✅
 
 - **What** (from napari's `viewer.add_points`, which is verified as the pattern):
 
@@ -447,17 +447,22 @@ Details are in the research notes of 2026-11-22.
   m.selection                         # current lasso selection → DataFrame (or row index)
   m.on_select(lambda rows: ...)       # callback when the selection changes
   m.annotate(row=123, text="Imatinib")
-  m.add_layer(new_compounds)          # item 5
   m.save_png("map.png"); m.save_html("map.html")
   ```
 
-- **Design:** the kernel helper exposes an importable module only on request: `atlas.open` registers it in `sys.modules`, explicit only. Commands flow kernel → host through a queue drained while polling (Q5), or a comm if S1 says it's possible. Events flow back the same way.
-- **To-do:**
-  - [ ] Spike S1 (comms).
-  - [ ] Command queue and handle object in the kernel helper; host drains and forwards; webview applies through the same functions the UI uses.
-  - [ ] Selection events → kernel (`m.selection` updated), callbacks run when the kernel is idle.
-  - [ ] Docs (README section), examples in a notebook, and the scope check (no image viewing).
-  - [ ] Tests: Python unit tests for the queue; harness end-to-end (Python call → map changes; lasso → `m.selection`).
+- **Design (C3):** Positron comms (`target_name='positron.atlas'`).
+  `atlas.open(df)` creates a comm and returns the handle immediately (non-blocking).
+  Commands flow kernel → host via `comm.send()` (fire-and-forget on the iopub channel).
+  Blocking commands (`save_png`, `save_html`) poll a status file the host writes to `api_dir/<cmdId>.json`.
+  Selection changes flow host → kernel via `comm.performRpc` between cell executions.
+- **Done:**
+  - [x] Spike S1 (comms) — Positron comms confirmed viable.
+  - [x] `_AtlasHandle` and `_atlas_open` in the kernel helper; comm handler in `src/extension/atlasComm.ts`.
+  - [x] `apiCommand` / `apiReply` / `selectionChanged` protocol messages.
+  - [x] Webview command dispatcher in `src/webview/atlas/api.ts`.
+  - [x] Selection events → kernel via comm `performRpc`, `_on_msg` runs between cells.
+  - [x] Docs: README "Python API" section, example notebook, architecture.html updated.
+  - [x] Tests: 19 Python unit tests (`test_python_api.py`); harness scenario (`scenario-python-api.json`).
 
 ---
 

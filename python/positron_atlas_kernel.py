@@ -2771,3 +2771,293 @@ def list_frames() -> str:
 
 def ping() -> str:
     return _json({"ok": True, "version": VERSION})
+
+
+# ---------------------------------------------------------------------------
+# C3 — Python API for programmatic Atlas control
+#
+# Transport: Positron comms (target_name='positron.atlas').
+# - Kernel → host: comm.send({name, cmdId, args, ...})
+# - Host → kernel: on_msg receives {type: 'selectionChanged', ...}
+# - save_png / save_html: host writes <api_dir>/<cmdId>.json; Python polls.
+#
+# Usage:
+#   import positron_atlas as atlas
+#   m = atlas.open(df)          # opens a comm, returns immediately
+#   m.color_by('cluster')       # fire-and-forget via comm.send
+#   m.save_png('/tmp/x.png')    # blocks via filesystem polling (up to 60s)
+#   m.selected_rows             # updated via on_msg (between cells)
+# ---------------------------------------------------------------------------
+
+import base64
+import pathlib
+import tempfile
+
+# Active handles keyed by comm_id.
+_HANDLES: dict[str, "_AtlasHandle"] = {}
+
+
+class _AtlasHandle:
+    """Python-facing handle for one Atlas panel (C3).
+
+    Commands are sent immediately as comm messages.  Blocking commands
+    (save_png, save_html) poll a status file written by the host in
+    ``api_dir/<cmdId>.json``.  Selection updates arrive via comm on_msg
+    when the kernel is idle.
+    """
+
+    def __init__(self, comm: Any, variable: str, api_dir: pathlib.Path) -> None:
+        self._comm = comm
+        self._variable = variable
+        self._api_dir = api_dir
+        self._api_dir.mkdir(parents=True, exist_ok=True)
+        self._dims: int = 2
+        self._selection_mask: bytes | None = None
+        self._n_kept: int = 0
+        self._callbacks: list = []
+        self._closed = False
+        self._lock = threading.Lock()
+        # Register on_msg handler.
+        comm.on_msg(self._on_msg)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("This Atlas panel has been closed.")
+
+    def _send(self, name: str, args: dict | None = None) -> str:
+        """Enqueue a command via comm.send. Returns the cmdId."""
+        self._require_open()
+        cmd_id = uuid.uuid4().hex[:12]
+        payload: dict[str, Any] = {"name": name, "cmdId": cmd_id}
+        if args:
+            payload["args"] = args
+        self._comm.send(payload)
+        return cmd_id
+
+    def _send_blocking(self, name: str, args: dict | None = None, timeout: float = 60.0) -> None:
+        """Send a command and poll <api_dir>/<cmdId>.json for the result."""
+        self._require_open()
+        cmd_id = self._send(name, args)
+        result = self._poll_result(cmd_id, timeout)
+        if not result.get("ok"):
+            raise RuntimeError(result.get("error") or f"Atlas command '{name}' failed")
+
+    def _poll_result(self, cmd_id: str, timeout: float) -> dict:
+        """Poll <api_dir>/<cmdId>.json until it appears or timeout."""
+        path = self._api_dir / f"{cmd_id}.json"
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.exists():
+                try:
+                    result = json.loads(path.read_text())
+                    path.unlink(missing_ok=True)
+                    return result
+                except (json.JSONDecodeError, OSError):
+                    pass
+            time.sleep(0.15)
+        raise TimeoutError(
+            f"Atlas command timed out after {timeout}s "
+            f"(is the panel open and visible?)"
+        )
+
+    def _on_msg(self, msg: Any) -> None:
+        """Handle messages from the host (comm → kernel direction)."""
+        data = msg.get("content", {}).get("data", {}) if isinstance(msg, dict) else {}
+        msg_type = data.get("type") if isinstance(data, dict) else None
+
+        if msg_type == "selectionChanged":
+            mask_b64 = data.get("mask_b64", "")
+            n_kept = int(data.get("nKept", 0))
+            mask: bytes | None = base64.b64decode(mask_b64) if mask_b64 else None
+            self._update_selection(mask, n_kept)
+        elif msg_type == "closed":
+            self._closed = True
+
+    def _update_selection(self, mask: bytes | None, n_kept: int) -> None:
+        with self._lock:
+            self._selection_mask = mask
+            self._n_kept = n_kept
+        rows = self._mask_to_rows(mask) if mask else np.array([], dtype=np.intp)
+        for cb in list(self._callbacks):
+            try:
+                cb(rows)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _find_column(self, name: str, columns: list) -> int:
+        for col in columns:
+            if col["name"] == name:
+                return int(col["index"])
+        names = ", ".join(repr(c["name"]) for c in columns)
+        raise ValueError(f"Column {name!r} not found. Available: {names}")
+
+    def _mask_to_rows(self, mask: bytes) -> "np.ndarray":
+        """Unpack bit-mask to row positions."""
+        n = self._n_kept
+        bits = np.frombuffer(mask, dtype=np.uint8)
+        kept = []
+        for i in range(n):
+            if (bits[i >> 3] >> (i & 7)) & 1:
+                kept.append(i)
+        return np.array(kept, dtype=np.intp)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def dims(self) -> int:
+        return self._dims
+
+    @dims.setter
+    def dims(self, value: int) -> None:
+        if value not in (2, 3):
+            raise ValueError("dims must be 2 or 3")
+        self._dims = value
+        self._send("setDims", {"dims": value})
+
+    @property
+    def selection(self) -> Any:
+        """Current selection as a filtered DataFrame, or None."""
+        rows = self.selected_rows
+        if len(rows) == 0:
+            return None
+        ns = _user_ns()
+        df = ns.get(self._variable)
+        if df is None:
+            return None
+        return df.iloc[rows] if hasattr(df, "iloc") else df[rows]
+
+    @property
+    def selected_rows(self) -> "np.ndarray":
+        """Row positions of the selected rows in the original DataFrame."""
+        with self._lock:
+            mask = self._selection_mask
+        if mask is None:
+            return np.array([], dtype=np.intp)
+        return self._mask_to_rows(mask)
+
+    def color_by(self, column: "str | int") -> None:
+        """Color the map by a column name or index."""
+        self._require_open()
+        if isinstance(column, int):
+            self._send("colorBy", {"column": column})
+            return
+        columns = getattr(self, "_columns", [])
+        if columns:
+            idx = self._find_column(column, columns)
+            self._send("colorBy", {"column": idx})
+        else:
+            # No column metadata yet; send by name and let the host/webview resolve.
+            self._send("colorBy", {"columnName": column})
+
+    def label_by(self, column: "str | int") -> None:
+        """Label the map by a column name or index."""
+        self._require_open()
+        if isinstance(column, int):
+            self._send("labelBy", {"column": column})
+            return
+        columns = getattr(self, "_columns", [])
+        if columns:
+            idx = self._find_column(column, columns)
+            self._send("labelBy", {"column": idx})
+        else:
+            self._send("labelBy", {"columnName": column})
+
+    def annotate(self, row: int, text: str = "") -> None:
+        """Add a text annotation to a row."""
+        self._send("annotate", {"row": int(row), "text": str(text)})
+
+    def on_select(self, callback: Any) -> None:
+        """Register a callback fired when selection changes (runs when kernel is idle)."""
+        self._callbacks.append(callback)
+
+    def save_png(self, path: str, timeout: float = 60.0) -> None:
+        """Render the current view and save as PNG. Blocks (filesystem poll)."""
+        self._send_blocking("savePng", {"path": str(path)}, timeout)
+
+    def save_html(self, path: str, timeout: float = 60.0) -> None:
+        """Export the map as a self-contained HTML file. Blocks (filesystem poll)."""
+        self._send_blocking("saveHtml", {"path": str(path)}, timeout)
+
+    def close(self) -> None:
+        """Close the Atlas panel."""
+        if not self._closed:
+            try:
+                self._send("close", {})
+            except Exception:  # noqa: BLE001
+                pass
+            self._closed = True
+            _HANDLES.pop(getattr(self._comm, "comm_id", None), None)
+
+    def __repr__(self) -> str:
+        return f"<AtlasHandle variable={self._variable!r} dims={self._dims}>"
+
+
+def _ensure_atlas_module(handle: "_AtlasHandle | None" = None) -> None:
+    """Register ``positron_atlas`` in ``sys.modules`` (once)."""
+    import types
+    name = "positron_atlas"
+    m = sys.modules.get(name)
+    if m is None:
+        m = types.ModuleType(name)
+        m.__doc__ = (
+            "Positron Atlas Python API (C3).\n\n"
+            "    import positron_atlas as atlas\n"
+            "    m = atlas.open(df)\n"
+            "    m.color_by('cluster')\n"
+        )
+        m.handles = _HANDLES  # live reference
+
+        def _open(df: Any) -> "_AtlasHandle":
+            return _atlas_open(df)
+
+        m.open = _open
+        sys.modules[name] = m
+    # Update the live 'last' handle.
+    if handle is not None:
+        m.last = handle  # type: ignore[attr-defined]
+
+
+def _atlas_open(df: Any) -> "_AtlasHandle":
+    """Open an Atlas panel for ``df`` via Positron comms.
+
+    Creates a comm (target_name='positron.atlas'), opens it, and returns
+    the handle immediately.  The host's registerClientHandler callback
+    will open the panel asynchronously.
+
+    Raises if comms are unavailable (not running in a Positron/Jupyter kernel).
+    """
+    from comm import create_comm  # ipykernel comm package
+
+    # Find the variable name in the user namespace.
+    ns = _user_ns()
+    variable = None
+    for k, v in ns.items():
+        if v is df and not k.startswith("_"):
+            variable = k
+            break
+    if variable is None:
+        variable = "_atlas_df"
+        ns[variable] = df
+
+    # Create a temporary directory for status files (host writes here).
+    api_dir = pathlib.Path(tempfile.mkdtemp(prefix="positron_atlas_"))
+
+    comm = create_comm(
+        target_name="positron.atlas",
+        data={
+            "variable": variable,
+            "apiDir": str(api_dir),
+        },
+    )
+    comm.open()
+
+    handle = _AtlasHandle(comm, variable, api_dir)
+    _HANDLES[comm.comm_id] = handle
+    _ensure_atlas_module(handle)
+    return handle

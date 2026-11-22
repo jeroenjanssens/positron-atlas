@@ -1,11 +1,14 @@
 import { webviewCsp } from '../shared/csp';
 import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
+import * as fssync from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { KernelBridge, KernelError } from './kernelBridge';
 import type { PositronApi } from './positron';
+import type { RuntimeClientInstance } from '@posit-dev/positron';
 import { bytesFromPayload } from './binaryUtil';
+import { writeCommResult } from './atlasComm';
 import type {
   ColorMeta,
   DescribeResult,
@@ -156,6 +159,15 @@ export class AtlasPanel {
   private imagePermission: 'always' | 'never' | 'ask' = 'ask';
   /** URI for the in-progress HTML export; set by handleExportHtml, consumed by handleExportHtmlReady. */
   private pendingExportUri: vscode.Uri | undefined;
+
+  // ---- C3: Python API comm client ------------------------------------------------
+  private commClient: RuntimeClientInstance | undefined;
+  private commApiDir = '';
+  /** name + args for each in-flight API command, keyed by cmdId. */
+  private pendingCommCmds = new Map<string, { name: string; args: Record<string, unknown> }>();
+  /** Set when a Python save_html command is in flight; cleared in handleExportHtmlReady. */
+  private pendingSaveHtmlCmdId: string | undefined;
+  private pendingSaveHtmlPath: string | undefined;
 
   static create(ctx: AtlasContext, target: OpenTarget): AtlasPanel {
     const fontManager = new FontManager(ctx.extension, ctx.log);
@@ -838,6 +850,45 @@ export class AtlasPanel {
       case 'hintSeen':
         await this.ctx.extension.globalState.update('atlasHintShownV1', true);
         break;
+      // --- C3: Python API comm replies -------------------------------------------
+      case 'apiReply': {
+        const pending = this.pendingCommCmds.get(m.commandId);
+        if (!pending || !this.commApiDir) break;
+        this.pendingCommCmds.delete(m.commandId);
+        if (pending.name === 'savePng' && m.ok && m.bytes) {
+          // Write PNG bytes to the Python-provided path, then write status file.
+          const pngPath = pending.args['path'] as string | undefined;
+          if (pngPath) {
+            try {
+              fssync.mkdirSync(path.dirname(pngPath), { recursive: true });
+              fssync.writeFileSync(pngPath, m.bytes);
+              writeCommResult(this.commApiDir, m.commandId, true);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              writeCommResult(this.commApiDir, m.commandId, false, msg);
+            }
+          } else {
+            writeCommResult(this.commApiDir, m.commandId, false, 'savePng: no path in command args');
+          }
+        } else {
+          // For all other commands, write a simple ok/error status file.
+          writeCommResult(this.commApiDir, m.commandId, m.ok, m.error);
+        }
+        break;
+      }
+      case 'selectionChanged': {
+        // Forward the selection mask to the Python kernel handle via comm.
+        if (this.commClient) {
+          // Use snake_case for the wire: Python's _on_msg reads "mask_b64".
+          const mask_b64 = m.mask ? Buffer.from(m.mask).toString('base64') : null;
+          void Promise.resolve(this.commClient.performRpc<unknown>({
+            type: 'selectionChanged',
+            mask_b64,
+            nKept: m.nKept,
+          })).catch(() => undefined);
+        }
+        break;
+      }
     }
   }
 
@@ -859,6 +910,49 @@ export class AtlasPanel {
    */
   postNavSettings(nav: NavigationSettings): void {
     this.post({ type: 'settingsChanged', nav });
+  }
+
+  // ---- C3: Python API comm methods -----------------------------------------------
+
+  /** Return a snapshot of this panel's state (used by atlasComm to find panels by variable). */
+  getState(): PanelState {
+    return { ...this.state };
+  }
+
+  /**
+   * Attach a Positron comm client to this panel.
+   * Any previous client is replaced.
+   */
+  setCommClient(client: RuntimeClientInstance, apiDir: string): void {
+    this.commClient?.dispose();
+    this.commClient = client;
+    this.commApiDir = apiDir;
+    this.pendingCommCmds.clear();
+    this.pendingSaveHtmlCmdId = undefined;
+    this.pendingSaveHtmlPath = undefined;
+  }
+
+  /**
+   * Post an ``apiCommand`` message to the webview for one Python API call.
+   * The result arrives back as an ``apiReply`` message in ``onMessage``.
+   */
+  dispatchCommCommand(cmdId: string, name: string, args: Record<string, unknown>): void {
+    this.pendingCommCmds.set(cmdId, { name, args });
+    // For saveHtml: pre-record the Python-provided path so handleExportHtml can skip the dialog.
+    if (name === 'saveHtml' && typeof args['path'] === 'string') {
+      this.pendingSaveHtmlCmdId = cmdId;
+      this.pendingSaveHtmlPath = args['path'];
+    }
+    this.post({ type: 'apiCommand', commandId: cmdId, name, args });
+  }
+
+  /** Remove the comm client from this panel (called when comm closes). */
+  clearCommClient(): void {
+    this.commClient = undefined;
+    this.commApiDir = '';
+    this.pendingCommCmds.clear();
+    this.pendingSaveHtmlCmdId = undefined;
+    this.pendingSaveHtmlPath = undefined;
   }
 
   /** Write a selection mask (Uint8Array packed bits, or base64 string as fallback) into the job directory for one kernel call. */
@@ -909,14 +1003,20 @@ export class AtlasPanel {
   private async handleExportHtml(m: Extract<import('../shared/protocol').ToHost, { type: 'exportHtml' }>): Promise<void> {
     const job = this.requireJob();
 
-    // 1. Show save dialog
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const uri = await vscode.window.showSaveDialog({
-      filters: { 'HTML file': ['html'] },
-      defaultUri: vscode.Uri.file(path.join(workspaceRoot, `${this.state.variable}-atlas.html`)),
-    });
-    if (!uri) {
-      return;
+    // 1. Show save dialog, or use the Python-provided path (C3: Python save_html bypasses dialog).
+    let uri: vscode.Uri;
+    if (this.pendingSaveHtmlPath) {
+      uri = vscode.Uri.file(this.pendingSaveHtmlPath);
+    } else {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const picked = await vscode.window.showSaveDialog({
+        filters: { 'HTML file': ['html'] },
+        defaultUri: vscode.Uri.file(path.join(workspaceRoot, `${this.state.variable}-atlas.html`)),
+      });
+      if (!picked) {
+        return;
+      }
+      uri = picked;
     }
     this.pendingExportUri = uri;
 
@@ -1006,6 +1106,17 @@ export class AtlasPanel {
     const bytes = m.htmlBytes instanceof Uint8Array ? m.htmlBytes : new Uint8Array(m.htmlBytes);
     await vscode.workspace.fs.writeFile(uri, bytes);
     this.post({ type: 'htmlExportSaved', path: uri.fsPath });
+
+    // C3: If this export was triggered from Python save_html, write the status file.
+    if (this.pendingSaveHtmlCmdId && this.commApiDir) {
+      const cmdId = this.pendingSaveHtmlCmdId;
+      this.pendingSaveHtmlCmdId = undefined;
+      this.pendingSaveHtmlPath = undefined;
+      this.pendingCommCmds.delete(cmdId);
+      writeCommResult(this.commApiDir, cmdId, true);
+      return; // Skip the save-dialog notification for programmatic exports.
+    }
+
     const open = await vscode.window.showInformationMessage(
       `HTML export saved to ${path.basename(uri.fsPath)}`,
       'Open',

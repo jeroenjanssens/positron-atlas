@@ -9,6 +9,7 @@ import { toHex } from '../logic';
 import { hexToRgb } from '../color/colormaps';
 import { formatCount } from '../logic';
 import { plotBackground } from './render';
+import { notifySelectionChanged } from './api';
 
 /**
  * Select the points inside a lasso drawn on the plot (CSS pixels relative to the plot).
@@ -83,6 +84,8 @@ export function setSelection(atlas: Atlas, mask: Uint8Array | null): void {
   atlas.comparing = false;
   atlas.compareSeq++;
   atlas.recolor();
+  // Notify Python handle (C3): push selection mask via comm.
+  notifySelectionChanged(atlas);
 }
 
 export function clearSelection(atlas: Atlas): void {

@@ -384,6 +384,14 @@ only the selected numeric columns are converted to float32, and only the anchors
   <div><b style="background:var(--file)">4</b><strong>fetch()</strong>: the webview reads outputs through <code>asWebviewUri</code> URIs straight into typed arrays: no JSON, no base64.</div>
   <div><b style="background:var(--file)">5</b><strong>Host files</strong>: the host writes the webview's bytes into files for the kernel and deletes them after the call. It also caches downloaded images (image-URL columns) and fonts.</div>
 </div>
+<div class="legend" style="margin-top:8px">
+  <strong>C3 — Python API comm channel</strong> (<code>src/extension/atlasComm.ts</code>, <code>src/webview/atlas/api.ts</code>):
+  <code>atlas.open(df)</code> in the kernel opens a Positron comm (<code>target_name='positron.atlas'</code>).
+  Python→host: <code>comm.send({name, cmdId, args})</code> fire-and-forget on the iopub channel.
+  Host→webview: <code>apiCommand</code> message; webview replies with <code>apiReply</code> or <code>selectionChanged</code>.
+  Host→kernel (selection): <code>commClient.performRpc({type:'selectionChanged', mask_b64, nKept})</code> — fires between cells.
+  Blocking commands (<code>save_png</code>, <code>save_html</code>): host writes <code>api_dir/&lt;cmdId&gt;.json</code>; Python polls the file.
+</div>
 
 <!-- ================================================================================== -->
 <h2 id="flow"><span class="n">2</span>Data flow, step by step</h2>

@@ -443,6 +443,17 @@ export type ToWebview =
   /** HTML export saved to a file (X2). path = '' on harness (written to job dir). */
   | { type: 'htmlExportSaved'; path: string }
   /**
+   * A command from the Python API (C3).
+   * The webview applies it and replies with `apiReply` (ToHost).
+   * Valid command names: 'colorBy', 'labelBy', 'setDims', 'annotate', 'savePng', 'saveHtml', 'close'.
+   */
+  | {
+      type: 'apiCommand';
+      commandId: string;
+      name: string;
+      args: Record<string, unknown>;
+    }
+  /**
    * Sent by the host in response to `exportHtml` (X2).
    * Contains kernel-fetched text and the URI the webview should fetch for the viewer bundle.
    */
@@ -458,6 +469,16 @@ export type ToWebview =
       /** u32[(nPoints+1)*nCols] offsets into textUtf8 (or null). */
       textOffsets: Uint32Array | null;
     };
+
+/** Reply sent by the webview after applying a Python API command (C3). */
+export interface ApiReplyMsg {
+  type: 'apiReply';
+  commandId: string;
+  ok: boolean;
+  error?: string;
+  /** PNG bytes for savePng commands. */
+  bytes?: Uint8Array;
+}
 
 /** Entry in the font catalogue sent to the webview. */
 export interface FontCatalogEntry {
@@ -570,4 +591,21 @@ export type ToHost =
   /** Notify host that nav preset changed (for positronAtlas.navPreset context key). */
   | { type: 'navPresetChanged'; preset: string }
   /** User dismissed the first-run hint; host persists atlasHintShownV1 to globalState. */
-  | { type: 'hintSeen' };
+  | { type: 'hintSeen' }
+  /**
+   * Reply from the webview after applying a Python API command (C3).
+   * The command ID matches the one sent in the `apiCommand` ToWebview message.
+   */
+  | ApiReplyMsg
+  /**
+   * Sent by the webview when the selection changes so the host can
+   * forward it to the Python kernel handle via comm (C3).
+   * mask = null means the selection was cleared.
+   */
+  | {
+      type: 'selectionChanged';
+      /** Packed bits (uint8), one bit per kept row, LSB first. Null when cleared. */
+      mask: Uint8Array | null;
+      /** Number of kept/prepared rows (determines valid bit range). */
+      nKept: number;
+    };

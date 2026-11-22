@@ -8,7 +8,9 @@
 // - The clipboard is window.__harness.clipboard.
 
 (() => {
-  const harness = { log: [], clipboard: '', png: '', state: undefined, posted: [], fullscreen: false };
+  const harness = { log: [], clipboard: '', png: '', state: undefined, posted: [], fullscreen: false,
+    // C3: Python API comm simulation.
+    commApiDir: '', commOnMsg: null, pendingCommCmds: new Map(), lastSelectionChanged: null };
   window.__harness = harness;
   const params = new URLSearchParams(location.search);
   let info;
@@ -553,6 +555,58 @@
       case 'hintSeen':
         harness.log.push('hintSeen');
         break;
+      // --- C3: Python API comm replies ---
+      case 'apiReply': {
+        // Write a status file to api_dir/<cmdId>.json so Python can poll for it.
+        const pending = harness.pendingCommCmds?.get(m.commandId);
+        if (pending && harness.commApiDir) {
+          harness.pendingCommCmds.delete(m.commandId);
+          const statusPath = `${harness.commApiDir}/${m.commandId}.json`;
+          if (pending.name === 'savePng' && m.ok && m.bytes) {
+            const pngPath = pending.args?.path;
+            if (pngPath) {
+              try {
+                // Write PNG bytes to the requested path.
+                await fetch(`/write-abs?path=${encodeURIComponent(pngPath)}`, { method: 'POST', body: m.bytes });
+                await fetch(`/write-abs?path=${encodeURIComponent(statusPath)}`, {
+                  method: 'POST', body: new TextEncoder().encode(JSON.stringify({ ok: true, error: '' })),
+                });
+              } catch (e) {
+                await fetch(`/write-abs?path=${encodeURIComponent(statusPath)}`, {
+                  method: 'POST', body: new TextEncoder().encode(JSON.stringify({ ok: false, error: String(e) })),
+                });
+              }
+            }
+          } else {
+            await fetch(`/write-abs?path=${encodeURIComponent(statusPath)}`, {
+              method: 'POST',
+              body: new TextEncoder().encode(JSON.stringify({ ok: m.ok, error: m.error ?? '' })),
+            });
+          }
+          harness.log.push(`apiReply:${m.commandId}:ok=${m.ok}`);
+        }
+        break;
+      }
+      case 'selectionChanged': {
+        // Store the selection mask for test assertions.
+        harness.lastSelectionChanged = { mask: m.mask, nKept: m.nKept };
+        harness.log.push(`selectionChanged:nKept=${m.nKept}:hasMask=${m.mask != null}`);
+        // If a comm on_msg callback is registered (Python API simulation), call it.
+        if (harness.commOnMsg) {
+          // Use snake_case for the wire: Python's _on_msg reads "mask_b64".
+          let mask_b64 = null;
+          if (m.mask) {
+            let b64 = '';
+            const step = 0x8000;
+            for (let i = 0; i < m.mask.length; i += step) {
+              b64 += String.fromCharCode.apply(null, m.mask.subarray(i, i + step));
+            }
+            mask_b64 = btoa(b64);
+          }
+          harness.commOnMsg({ content: { data: { type: 'selectionChanged', mask_b64, nKept: m.nKept } } });
+        }
+        break;
+      }
     }
   }
 
@@ -561,6 +615,17 @@
    * Useful from scenario scripts: window.__harness.dispatch('view.reset')
    */
   harness.dispatch = (id) => post({ type: 'command', id });
+
+  /**
+   * C3: Simulate a Python API comm command arriving at the host.
+   * Stores the command in pendingCommCmds and posts apiCommand to the webview.
+   * The status result is written to commApiDir/<cmdId>.json when apiReply arrives.
+   * Usage: window.__harness.dispatchCommCommand('cmd-1', 'colorBy', {column: 0})
+   */
+  harness.dispatchCommCommand = (cmdId, name, args) => {
+    harness.pendingCommCmds.set(cmdId, { name, args: args ?? {} });
+    post({ type: 'apiCommand', commandId: cmdId, name, args: args ?? {} });
+  };
 
   // ---- Harness font helpers ----
 

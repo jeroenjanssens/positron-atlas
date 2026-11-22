@@ -189,6 +189,7 @@ import {
 } from './atlas/layers';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
+import { onApiCommand as onApiCommandImpl } from './atlas/api';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
@@ -687,6 +688,10 @@ export class Atlas {
         this.navSettings = msg.nav;
         this.applyPresetDefaults(msg.nav.preset);
         this.renderer?.setNavSettings(msg.nav, this.dims, () => this.tool);
+        break;
+      // --- Python API commands (C3) ---
+      case 'apiCommand':
+        void onApiCommandImpl(this, msg.commandId, msg.name, msg.args);
         break;
     }
   }

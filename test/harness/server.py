@@ -186,6 +186,12 @@ def main() -> None:
                     if target is not None and target.is_file():
                         target.unlink()
                     self.send(200, b"{}")
+                elif url.path == "/write-abs":
+                    # C3: Write to an absolute path (for comm status files outside job_root).
+                    abs_path = Path(query["path"][0])
+                    abs_path.parent.mkdir(parents=True, exist_ok=True)
+                    abs_path.write_bytes(body)
+                    self.send(200, json.dumps({"ok": True, "path": str(abs_path)}).encode())
                 else:
                     self.send(404, b"not found", "text/plain")
             except Exception as e:  # noqa: BLE001

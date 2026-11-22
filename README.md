@@ -118,6 +118,41 @@ The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zo
 
 The active tab and collapsed sections are remembered per tab.
 
+## Python API
+
+You can drive an Atlas panel from a notebook cell or script using the `positron_atlas` module that the extension provides automatically:
+
+```python
+import positron_atlas as atlas
+
+m = atlas.open(df)          # opens a tab, returns a handle immediately
+m.color_by("phase")         # color by any column (name or index)
+m.label_by("cluster")       # label by a categorical column
+m.dims = 3                  # switch to 3D view
+m.annotate(row=42, text="Interesting outlier")
+
+# Read the current lasso selection (updates while the kernel is idle)
+m.selected_rows             # → numpy array of row indices
+m.selection                 # → filtered DataFrame
+
+# Callback when the selection changes
+m.on_select(lambda rows: print(f"{len(rows)} rows selected"))
+
+# Save to disk (blocks until the host writes the file, up to 60 s)
+m.save_png("map.png")
+m.save_html("map.html")
+
+m.close()
+```
+
+`atlas.open(df)` creates a Positron comm channel and returns the handle at once — it never blocks the cell. Commands (`color_by`, `label_by`, `dims`, `annotate`) are sent as comm messages and are fire-and-forget. `save_png` and `save_html` poll a status file that the host writes after rendering; they block until the file is ready (or the timeout expires).
+
+Selection changes from the UI are delivered to the kernel between cell executions via `comm.on_msg`; `on_select` callbacks fire at that point.
+
+The module is not installed — it is injected into `sys.modules` by the kernel helper when you first call `atlas.open`. Nothing is added to your namespace until then.
+
+See `examples/python-api.ipynb` for a worked example.
+
 ## How it works
 
 ```

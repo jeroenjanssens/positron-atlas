@@ -5,6 +5,7 @@ import { KernelBridge, pyStr } from './kernelBridge';
 import type { PanelState } from '../shared/protocol';
 import type { ActionId } from '../webview/input/bindings';
 import { isPlainName, parseDataExplorerTabLabel } from './tabLabel';
+import { registerAtlasCommHandler } from './atlasComm';
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel('Positron Atlas', { log: true });
@@ -109,6 +110,9 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     }),
     { dispose: () => AtlasPanel.disposeAll() },
+    // C3: Register the Positron comm client handler for 'positron.atlas'.
+    // Safe to skip when Positron is not available (plain VS Code).
+    ...(positron ? [registerAtlasCommHandler(ctx(positron))] : []),
   );
 }
 
