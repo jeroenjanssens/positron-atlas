@@ -59,6 +59,11 @@ export function reload(atlas: Atlas): void {
 
 export function persist(atlas: Atlas): void {
   const prev = vscode.getState();
+  // Serialize hiddenCategories Map → Record<number, number[]>
+  const hiddenCategoriesRecord: Record<number, number[]> = {};
+  for (const [col, set] of atlas.hiddenCategories) {
+    hiddenCategoriesRecord[col] = [...set];
+  }
   const state: PanelState = {
     variable: atlas.variable || prev?.variable || '',
     sessionId: prev?.sessionId ?? '',
@@ -69,6 +74,9 @@ export function persist(atlas: Atlas): void {
     view: $state.snapshot(atlas.view) as import('./types').ViewOptions,
     ui: $state.snapshot(atlas.ui) as import('./types').UiState,
     labels: $state.snapshot(atlas.labels) as import('../../shared/protocol').LabelOptions,
+    tooltip: $state.snapshot(atlas.tooltipOpts) as import('../../shared/protocol').TooltipOptions,
+    hiddenCategories: Object.keys(hiddenCategoriesRecord).length ? hiddenCategoriesRecord : undefined,
+    loadImagesFromUrls: atlas.loadImagesFromUrls !== 'ask' ? atlas.loadImagesFromUrls : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

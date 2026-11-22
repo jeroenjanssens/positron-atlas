@@ -164,6 +164,20 @@ export interface LabelOptions {
   outlines: boolean;
 }
 
+/** Tooltip/hover settings (Explore → Tooltip section). */
+export interface TooltipOptions {
+  /** Column index used as the tooltip title, or null for none. Auto-detected when undefined. */
+  titleColumn: number | null | undefined;
+  /** Which columns to show in the tooltip fields table. */
+  fieldMode: 'none' | 'chosen' | 'all';
+  /** Chosen column indices when fieldMode === 'chosen'. */
+  fieldColumns: number[];
+  /** Column index whose values are URLs/mailto links, or null. Auto-detected when undefined. */
+  linkColumn: number | null | undefined;
+  /** Column index whose values are image URLs or paths, or null. Auto-detected when undefined. */
+  imageUrlColumn: number | null | undefined;
+}
+
 /** Persisted in the webview state so tabs can be restored after a reload. */
 export interface PanelState {
   variable: string;
@@ -186,6 +200,12 @@ export interface PanelState {
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */
   ui?: { tab?: 'map' | 'explore' | 'annotate' | 'export'; closed?: string[] };
+  /** Tooltip settings (H5–H8). */
+  tooltip?: TooltipOptions;
+  /** Hidden category indices for legend toggles (L1). Keyed by color column index. */
+  hiddenCategories?: Record<number, number[]>;
+  /** Whether images from URLs are allowed: 'always', 'never', or 'ask' (default). */
+  loadImagesFromUrls?: 'always' | 'never' | 'ask';
 }
 
 export type ToWebview =
@@ -201,6 +221,10 @@ export type ToWebview =
   | { type: 'comparison'; seq: number; result: SelectionComparison }
   | { type: 'selectionFrame'; variable: string; rows: number }
   | { type: 'row'; i: number; row: number; values: [string, string][]; image?: (number | null)[] }
+  | { type: 'rows'; seq: number; values: Record<number, [string, string][]>; images?: Record<number, (number | null)[]> }
+  | { type: 'texts'; column: number; uri: string; offsetsUri: string; count: number }
+  | { type: 'imageUri'; row: number; uri: string }
+  | { type: 'imagePermission'; granted: boolean }
   | { type: 'error'; message: string; detail?: string; fatal?: boolean }
   | { type: 'coordsAdded'; variable: string; columns: string[] }
   | { type: 'estimate'; seconds: number; rows: number }
@@ -246,6 +270,10 @@ export type ToHost =
   | { type: 'compareSelection'; seq: number; mask: Uint8Array /* packed bits, least significant first */ }
   | { type: 'selectionFrame'; mask: Uint8Array /* packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }
+  | { type: 'rows'; seq: number; indices: number[]; columns?: number[] }
+  | { type: 'texts'; column: number; maxChars: number }
+  | { type: 'openLink'; url: string }
+  | { type: 'image'; row: number; src: string }
   | { type: 'cancel' }
   | { type: 'addCoordinates'; anchorXY: Uint8Array | null /* float32 */; useProjection: boolean }
   | { type: 'reload' }

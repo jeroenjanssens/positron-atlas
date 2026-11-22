@@ -1,6 +1,6 @@
 import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
 import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
-import { CollisionFilterExtension } from '@deck.gl/extensions';
+import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 
 export interface PointSet {
   id: string;
@@ -33,6 +33,14 @@ export interface RenderStyle {
   mode: 'points' | 'density';
 }
 
+/** Per-point u16 category code, used by DataFilterExtension for legend toggles. */
+export interface FilterAttribute {
+  /** u16 category codes per point, same length as positions / 2. */
+  codes: Uint16Array;
+  /** Set of hidden category indices. */
+  hidden: Set<number>;
+}
+
 const ADDITIVE = {
   blend: true,
   blendColorSrcFactor: 'src-alpha',
@@ -59,6 +67,13 @@ export class ScatterRenderer {
   private outlineColor: [number, number, number] = [200, 200, 200];
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
   private readonly collision = new CollisionFilterExtension();
+  private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
+  /** Prepared-row index of the hovered point (for the ring), or -1. */
+  private hoveredIdx = -1;
+  /** Prepared-row index of the pinned point (for the ring), or -1. */
+  private pinnedIdx = -1;
+  /** Per-point-set filter attributes (category codes + hidden set). */
+  private filters: (FilterAttribute | null)[] = [];
 
   constructor(private readonly container: HTMLElement) {
     this.deck = new Deck({
@@ -117,9 +132,18 @@ export class ScatterRenderer {
     this.render();
   }
 
-  setPointSets(sets: PointSet[]): void {
+  setPointSets(sets: PointSet[], filters?: (FilterAttribute | null)[]): void {
     this.sets = sets;
+    this.filters = filters ?? sets.map(() => null);
     this.version++;
+    this.render();
+  }
+
+  /** Set the hovered/pinned point indices for the hover ring (A5). */
+  setHoverRing(hoveredIdx: number, pinnedIdx: number): void {
+    if (this.hoveredIdx === hoveredIdx && this.pinnedIdx === pinnedIdx) return;
+    this.hoveredIdx = hoveredIdx;
+    this.pinnedIdx = pinnedIdx;
     this.render();
   }
 
@@ -171,29 +195,41 @@ export class ScatterRenderer {
     const density = mode === 'density';
     const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = this.sets
       .filter((s) => s.length > 0)
-      .map(
-        (s) =>
-          new ScatterplotLayer({
-            id: `points-${s.id}`,
-            data: {
-              length: s.length,
-              attributes: {
-                getPosition: { value: s.positions, size: 2 },
-                getFillColor: { value: s.colors, size: 4, normalized: true },
-              },
-            } as any,
-            radiusUnits: 'pixels',
-            getRadius: pointSize / 2,
-            radiusMinPixels: 0.5,
-            stroked: false,
-            filled: true,
-            antialiasing: !density,
-            opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
-            pickable: false,
-            parameters: (density ? ADDITIVE : NORMAL) as any,
-            updateTriggers: { getPosition: this.version, getFillColor: this.version },
-          }),
-      );
+      .map((s, si) => {
+        const filter = this.filters[si] ?? null;
+        const hasFilter = filter !== null && filter.hidden.size > 0;
+        // Build a Float32Array with the filter value (1 = visible, 0 = hidden) if needed.
+        // Only use the binary attribute form — no function accessor, which deck.gl ignores in
+        // binary data mode and would cause the extension default (0 = hidden) to apply instead.
+        const filterValues = hasFilter ? buildFilterValues(filter) : null;
+        return new ScatterplotLayer({
+          id: `points-${s.id}`,
+          data: {
+            length: s.length,
+            attributes: {
+              getPosition: { value: s.positions, size: 2 },
+              getFillColor: { value: s.colors, size: 4, normalized: true },
+              // Attribute is only present when there is an active filter; the
+              // DataFilterExtension reads it via the name 'getFilterValue'.
+              ...(filterValues ? { getFilterValue: { value: filterValues, size: 1 } } : {}),
+            },
+          } as any,
+          radiusUnits: 'pixels',
+          getRadius: pointSize / 2,
+          radiusMinPixels: 0.5,
+          stroked: false,
+          filled: true,
+          antialiasing: !density,
+          opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
+          pickable: false,
+          parameters: (density ? ADDITIVE : NORMAL) as any,
+          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+          // Include the extension and filterRange only when there is an active filter.
+          // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
+          extensions: hasFilter ? [this.dataFilter] : [],
+          ...(hasFilter ? { filterRange: [0.5, 1.5] as [number, number] } : {}),
+        });
+      });
     if (this.outlines.length) {
       const [r, g, b] = this.outlineColor;
       layers.push(
@@ -211,6 +247,34 @@ export class ScatterRenderer {
           parameters: NORMAL as any,
         } as any),
       );
+    }
+    // Hover ring (A5): draw a ring around the hovered and/or pinned point.
+    const ringIndices: { idx: number; pinned: boolean }[] = [];
+    if (this.hoveredIdx >= 0) ringIndices.push({ idx: this.hoveredIdx, pinned: false });
+    if (this.pinnedIdx >= 0 && this.pinnedIdx !== this.hoveredIdx) ringIndices.push({ idx: this.pinnedIdx, pinned: true });
+    for (const { idx, pinned } of ringIndices) {
+      // Find the point position in the last set that covers this index.
+      const pos = this.findPointPosition(idx);
+      if (pos) {
+        layers.push(
+          new ScatterplotLayer({
+            id: `ring-${pinned ? 'pin' : 'hover'}-${idx}`,
+            data: [pos],
+            getPosition: (d: [number, number]) => [d[0], d[1]],
+            radiusUnits: 'pixels',
+            getRadius: (this.style.pointSize / 2) + 3,
+            radiusMinPixels: 4,
+            stroked: true,
+            filled: false,
+            getLineColor: pinned ? [255, 200, 50, 220] : [255, 255, 255, 180],
+            lineWidthUnits: 'pixels',
+            getLineWidth: pinned ? 2.5 : 1.5,
+            pickable: false,
+            parameters: NORMAL as any,
+            updateTriggers: { getPosition: idx },
+          } as any),
+        );
+      }
     }
     if (this.labels.length) {
       const { outline, fontFamily } = this.labelStyle;
@@ -250,6 +314,18 @@ export class ScatterRenderer {
     this.deck.setProps({ layers });
   }
 
+  /** Find the world position of a point by its index in the latest point set. */
+  private findPointPosition(idx: number): [number, number] | null {
+    // Search the sets in reverse (last set is drawn on top).
+    for (let si = this.sets.length - 1; si >= 0; si--) {
+      const s = this.sets[si];
+      if (idx < s.length) {
+        return [s.positions[2 * idx], s.positions[2 * idx + 1]];
+      }
+    }
+    return null;
+  }
+
   toDataURL(background: string): string {
     this.deck.redraw('export');
     const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
@@ -285,7 +361,40 @@ export class ScatterRenderer {
     });
   }
 
+  /**
+   * CPU-side count of points that would pass the current filter (useful for test assertions
+   * without needing GPU pixel reads).  Returns the total point count when no filter is active.
+   */
+  get filterPassCount(): number {
+    let total = 0;
+    for (let si = 0; si < this.sets.length; si++) {
+      const filter = this.filters[si] ?? null;
+      if (!filter || filter.hidden.size === 0) {
+        total += this.sets[si]?.length ?? 0;
+      } else {
+        const vals = buildFilterValues(filter);
+        for (const v of vals) {
+          if (v > 0.5) total++;
+        }
+      }
+    }
+    return total;
+  }
+
   destroy(): void {
     this.deck.finalize();
   }
+}
+
+/**
+ * Build a Float32Array of filter values (1 = visible, 0 = hidden) for a point set,
+ * based on the category codes and hidden set.
+ */
+function buildFilterValues(filter: FilterAttribute): Float32Array {
+  const n = filter.codes.length;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = filter.hidden.has(filter.codes[i]) ? 0 : 1;
+  }
+  return out;
 }

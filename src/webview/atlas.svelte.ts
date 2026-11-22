@@ -16,6 +16,7 @@ import type {
   PrepareResult,
   Settings,
   ToWebview,
+  TooltipOptions,
   UmapParams,
   DescribeResult,
   JobStatus,
@@ -27,6 +28,8 @@ import { ClusterFinder } from './labels/clusterWorker';
 import { detectImageColumns, guessImageWidth, type ImageColumns, formatCount } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 import { DEFAULT_LABELS } from './atlas/labels-defaults';
+import { LruCache, type CachedRow } from './hover/cache';
+import { TextsStore } from './hover/texts';
 
 // Sub-module imports
 import { onInit as onInitImpl } from './atlas/init';
@@ -55,6 +58,7 @@ import {
   recolor as recolorImpl,
   categoryColor as categoryColorImpl,
   updateMapColors as updateMapColorsImpl,
+  toggleCategory as toggleCategoryImpl,
 } from './atlas/colors';
 import {
   setLabelSource as setLabelSourceImpl,
@@ -70,7 +74,15 @@ import {
   nameClusters as nameClustersImpl,
   onGroupNames as onGroupNamesImpl,
 } from './atlas/clusters';
-import { onPointer as onPointerImpl } from './atlas/hover';
+import {
+  onPointer as onPointerImpl,
+  onRows as onRowsImpl,
+  onTexts as onTextsImpl,
+  onImageUri as onImageUriImpl,
+  onClick as onClickImpl,
+  closePinnedCard as closePinnedCardImpl,
+  openPinnedLink as openPinnedLinkImpl,
+} from './atlas/hover';
 import {
   applyLasso as applyLassoImpl,
   setSelection as setSelectionImpl,
@@ -163,7 +175,14 @@ export class Atlas {
   projectProgress = $state(0);
   estimate = $state.raw<{ seconds: number; rows: number } | null>(null);
   error = $state.raw<{ message: string; detail?: string; fatal?: boolean } | null>(null);
-  tooltip = $state.raw<{ x: number; y: number; row: number; values: [string, string][]; image?: (number | null)[] } | null>(null);
+  tooltip = $state.raw<{
+    x: number; y: number; row: number;
+    values: [string, string][];
+    image?: (number | null)[];
+    title?: string;
+    linkValue?: string;
+    imageUri?: string;
+  } | null>(null);
   timings = $state.raw<Record<string, number>>({});
   toast = $state<string | null>(null);
   useGpu = $state(false);
@@ -174,6 +193,30 @@ export class Atlas {
   layoutEngine = $state<string>('');
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
+
+  // ---- hover / legend reactive state (H2–H8, L1) --------------------------------
+  /** Pinned hover card: set by onClick, cleared by closePinnedCard (H7). */
+  pinnedCard = $state.raw<{
+    x: number; y: number; row: number;
+    values: [string, string][];
+    image?: (number | null)[];
+    title?: string;
+    linkValue?: string;
+    imageUri?: string;
+    preparedIdx: number;
+  } | null>(null);
+  /** Column/field settings for the hover tooltip (H6). */
+  tooltipOpts = $state<TooltipOptions>({
+    titleColumn: undefined,
+    fieldMode: 'all',
+    fieldColumns: [],
+    linkColumn: undefined,
+    imageUrlColumn: undefined,
+  });
+  /** Hidden category indices per color column (L1). Map<colorColumn, Set<categoryIndex>>. */
+  hiddenCategories = $state.raw<Map<number, Set<number>>>(new Map());
+  /** Whether to load images from URLs: 'always', 'never', or 'ask' (H8). */
+  loadImagesFromUrls = $state<'always' | 'never' | 'ask'>('ask');
 
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
@@ -205,11 +248,22 @@ export class Atlas {
   hit: { index: HitIndex; map: (i: number) => number } | null = null;
   hoverTimer: ReturnType<typeof setTimeout> | undefined;
   hoverSeq = 0;
-  pendingHover: { x: number; y: number } | null = null;
+  /** Extended: includes prepIdx for hover ring and cache lookups. */
+  pendingHover: { x: number; y: number; prepIdx?: number } | null = null;
   autoFit = true;
   liveRun = false;
   inbox: Promise<void> = Promise.resolve();
   gpuProbe: Promise<boolean> = probeWebGpu();
+
+  // ---- hover non-reactive state (H2–H8) ----------------------------------------
+  /** LRU cache of fetched row values, keyed by prepared-row index (H2). */
+  rowCache = new LruCache<CachedRow>(1000);
+  /** Sequence number of the in-flight `rows` request (0 = none). */
+  hoverInflight = 0;
+  /** Monotonically increasing sequence for `rows` requests. */
+  hoverRowsSeq = 0;
+  /** Lazy UTF-8 title decoder (H3). */
+  textsStore = new TextsStore();
 
   // ---- lifecycle ---------------------------------------------------------------
   attach(container: HTMLElement): void {
@@ -266,6 +320,22 @@ export class Atlas {
     return (this.describe?.columns ?? []).filter((c) => c.kind === 'numeric' || c.kind === 'bool');
   }
 
+  /** True when any categories are hidden for the current color column (L1). */
+  get anyHidden(): boolean {
+    if (this.colorColumn === null) return false;
+    const h = this.hiddenCategories.get(this.colorColumn);
+    return !!(h && h.size > 0);
+  }
+
+  /**
+   * CPU-side count of points that pass the current legend filter (L1).
+   * Returns the total anchor count when no filter is active.
+   * Useful for scenario assertions without needing GPU pixel reads.
+   */
+  get renderVisibleCount(): number {
+    return this.renderer?.filterPassCount ?? 0;
+  }
+
   // ---- message dispatch --------------------------------------------------------
   private async handle(msg: ToWebview): Promise<void> {
     switch (msg.type) {
@@ -318,6 +388,18 @@ export class Atlas {
           this.tooltip = { ...this.pendingHover, row: msg.row, values: msg.values, image: msg.image };
         }
         break;
+      case 'rows':
+        onRowsImpl(this, msg);
+        break;
+      case 'texts':
+        onTextsImpl(this, msg);
+        break;
+      case 'imageUri':
+        onImageUriImpl(this, msg.row, msg.uri);
+        break;
+      case 'imagePermission':
+        this.loadImagesFromUrls = msg.granted ? 'always' : 'never';
+        break;
       case 'error':
         this.error = { message: msg.message, detail: msg.detail, fatal: msg.fatal };
         this.comparing = false;
@@ -369,6 +451,23 @@ export class Atlas {
   categoryColor(i: number): string { return categoryColorImpl(this, i); }
   updateMapColors(recolor = true): void { updateMapColorsImpl(this, recolor); }
 
+  // ---- legend toggles (L1) -----------------------------------------------------
+  /** Toggle visibility of a category; solo=true (alt-click) isolates that one. */
+  toggleCategory(catIndex: number, solo: boolean): void { toggleCategoryImpl(this, catIndex, solo); }
+  /** Whether a given category index is hidden for the current color column (L1). */
+  isCategoryHidden(catIndex: number): boolean {
+    if (this.colorColumn === null) return false;
+    return this.hiddenCategories.get(this.colorColumn)?.has(catIndex) ?? false;
+  }
+  /** Show all hidden categories for the current color column. */
+  showAllCategories(): void {
+    if (this.colorColumn === null) return;
+    const newMap = new Map(this.hiddenCategories);
+    newMap.delete(this.colorColumn);
+    this.hiddenCategories = newMap;
+    this.render();
+  }
+
   // ---- labels ------------------------------------------------------------------
   setLabelSource(source: number | 'clusters' | null): void { setLabelSourceImpl(this, source); }
   setLabelColumn(c: number | null): void { setLabelColumnImpl(this, c); }
@@ -384,6 +483,10 @@ export class Atlas {
   // ---- hover -------------------------------------------------------------------
   /** @internal Accessible via a['onPointer'] in harness tests. */
   onPointer(p: { x: number; y: number; world: [number, number] } | null): void { onPointerImpl(this, p); }
+  onClick(e: MouseEvent): void { onClickImpl(this, e); }
+  closePinnedCard(): void { closePinnedCardImpl(this); }
+  openPinnedLink(): void { openPinnedLinkImpl(this); }
+  copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
 
   // ---- selection ---------------------------------------------------------------
   applyLasso(screen: [number, number][], mode: SelectMode): void { applyLassoImpl(this, screen, mode); }

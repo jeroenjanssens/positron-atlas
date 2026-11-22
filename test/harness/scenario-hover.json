@@ -1,0 +1,109 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 6, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'cluster_{v}' for v in k]\ndf['title'] = [f'Point {i}' for i in range(n)]\ndf['url'] = ['https://example.com/' + str(i) for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 15000
+    },
+    {
+      "name": "title and link columns auto-detected on fresh load",
+      "assert": [
+        "typeof a.tooltipOpts.titleColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.titleColumn].name === 'title'",
+        "typeof a.tooltipOpts.linkColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.linkColumn].name === 'url'",
+        "a.tooltipOpts.fieldMode === 'none'"
+      ],
+      "report": "{ titleColumn: a.tooltipOpts.titleColumn, linkColumn: a.tooltipOpts.linkColumn, fieldMode: a.tooltipOpts.fieldMode }"
+    },
+    {
+      "name": "hover shows instant tooltip with no field rows (fieldMode none)",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.tooltip.row >= 0",
+        "a.tooltip.values.length === 0"
+      ],
+      "report": "{ row: a.tooltip.row, nValues: a.tooltip.values.length }"
+    },
+    {
+      "name": "rows arrive with link value and no visible fields",
+      "until": "a.tooltip && typeof a.tooltip.linkValue === 'string'",
+      "timeout": 10000,
+      "screenshot": "hover-rows-arrived.png",
+      "assert": [
+        "a.tooltip.linkValue.startsWith('https://example.com/')",
+        "a.tooltip.values.length === 0"
+      ],
+      "report": "{ row: a.tooltip.row, nValues: a.tooltip.values.length, linkValue: a.tooltip.linkValue }"
+    },
+    {
+      "name": "wait for texts to load (triggered by first hover)",
+      "until": "a.textsStore.ready",
+      "timeout": 15000,
+      "report": "{ textsReady: a.textsStore.ready }"
+    },
+    {
+      "name": "re-hover shows title from texts in heading",
+      "eval": "const xy = a['anchorXY']; a['onPointer'](null); a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip && a.tooltip.title",
+      "timeout": 5000,
+      "screenshot": "hover-with-title.png",
+      "assert": [
+        "a.tooltip.title.startsWith('Point ')",
+        "a.tooltip.values.length === 0"
+      ],
+      "report": "{ row: a.tooltip.row, title: a.tooltip.title, nValues: a.tooltip.values.length }"
+    },
+    {
+      "name": "click pins the card with title as heading",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 3000,
+      "screenshot": "hover-pinned-card.png",
+      "assert": [
+        "a.pinnedCard.preparedIdx >= 0",
+        "a.pinnedCard.row >= 0",
+        "a.pinnedCard.title && a.pinnedCard.title.startsWith('Point ')",
+        "a.pinnedCard.values.length === 0"
+      ],
+      "report": "{ row: a.pinnedCard.row, title: a.pinnedCard.title, preparedIdx: a.pinnedCard.preparedIdx, linkValue: a.pinnedCard.linkValue }"
+    },
+    {
+      "name": "escape closes the pinned card",
+      "eval": "a.closePinnedCard()",
+      "until": "a.pinnedCard === null",
+      "timeout": 3000
+    },
+    {
+      "name": "cmd+click opens link directly",
+      "eval": "const xy = a['anchorXY']; a['onPointer'](null); a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip && a.tooltip.linkValue",
+      "timeout": 10000
+    },
+    {
+      "name": "open link recorded in harness log",
+      "eval": "a['onClick']({ metaKey: true, ctrlKey: false })",
+      "until": "h.log.some(l => l.startsWith('openLink: https://example.com/'))",
+      "timeout": 3000,
+      "assert": [
+        "h.log.some(l => l.startsWith('openLink: https://example.com/'))",
+        "a.pinnedCard === null"
+      ],
+      "report": "h.log.filter(l => l.startsWith('openLink'))"
+    }
+  ]
+}

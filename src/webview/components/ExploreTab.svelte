@@ -5,6 +5,7 @@
   import Checkbox from './controls/Checkbox.svelte';
   import Info from './controls/Info.svelte';
   import Select from './controls/Select.svelte';
+  import TooltipSection from './TooltipSection.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
   import { formatCount, formatPercent, formatStat } from '../logic';
 
@@ -175,3 +176,5 @@
     {/if}
   {/if}
 </Section>
+
+<TooltipSection {atlas} />

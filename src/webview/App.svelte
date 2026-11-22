@@ -6,6 +6,7 @@
   import PlotToolbar from './components/PlotToolbar.svelte';
   import LassoLayer from './components/LassoLayer.svelte';
   import PixelImage from './components/PixelImage.svelte';
+  import HoverCard from './components/HoverCard.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
 
   const atlas = new Atlas();
@@ -32,10 +33,18 @@
   // Persist settings (debounced) so the tab can be restored.
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui, atlas.labels]);
+    JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui, atlas.labels,
+      atlas.tooltipOpts, atlas.hiddenCategories, atlas.loadImagesFromUrls]);
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => atlas.variable && atlas.persist(), 400);
   });
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && atlas.pinnedCard) {
+      atlas.closePinnedCard();
+      e.preventDefault();
+    }
+  }
 
   const statusText = $derived.by(() => {
     if (atlas.phase === 'loading') return 'Connecting to the kernel…';
@@ -81,6 +90,8 @@
   });
 </script>
 
+<svelte:window onkeydown={onKeyDown} />
+
 <div class="app" class:collapsed>
   <aside>
     {#if !collapsed}<Controls {atlas} />{/if}
@@ -88,24 +99,40 @@
   <main bind:clientWidth={mainW} bind:clientHeight={mainH}>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
     <PlotToolbar {atlas} />
-    <div class="plot" class:lasso={atlas.tool === 'lasso'} bind:this={plot} style:background={atlas.view.background || null}>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="plot" class:lasso={atlas.tool === 'lasso'} bind:this={plot} style:background={atlas.view.background || null}
+      role="application" aria-label="Map plot"
+      onclick={(e) => atlas.onClick(e)}
+      onkeydown={(e) => e.key === 'Enter' && atlas.onClick(e as unknown as MouseEvent)}>
       <LassoLayer {atlas} />
     </div>
     <Legend {atlas} />
-    {#if atlas.tooltip}
+    <HoverCard {atlas} />
+    {#if atlas.tooltip && !atlas.pinnedCard}
       <div class="tooltip" bind:clientWidth={ttW} bind:clientHeight={ttH} style="left:{ttPos.left}px; top:{ttPos.top}px">
-        <div class="tt-title">Row {formatCount(atlas.tooltip.row)}</div>
-        {#if atlas.tooltip.image && atlas.imageShape}
+        {#if atlas.tooltip.title}
+          <div class="tt-title">{atlas.tooltip.title}</div>
+        {:else}
+          <div class="tt-title">Row {formatCount(atlas.tooltip.row)}</div>
+        {/if}
+        {#if atlas.tooltip.imageUri}
+          <img class="pixel-image" src={atlas.tooltip.imageUri} alt="Row {atlas.tooltip.row}" style="max-width:200px;max-height:150px;object-fit:contain;display:block;margin:2px 0 6px;" />
+        {:else if atlas.tooltip.image && atlas.imageShape}
           <PixelImage values={atlas.tooltip.image} width={atlas.imageShape[0]} height={atlas.imageShape[1]} invert={atlas.view.imageInvert} />
         {/if}
-        <table>
-          <tbody>
-            {#each atlas.tooltip.values.slice(0, 16) as [k, v]}
-              <tr><th>{k}</th><td>{v}</td></tr>
-            {/each}
-          </tbody>
-        </table>
-        {#if atlas.tooltip.values.length > 16}<div class="more">+ {atlas.tooltip.values.length - 16} more columns</div>{/if}
+        {#if atlas.tooltip.values.length}
+          <table>
+            <tbody>
+              {#each atlas.tooltip.values.slice(0, 16) as [k, v]}
+                <tr><th>{k}</th><td>{v}</td></tr>
+              {/each}
+            </tbody>
+          </table>
+          {#if atlas.tooltip.values.length > 16}<div class="more">+ {atlas.tooltip.values.length - 16} more columns</div>{/if}
+        {/if}
+        {#if atlas.tooltip.linkValue}
+          <div class="tt-link" title={atlas.tooltip.linkValue}>↗ Click to open link</div>
+        {/if}
       </div>
     {/if}
     {#if atlas.phase === 'loading' || (atlas.phase === 'preparing' && !atlas.prepared)}

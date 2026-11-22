@@ -63,6 +63,33 @@ export class HitIndex {
     return cy * this.gw + cx;
   }
 
+  /** Indices of the k nearest points (may be fewer if the index is small). */
+  nearestK(x: number, y: number, k: number): number[] {
+    const radius = this.cell * Math.ceil(Math.sqrt(k)) * 3;
+    const results: { d: number; i: number }[] = [];
+    const [cx, cy] = this.cellXY(x, y);
+    const maxRing = Math.ceil(radius / this.cell) + 1;
+    for (let r = 0; r <= maxRing; r++) {
+      for (let gy = cy - r; gy <= cy + r; gy++) {
+        if (gy < 0 || gy >= this.gh) continue;
+        for (let gx = cx - r; gx <= cx + r; gx++) {
+          if (gx < 0 || gx >= this.gw) continue;
+          if (Math.max(Math.abs(gx - cx), Math.abs(gy - cy)) !== r) continue;
+          const c = gy * this.gw + gx;
+          for (let ki = this.start[c]; ki < this.start[c + 1]; ki++) {
+            const i = this.order[ki];
+            const dx = this.xy[2 * i] - x;
+            const dy = this.xy[2 * i + 1] - y;
+            results.push({ d: dx * dx + dy * dy, i });
+          }
+        }
+      }
+      if (results.length >= k && (r - 1) * this.cell > 0) break;
+    }
+    results.sort((a, b) => a.d - b.d);
+    return results.slice(0, k).map((r) => r.i);
+  }
+
   /** Index of the nearest point within maxDist (world units), or -1. */
   nearest(x: number, y: number, maxDist: number): number {
     const [cx, cy] = this.cellXY(x, y);

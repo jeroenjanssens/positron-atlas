@@ -252,6 +252,51 @@
         post({ type: 'row', i: m.i, row: r.row, values: r.values, image: r.image });
         break;
       }
+      case 'rows': {
+        const r = await call('rows', jobId, m.indices, m.columns ?? null);
+        const values = {};
+        for (const [k, v] of Object.entries(r.values)) values[Number(k)] = v;
+        post({ type: 'rows', seq: m.seq, values });
+        break;
+      }
+      case 'texts': {
+        const r = await call('texts', jobId, m.column, m.maxChars);
+        if (r.ok && r.utf8File && r.offsetsFile) {
+          post({
+            type: 'texts',
+            column: m.column,
+            uri: `/job/${jobDir}/${r.utf8File}?v=${++fileVersion}`,
+            offsetsUri: `/job/${jobDir}/${r.offsetsFile}?v=${++fileVersion}`,
+            count: r.count || 0,
+          });
+        }
+        break;
+      }
+      case 'openLink': {
+        // In the harness, record the link click and open in the host browser.
+        harness.log.push(`openLink: ${m.url}`);
+        // Validate scheme (matches atlasPanel.ts).
+        if (/^(https?:|mailto:)/i.test(m.url)) {
+          window.open(m.url, '_blank', 'noopener');
+        }
+        break;
+      }
+      case 'image': {
+        // In the harness, resolve local paths relative to window.location or the job root.
+        harness.log.push(`image: row=${m.row} src=${m.src}`);
+        // For local file paths in test scenarios, serve them from the /images route.
+        const src = m.src;
+        let uri = null;
+        if (/^https?:/.test(src)) {
+          // External URLs: serve directly (harness allows all; real host asks permission).
+          uri = src;
+        } else {
+          // Local path: serve from /images if the server supports it.
+          uri = `/images/${encodeURIComponent(src)}`;
+        }
+        if (uri) post({ type: 'imageUri', row: m.row, uri });
+        break;
+      }
       case 'cancel':
         generation++;
         if (jobId) await call('cancel', jobId).catch(() => undefined);

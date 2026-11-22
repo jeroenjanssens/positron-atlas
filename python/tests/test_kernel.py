@@ -1156,3 +1156,121 @@ def test_outdated_native_core_falls_back_to_numpy(monkeypatch):
     assert pak._native_core() is None
     reason = pak._NATIVE_INFO["reason"]
     assert "outdated" in reason and "place_from_neighbors" in reason and "Index.neighbors_u32" in reason
+
+
+# ---- rows() and texts() for pandas, polars, pyarrow (H2–H5) ----------------------
+
+def _prepare_simple(ns, kind, tmp_path, n=200):
+    """Prepare a simple n×5 frame and return (job_id, nKept)."""
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(n, 5))
+    labels = [f"c{i % 4}" for i in range(n)]
+    titles = [f"Item {i}" for i in range(n)]
+
+    if kind == "pandas":
+        df = pd.DataFrame({f"f{i}": x[:, i] for i in range(5)})
+        df["label"] = labels
+        df["title"] = titles
+        ns["df"] = df
+    elif kind == "polars":
+        ns["df"] = pl.DataFrame(
+            {f"f{i}": x[:, i].tolist() for i in range(5)} | {"label": labels, "title": titles}
+        )
+    else:  # pyarrow via narwhals
+        pytest.importorskip("narwhals")
+        import pyarrow as pa
+        d = {f"f{i}": pa.array(x[:, i].tolist()) for i in range(5)}
+        d["label"] = pa.array(labels)
+        d["title"] = pa.array(titles)
+        ns["df"] = pa.table(d)
+
+    jid = J(pak.create_job("df", str(tmp_path)))["jobId"]
+    opts = {"features": list(range(5)), "seed": 1}
+    assert J(pak.prepare(jid, json.dumps(opts)))["ok"]
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    return jid, st["result"]["nKept"]
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_rows_basic(ns, tmp_path, kind):
+    """rows() returns values for each requested index, filtered by column list."""
+    jid, nkept = _prepare_simple(ns, kind, tmp_path)
+    n_cols = 7  # f0-f4, label, title
+
+    # Fetch two rows, all columns.
+    r = J(pak.rows(jid, [0, 1], None))
+    assert r["ok"]
+    vals = r["values"]
+    assert "0" in vals and "1" in vals
+    assert len(vals["0"]) == n_cols
+    assert len(vals["1"]) == n_cols
+
+    # Fetch one row, only columns 0 and 5 (f0 and label).
+    r2 = J(pak.rows(jid, [0], [0, 5]))
+    assert r2["ok"]
+    names_returned = {k for k, _ in r2["values"]["0"]}
+    assert "f0" in names_returned and "label" in names_returned
+    # Should not contain f1-f4 or title.
+    assert "f1" not in names_returned and "title" not in names_returned
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_rows_out_of_range(ns, tmp_path, kind):
+    """rows() with the last valid index should work correctly."""
+    jid, nkept = _prepare_simple(ns, kind, tmp_path)
+    r = J(pak.rows(jid, [0, nkept - 1], None))
+    assert r["ok"]
+    assert str(nkept - 1) in r["values"]
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_texts_basic(ns, tmp_path, kind):
+    """texts() writes UTF-8 blob and u32 offsets for the title column."""
+    import struct
+
+    jid, nkept = _prepare_simple(ns, kind, tmp_path)
+    # Column 6 is "title" (0-indexed: f0-f4=0-4, label=5, title=6).
+    title_col = 6
+    r = J(pak.texts(jid, title_col, 50))
+    assert r["ok"], r
+    assert r["count"] == nkept
+
+    job = pak._JOBS[jid]
+    from pathlib import Path
+    utf8_path = Path(job.path(r["utf8File"]))
+    offsets_path = Path(job.path(r["offsetsFile"]))
+    assert utf8_path.exists() and offsets_path.exists()
+
+    utf8_bytes = utf8_path.read_bytes()
+    offsets_data = offsets_path.read_bytes()
+    # offsets_data is nkept+1 u32 little-endian values.
+    assert len(offsets_data) == (nkept + 1) * 4
+    offsets = struct.unpack_from(f"<{nkept + 1}I", offsets_data)
+
+    # Decode all strings and verify they are non-empty "Item N" strings.
+    decoded = []
+    for i in range(nkept):
+        s = utf8_bytes[offsets[i]:offsets[i + 1]].decode("utf-8")
+        decoded.append(s)
+    assert all(s.startswith("Item ") for s in decoded)
+    # Last offset equals total byte count.
+    assert offsets[nkept] == len(utf8_bytes)
+
+
+@pytest.mark.parametrize("kind", ["pandas", "polars", "pyarrow"])
+def test_texts_max_chars(ns, tmp_path, kind):
+    """texts() truncates values longer than max_chars."""
+    import struct
+
+    jid, nkept = _prepare_simple(ns, kind, tmp_path)
+    r = J(pak.texts(jid, 6, max_chars=4))
+    assert r["ok"]
+    job = pak._JOBS[jid]
+    from pathlib import Path
+    utf8_bytes = Path(job.path(r["utf8File"])).read_bytes()
+    offsets_data = Path(job.path(r["offsetsFile"])).read_bytes()
+    offsets = struct.unpack_from(f"<{nkept + 1}I", offsets_data)
+    for i in range(nkept):
+        s = utf8_bytes[offsets[i]:offsets[i + 1]].decode("utf-8")
+        assert len(s) <= 4, f"String '{s}' exceeds 4 chars"

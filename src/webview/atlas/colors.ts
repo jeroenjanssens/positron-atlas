@@ -108,3 +108,48 @@ export function updateMapColors(atlas: Atlas, recolorFlag = true): void {
     atlas.recolor();
   }
 }
+
+// ---- legend toggles (L1) ---------------------------------------------------------
+
+/**
+ * Toggle visibility of a category in the current color column.
+ * When solo=true (alt-click), isolate that category (hide all others).
+ * When all are hidden after a solo, show all instead.
+ */
+export function toggleCategory(atlas: Atlas, catIndex: number, solo: boolean): void {
+  const col = atlas.colorColumn;
+  if (col === null || !atlas.colorMeta || atlas.colorMeta.kind !== 'categorical') return;
+  const k = atlas.colorMeta.categories.length;
+  const existing = atlas.hiddenCategories.get(col) ?? new Set<number>();
+
+  let next: Set<number>;
+  if (solo) {
+    // Alt-click: hide all except catIndex; if already isolating this one, show all.
+    const allOthersHidden = existing.size === k - 1 && !existing.has(catIndex);
+    if (allOthersHidden) {
+      next = new Set();
+    } else {
+      next = new Set<number>();
+      for (let i = 0; i < k; i++) {
+        if (i !== catIndex) next.add(i);
+      }
+    }
+  } else {
+    // Regular click: toggle this category.
+    next = new Set(existing);
+    if (next.has(catIndex)) {
+      next.delete(catIndex);
+    } else {
+      next.add(catIndex);
+    }
+  }
+
+  const newMap = new Map(atlas.hiddenCategories);
+  if (next.size === 0) {
+    newMap.delete(col);
+  } else {
+    newMap.set(col, next);
+  }
+  atlas.hiddenCategories = newMap;
+  atlas.render();
+}

@@ -20,6 +20,7 @@ import type {
 } from '../shared/protocol';
 import { estimateSeconds } from '../shared/estimate';
 import { FontManager } from './fonts';
+import { ImageResolver, validateLinkScheme } from './images';
 
 export const VIEW_TYPE = 'positronAtlas.view';
 
@@ -65,6 +66,8 @@ export class AtlasPanel {
   private busy: vscode.CancellationTokenSource | undefined;
   private state: PanelState;
   private projectionCurrent = false;
+  private imageResolver: ImageResolver | undefined;
+  private imagePermission: 'always' | 'never' | 'ask' = 'ask';
 
   static create(ctx: AtlasContext, target: OpenTarget): AtlasPanel {
     const fontManager = new FontManager(ctx.extension, ctx.log);
@@ -103,6 +106,9 @@ export class AtlasPanel {
   ) {
     this.state = state;
     this.fontManager = fontManager;
+    if (state.loadImagesFromUrls) {
+      this.imagePermission = state.loadImagesFromUrls as 'always' | 'never' | 'ask';
+    }
     const modulePath = vscode.Uri.joinPath(ctx.extension.extensionUri, 'python', 'positron_atlas_kernel.py').fsPath;
     const version = String(ctx.extension.extension.packageJSON.version ?? '0.0.0');
     this.bridge = new KernelBridge(ctx.positron, state.sessionId, state.languageId, modulePath, version, ctx.log);
@@ -390,6 +396,63 @@ export class AtlasPanel {
           m.imageColumns ?? null,
         );
         this.post({ type: 'row', i: m.i, row: r.row, values: r.values, image: r.image });
+        break;
+      }
+      case 'rows': {
+        const r = await this.bridge.call<{ ok: boolean; values: Record<string, [string, string][]> }>(
+          'rows',
+          this.requireJob(),
+          m.indices,
+          m.columns ?? null,
+        );
+        const values: Record<number, [string, string][]> = {};
+        for (const [k, v] of Object.entries(r.values)) values[Number(k)] = v;
+        this.post({ type: 'rows', seq: m.seq, values });
+        break;
+      }
+      case 'texts': {
+        const r = await this.bridge.call<{ ok: boolean; utf8File?: string; offsetsFile?: string; count?: number }>(
+          'texts',
+          this.requireJob(),
+          m.column,
+          m.maxChars,
+        );
+        if (r.ok && r.utf8File && r.offsetsFile) {
+          const toUri = (f: string) => `${this.panel.webview.asWebviewUri(vscode.Uri.joinPath(this.jobDir, f)).toString()}?v=${++this.fileVersion}`;
+          this.post({ type: 'texts', column: m.column, uri: toUri(r.utf8File), offsetsUri: toUri(r.offsetsFile), count: r.count ?? 0 });
+        }
+        break;
+      }
+      case 'openLink': {
+        if (!validateLinkScheme(m.url)) {
+          this.ctx.log.warn(`[openLink] rejected unsafe URL: ${m.url}`);
+          return;
+        }
+        await vscode.env.openExternal(vscode.Uri.parse(m.url));
+        break;
+      }
+      case 'image': {
+        if (!this.imageResolver) {
+          this.imageResolver = new ImageResolver(this.panel.webview, this.jobDir, this.ctx.log);
+        }
+        if (this.imagePermission === 'ask' && /^https?:/i.test(m.src)) {
+          const pick = await vscode.window.showInformationMessage(
+            `Positron Atlas: load images from external URLs?`,
+            { modal: true },
+            'Always',
+            'Never',
+          );
+          if (pick === 'Always') {
+            this.imagePermission = 'always';
+          } else {
+            this.imagePermission = 'never';
+          }
+          this.post({ type: 'imagePermission', granted: this.imagePermission === 'always' });
+        }
+        const uri = await this.imageResolver.resolve(m.src, this.imagePermission, this.panel);
+        if (uri) {
+          this.post({ type: 'imageUri', row: m.row, uri });
+        }
         break;
       }
       case 'cancel':

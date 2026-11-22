@@ -1776,6 +1776,81 @@ def row(job_id: str, i: int, image_cols: list[int] | None = None) -> str:
 
 
 @_guard
+def rows(job_id: str, indices: list[int], columns: list[int] | None = None) -> str:
+    """Fetch several rows at once for the hover cache/prefetch (H3/H4).
+
+    Returns a mapping from prepared-row index to list of (name, value) pairs.
+    If ``columns`` is given, only those column indices are returned.
+    """
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    frame = job.frame
+    names = frame.column_names()
+    col_indices = ([int(c) for c in columns] if columns else list(range(len(names))))
+    col_set = set(col_indices)
+    result: dict[str, list[tuple[str, str]]] = {}
+    for i in indices:
+        orig = int(job.kept_idx[int(i)])
+        all_vals = frame.row(orig)
+        filtered = [(k, v) for j, (k, v) in enumerate(all_vals) if j in col_set][:200]
+        result[str(i)] = filtered
+    return _json({"ok": True, "values": result})
+
+
+@_guard
+def texts(job_id: str, column: int, max_chars: int = 120) -> str:
+    """Write UTF-8 text values of a column to a file for preloading (H5).
+
+    Writes two files to the job directory:
+    - ``texts_<col>_<uuid>.utf8``: concatenated UTF-8 strings (each truncated to max_chars chars)
+    - ``texts_<col>_<uuid>.u32``: u32 start offsets (len = nKept + 1 for end of last string)
+
+    Returns the file names, length (number of prepared rows) and the total byte count.
+    Budget: if the total UTF-8 bytes exceed 64 MB, raises an error (the caller falls back
+    to per-row fetching).
+    """
+    BUDGET_BYTES = 64 * 1024 * 1024
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    mc = max(1, int(max_chars))
+    frame = job.frame
+    col_vals = frame.column(int(column), job.kept_idx)
+    # Encode each value as truncated UTF-8.
+    parts: list[bytes] = []
+    for v in col_vals:
+        if _is_null(v):
+            s = ""
+        else:
+            s = _fmt(v, mc)
+        parts.append(s.encode("utf-8"))
+    total_bytes = sum(len(p) for p in parts)
+    if total_bytes > BUDGET_BYTES:
+        return _json({"ok": False, "error": f"texts column {column} exceeds 64 MB budget ({total_bytes} bytes); will fetch per row"})
+    uid = uuid.uuid4().hex[:6]
+    utf8_name = f"texts_{int(column)}_{uid}.utf8"
+    offsets_name = f"texts_{int(column)}_{uid}.u32"
+    # Build offset array (u32, n+1 entries).
+    n = len(parts)
+    offsets = np.zeros(n + 1, dtype="<u4")
+    pos = 0
+    for i, p in enumerate(parts):
+        offsets[i] = pos
+        pos += len(p)
+    offsets[n] = pos
+    # Write raw bytes for the UTF-8 blob; use the same atomic rename pattern as _write.
+    utf8_path = job.path(utf8_name)
+    tmp_utf8 = utf8_path + ".tmp"
+    with open(tmp_utf8, "wb") as f:
+        for p in parts:
+            f.write(p)
+    os.replace(tmp_utf8, utf8_path)
+    _write(job, offsets_name, offsets)
+    return _json({"ok": True, "utf8File": utf8_name, "offsetsFile": offsets_name, "count": n, "bytes": int(total_bytes)})
+
+
+@_guard
 def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: str = "umap_y") -> str:
     """Write coordinates back into the user's DataFrame (NaN for rows not shown)."""
     job = _get(job_id)

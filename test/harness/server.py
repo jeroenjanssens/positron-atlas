@@ -130,6 +130,9 @@ def main() -> None:
             elif p.startswith("/media/"):
                 # Serve bundled fonts and other media assets (fonts plumbing D11)
                 self.send_file(safe_join(MEDIA, p[len("/media/") :]))
+            elif p.startswith("/images/"):
+                # Serve local image files for scenario testing (H8)
+                self.send_file(safe_join(HARNESS, "fixtures" + p[len("/images"):]))
             elif p == "/info":
                 info = {"variable": scenario["variable"], "jobRoot": str(job_root), "settings": scenario.get("settings", {})}
                 self.send(200, json.dumps(info).encode())

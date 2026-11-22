@@ -8,6 +8,7 @@ import { vscode } from '../vscode';
 import { DEFAULT_UMAP } from '../defaults';
 import { DEFAULT_LABELS } from './labels-defaults';
 import { runPrepare } from './prepare.svelte';
+import { detectTitleColumn, detectLinkColumn, detectImageUrlColumn } from '../hover/texts';
 
 export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
   atlas.describe = d;
@@ -62,6 +63,52 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     const cat = d.columns.find((c) => (c.kind === 'categorical' || c.kind === 'bool') && (c.n_unique_est ?? 99) <= 20);
     atlas.colorColumn = cat ? cat.index : null;
   }
+  // Restore tooltip options (H6), or auto-detect smart defaults for a fresh load.
+  if (state?.tooltip) {
+    atlas.tooltipOpts = {
+      titleColumn: typeof state.tooltip.titleColumn === 'number' ? state.tooltip.titleColumn : undefined,
+      fieldMode: state.tooltip.fieldMode === 'none' || state.tooltip.fieldMode === 'chosen' || state.tooltip.fieldMode === 'all'
+        ? state.tooltip.fieldMode : 'all',
+      fieldColumns: Array.isArray(state.tooltip.fieldColumns) ? state.tooltip.fieldColumns.filter((i) => valid.has(i)) : [],
+      linkColumn: typeof state.tooltip.linkColumn === 'number' ? state.tooltip.linkColumn : undefined,
+      imageUrlColumn: typeof state.tooltip.imageUrlColumn === 'number' ? state.tooltip.imageUrlColumn : undefined,
+    };
+  } else {
+    // On a fresh load with no saved state, auto-detect useful columns (H3/H5).
+    // detectTitleColumn returns null if nothing qualifies; we keep undefined (auto-detect) in that
+    // case so the user can still configure it manually. When a title column IS found, default
+    // fieldMode to 'none' so the card heading is prominent without a wall of fields.
+    const titleCol = detectTitleColumn(d.columns);
+    const linkCol = detectLinkColumn(d.columns);
+    const imgCol = detectImageUrlColumn(d.columns);
+    atlas.tooltipOpts = {
+      titleColumn: titleCol !== null ? titleCol : undefined,
+      fieldMode: titleCol !== null ? 'none' : 'all',
+      fieldColumns: [],
+      linkColumn: linkCol !== null ? linkCol : undefined,
+      imageUrlColumn: imgCol !== null ? imgCol : undefined,
+    };
+  }
+  // Restore hidden categories (L1).
+  if (state?.hiddenCategories) {
+    const map = new Map<number, Set<number>>();
+    for (const [k, v] of Object.entries(state.hiddenCategories)) {
+      if (Array.isArray(v)) map.set(Number(k), new Set(v as number[]));
+    }
+    atlas.hiddenCategories = map;
+  } else {
+    atlas.hiddenCategories = new Map();
+  }
+  // Restore image permission (H8).
+  if (state?.loadImagesFromUrls === 'always' || state?.loadImagesFromUrls === 'never') {
+    atlas.loadImagesFromUrls = state.loadImagesFromUrls;
+  }
+  // Reset hover state from prior session.
+  atlas.rowCache.clear();
+  atlas.hoverInflight = 0;
+  atlas.pinnedCard = null;
+  atlas.textsStore.clear();
+
   if (atlas.prepare.features.length === 0) {
     atlas.phase = 'error';
     atlas.error = { message: 'This DataFrame has no numeric columns to embed.' };

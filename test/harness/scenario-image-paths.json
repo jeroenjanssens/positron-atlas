@@ -1,0 +1,63 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 6, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['label'] = [f'item_{i}' for i in range(n)]\n# All rows point to the same test PNG served by the harness /images/ route.\n# The filename must match test/harness/fixtures/test_img.png.\ndf['image_path'] = 'test_img.png'\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 2000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set image URL column to image_path",
+      "eval": "const imgCol = a.describe.columns.find(c => c.name === 'image_path').index; a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: imgCol, fieldMode: 'all' }",
+      "until": "a.tooltipOpts.imageUrlColumn !== undefined && a.tooltipOpts.fieldMode === 'all'",
+      "timeout": 3000,
+      "assert": [
+        "a.tooltipOpts.imageUrlColumn !== undefined && a.tooltipOpts.imageUrlColumn !== null"
+      ]
+    },
+    {
+      "name": "set permission to always",
+      "eval": "a.loadImagesFromUrls = 'always'",
+      "until": "a.loadImagesFromUrls === 'always'",
+      "timeout": 2000
+    },
+    {
+      "name": "hover triggers image request and receives imageUri",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "rows message delivers image_path value",
+      "until": "a.tooltip && a.tooltip.values.some(([k]) => k === 'image_path')",
+      "timeout": 10000,
+      "assert": [
+        "a.tooltip.values.some(([k, v]) => k === 'image_path' && v === 'test_img.png')"
+      ],
+      "report": "a.tooltip.values.find(([k]) => k === 'image_path')"
+    },
+    {
+      "name": "imageUri message received for the hovered row",
+      "until": "h.log.some(l => l.startsWith('image:'))",
+      "timeout": 10000,
+      "assert": [
+        "h.log.some(l => l.startsWith('image:'))"
+      ],
+      "report": "h.log.filter(l => l.startsWith('image:'))"
+    },
+    {
+      "name": "tooltip shows imageUri",
+      "until": "a.tooltip && a.tooltip.imageUri",
+      "timeout": 5000,
+      "assert": [
+        "a.tooltip.imageUri.includes('test_img.png')"
+      ],
+      "report": "a.tooltip.imageUri"
+    }
+  ]
+}
