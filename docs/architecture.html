@@ -183,6 +183,8 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>Built-in example dataset loaders (MNIST, Fashion MNIST, Covertype)</td><td><code>python/positron_atlas_examples.py</code></td></tr>
     <tr><td>The webview's state and logic</td><td><code>src/webview/atlas.svelte.ts</code> (state) and <code>src/webview/atlas/*.ts</code> (one module per area)</td></tr>
     <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
+    <tr><td>Keyboard and mouse</td><td><code>src/webview/input/</code> (<code>bindings.ts</code>: every action and its default keys; <code>dispatcher.ts</code>: runs them). Keys are contributed keybindings scoped to <code>positronAtlas.webviewFocused</code>; the host forwards them to the focused tab as <code>command</code> messages</td></tr>
+    <tr><td>Undo and redo</td><td><code>src/webview/atlas/history.ts</code> (the command stack) and <code>atlas/undo.ts</code> (which edits are recorded)</td></tr>
     <tr><td>What is drawn, in which order</td><td><code>src/webview/atlas/layers.ts</code> (the layer registry: the base map and every overlay, with visibility, opacity, blending and draw order; the renderer and the HTML overlays both read it)</td></tr>
     <tr><td>Testing without Positron</td><td><code>test/harness/</code> (<code>just harness</code>)</td></tr>
     <tr><td>Conventions and checks</td><td><code>CONTRIBUTING.md</code></td></tr>
@@ -257,7 +259,7 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="486" y="86" width="248" height="72" rx="8"/>
     <text class="t" x="500" y="110">extension.ts</text>
-    <text class="s" x="500" y="129">commands · Data Explorer button</text>
+    <text class="s" x="500" y="129">commands · keybindings · Data Explorer</text>
     <text class="s" x="500" y="146">panel serializer · job-dir sweep</text>
 
     <rect class="box" x="486" y="164" width="248" height="110" rx="8" style="stroke:var(--host)"/>
@@ -569,16 +571,19 @@ const STEPS = [
   { from: 'W', to: 'H', text: 'image(row), openLink(url)', sub: 'host downloads image URLs (after a prompt) and opens links' },
   { from: 'W', to: 'K', via: 'H', text: 'compareSelection / describeGroups', sub: 'mask or codes as bytes → file; statistics on a 50k–100k sample' },
   { from: 'W', to: 'K', via: 'H', text: 'search · sizes · histogram / histValues', sub: 'match indices, sizes and histogram values as files (search runs locally once titles are loaded)' },
-  { note: 'W', text: ['Legend, histogram and search filters combine on the GPU', 'labels, badges, title and point annotations drawn over the map', 'PNG export composites all of it'] },
+  { from: 'W', to: 'H', text: 'webviewFocused / webviewBlurred', sub: 'the host sets the positronAtlas.webviewFocused context key' },
+  { from: 'H', to: 'W', text: 'command(id) for a keyboard shortcut', sub: 'focused tab only · fit, zoom, rotate, undo, …' },
+  { note: 'W', text: ['Legend, histogram and search filters', 'combine on the GPU; labels, badges, title', 'and point annotations are drawn over the map;', 'the PNG export composites all of it'] },
 
   { phase: 'Export' },
   { from: 'W', to: 'H', text: 'savePng(bytes) · exportDataMapPlot(xy bytes)', sub: 'save dialog in the host' },
-  { note: 'W', text: ['HTML export: the webview packs positions, colours, labels,', 'annotations, tooltip text and fonts (gzip), inlines dist/viewer/viewer.js,', 'and sends the finished file; the host only writes it'] },
+  { note: 'W', text: ['HTML export: the webview packs positions,', 'colours, labels, annotations, tooltip text', 'and fonts (gzip), inlines dist/viewer/viewer.js,', 'and sends the file; the host only writes it'] },
   { from: 'H', to: 'K', text: 'export_datamapplot(job, path, …)', sub: 'datamapplot.create_interactive_plot → HTML file' },
 
   { phase: 'Write back (after a confirmation)' },
   { from: 'W', to: 'H', text: 'addCoordinates · writeLabels · selectionFrame' },
   { from: 'H', to: 'K', text: 'add_coordinates · write_labels · selection_frame', sub: 'changes your namespace' },
+  { from: 'H', to: 'K', text: '%view name (executeCode)', sub: 'a new frame from the selection opens in the Data Explorer' },
 ];
 
 function drawSequence(svg) {
