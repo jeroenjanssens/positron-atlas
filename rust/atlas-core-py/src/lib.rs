@@ -146,12 +146,13 @@ impl Index {
         Ok((idx, sqd))
     }
 
-    /// place(x: float32[m, d], rows: int64[r], anchor_xy: float32[n, 2], out: float32[m, 2], k=10,
-    ///       cancel=None, progress=None, block_rows=262144) -> bool
+    /// place(x: float32[m, d], rows: int64[r], anchor_xy: float32[n, out_dims], out: float32[m, out_dims],
+    ///       k=10, cancel=None, progress=None, block_rows=262144) -> bool
     ///
     /// Place rows `rows` of `x` from their k nearest anchors and write their positions into
-    /// `out[rows]`. Between blocks of rows, calls `cancel()` (stop when true) and
-    /// `progress(rows_done)`; exceptions they raise propagate. Returns False when cancelled.
+    /// `out[rows]`. `out_dims` (2 or 3) is inferred from `anchor_xy.shape[1]`.
+    /// Between blocks of rows, calls `cancel()` (stop when true) and `progress(rows_done)`;
+    /// exceptions they raise propagate. Returns False when cancelled.
     #[pyo3(signature = (x, rows, anchor_xy, out, k = 10, cancel = None, progress = None, block_rows = 262_144))]
     #[allow(clippy::too_many_arguments)]
     fn place(
@@ -168,14 +169,25 @@ impl Index {
     ) -> PyResult<bool> {
         let d = self.inner.dims();
         let m = x.shape()[0];
+        let out_dims = anchor_xy.shape()[1];
         if x.shape()[1] != d {
             return Err(PyValueError::new_err(format!("x has {} columns, the index {d}", x.shape()[1])));
         }
-        if anchor_xy.shape() != [self.inner.len(), 2] {
-            return Err(PyValueError::new_err("anchor_xy must have shape (n_anchors, 2)"));
+        if out_dims != 2 && out_dims != 3 {
+            return Err(PyValueError::new_err("anchor_xy must have 2 or 3 columns (out_dims)"));
         }
-        if out.shape() != [m, 2] {
-            return Err(PyValueError::new_err("out must have shape (len(x), 2)"));
+        if anchor_xy.shape()[0] != self.inner.len() {
+            return Err(PyValueError::new_err(format!(
+                "anchor_xy has {} rows, expected {} (n_anchors)",
+                anchor_xy.shape()[0],
+                self.inner.len()
+            )));
+        }
+        if out.shape() != [m, out_dims] {
+            return Err(PyValueError::new_err(format!(
+                "out must have shape ({m}, {out_dims}), got {:?}",
+                out.shape()
+            )));
         }
         let xs = contiguous("x", &x)?;
         let axy = contiguous("anchor_xy", &anchor_xy)?;
@@ -197,11 +209,10 @@ impl Index {
                 }
             }
             let pos = py
-                .detach(|| place_rows(&self.inner, xs, block, axy, k, &never, &done))
+                .detach(|| place_rows(&self.inner, xs, block, axy, out_dims, k, &never, &done))
                 .map_err(|_| PyValueError::new_err("cancelled"))?;
-            for (&r, p) in block.iter().zip(pos.chunks_exact(2)) {
-                out[2 * r] = p[0];
-                out[2 * r + 1] = p[1];
+            for (&r, p) in block.iter().zip(pos.chunks_exact(out_dims)) {
+                out[out_dims * r..out_dims * (r + 1)].copy_from_slice(p);
             }
             if let Some(p) = &progress {
                 p.call1(py, (done.load(std::sync::atomic::Ordering::Relaxed),))?;
@@ -212,8 +223,9 @@ impl Index {
 }
 
 /// place_from_neighbors(nbr_idx: uint32[n, k], nbr_sqd: float32[n, k],
-///                      anchor_xy: float32[a, 2], num_threads=0) -> float32[n, 2]:
+///                      anchor_xy: float32[a, out_dims], num_threads=0) -> float32[n, out_dims]:
 /// Place rows from pre-computed neighbor indices and squared distances. Parallel (rayon).
+/// `out_dims` (2 or 3) is inferred from `anchor_xy.shape[1]`.
 /// `u32::MAX` indices and `inf` distances are ignored (zero weight). `num_threads=0` uses all
 /// available threads; pass cores-1 when the browser UMAP runs concurrently on the CPU.
 #[pyfunction(name = "place_from_neighbors")]
@@ -226,11 +238,12 @@ fn place_from_neighbors_py<'py>(
     num_threads: usize,
 ) -> PyResult<Bound<'py, PyArray2<f32>>> {
     let [n, k] = [nbr_idx.shape()[0], nbr_idx.shape()[1]];
+    let out_dims = anchor_xy.shape()[1];
     if nbr_sqd.shape() != [n, k] {
         return Err(PyValueError::new_err("nbr_idx and nbr_sqd must have the same shape"));
     }
-    if anchor_xy.shape()[1] != 2 {
-        return Err(PyValueError::new_err("anchor_xy must have shape (n_anchors, 2)"));
+    if out_dims != 2 && out_dims != 3 {
+        return Err(PyValueError::new_err("anchor_xy must have 2 or 3 columns (out_dims)"));
     }
     if !nbr_idx.is_c_contiguous() {
         return Err(PyValueError::new_err("nbr_idx must be a C-contiguous uint32 array"));
@@ -246,11 +259,11 @@ fn place_from_neighbors_py<'py>(
             .num_threads(num_threads)
             .build()
             .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?
-            .install(|| pfn(ii, dd, k, axy))
+            .install(|| pfn(ii, dd, k, axy, out_dims))
     } else {
-        py.detach(|| pfn(ii, dd, k, axy))
+        py.detach(|| pfn(ii, dd, k, axy, out_dims))
     };
-    numpy::PyArray1::from_vec(py, out).reshape([n, 2]).map_err(Into::into)
+    numpy::PyArray1::from_vec(py, out).reshape([n, out_dims]).map_err(Into::into)
 }
 
 /// n_cpus() -> int: number of logical CPU cores.

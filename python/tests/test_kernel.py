@@ -355,6 +355,67 @@ def test_exact_umap_3d(ns, tmp_path):
     assert xy.shape[1] == 3
 
 
+def test_project_3d_rust(ns, tmp_path):
+    """T2: 3D placement uses the Rust core (place_rows with out_dims=3) when native=True."""
+    if pak._native_core() is None:
+        pytest.skip(f"native core not available: {pak._NATIVE_INFO.get('reason')}")
+    jid, st, _, labels = prepared(ns, "pandas", tmp_path, maxAnchors=400)
+    job = pak._JOBS[jid]
+    anchor_labels = labels[job.kept_idx[job.anchor_pos]]
+    centers_3d = np.array([[0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]], dtype=np.float32)
+    axy = centers_3d[anchor_labels] + np.random.default_rng(0).normal(0, 1, (400, 3)).astype(np.float32)
+    path = tmp_path / "axy3d.f32"
+    axy.astype("<f4").tofile(path)
+    pak.project(jid, str(path), json.dumps({"k": 10, "chunkRows": 1000, "native": True, "dims": 3}))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    assert st["result"]["backend"] == "rust"
+    files = [o for o in st["outputs"] if o["kind"] == "xy"]
+    assert len(files) >= 1
+    for f in files:
+        assert f["shape"][1] == 3, f"Expected shape[1]==3, got {f['shape']}"
+    xy = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3) for f in files])
+    # Anchors must be preserved exactly.
+    np.testing.assert_allclose(xy[job.anchor_pos], axy, atol=1e-5)
+    # Rust and numpy must agree (within float tolerance).
+    jid2, st2, _, _ = prepared(ns, "pandas", tmp_path, maxAnchors=400)
+    axy2_path = tmp_path / "axy3d_np.f32"
+    axy.astype("<f4").tofile(axy2_path)
+    pak.project(jid2, str(axy2_path), json.dumps({"k": 10, "chunkRows": 1000, "native": False, "dims": 3}))
+    st2 = wait(jid2)
+    assert st2["stage"] == "done", st2
+    files2 = [o for o in st2["outputs"] if o["kind"] == "xy"]
+    xy2 = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3) for f in files2])
+    np.testing.assert_allclose(xy, xy2, atol=0.01, err_msg="Rust and numpy 3D placement differ")
+
+
+def test_project_from_cache_3d_rust(ns, tmp_path):
+    """T2: cached re-placement with 3D output uses Rust place_from_neighbors (out_dims=3)."""
+    if pak._native_core() is None:
+        pytest.skip(f"native core not available: {pak._NATIVE_INFO.get('reason')}")
+    jid, st, _, labels = prepared(ns, "pandas", tmp_path, maxAnchors=400)
+    job = pak._JOBS[jid]
+    anchor_labels = labels[job.kept_idx[job.anchor_pos]]
+    centers_3d = np.array([[0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]], dtype=np.float32)
+    axy = centers_3d[anchor_labels] + np.random.default_rng(1).normal(0, 1, (400, 3)).astype(np.float32)
+    path = tmp_path / "axy3d_cache.f32"
+    axy.astype("<f4").tofile(path)
+    # First run: fills nbr cache.
+    pak.project(jid, str(path), json.dumps({"k": 10, "native": True, "dims": 3}))
+    st1 = wait(jid)
+    assert st1["stage"] == "done", st1
+    xy1 = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3)
+                           for f in st1["outputs"] if f["kind"] == "xy"])
+    # Second run: hits the neighbour cache (same key).
+    pak.project(jid, str(path), json.dumps({"k": 10, "native": True, "dims": 3}))
+    st2 = wait(jid)
+    assert st2["stage"] == "done", st2
+    assert st2["result"].get("cached") is True, f"Expected cached=True: {st2['result']}"
+    xy2 = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3)
+                           for f in st2["outputs"] if f["kind"] == "xy"])
+    np.testing.assert_allclose(xy1, xy2, atol=1e-5, err_msg="Cached and non-cached 3D differ")
+
+
 def test_cancel(ns, tmp_path):
     x = np.random.default_rng(0).normal(size=(400_000, 50))
     ns["df"] = pd.DataFrame(x)

@@ -412,7 +412,7 @@ export class ScatterRenderer {
     const density = mode === 'density' && this.dims === 2; // density not supported in 3D
     const is3D = this.dims === 3;
     // In 3D mode use depth testing so closer points occlude farther ones.
-    const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-or-equal' } as const;
+    const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-equal' } as const;
     const baseParams = is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL);
     const searchActive = this.searchFilters.some((sf) => sf !== null);
     const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = [];

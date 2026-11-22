@@ -7,9 +7,9 @@
   "screenshot": false,
   "steps": [
     {
-      "name": "umap-learn is available in the kernel",
+      "name": "polars-umap is available in the kernel",
       "assert": [
-        "a.describe.deps.umap === true"
+        "a.describe.deps.polars_umap === true"
       ]
     },
     {
@@ -18,9 +18,9 @@
       "timeout": 120000
     },
     {
-      "name": "switch to 3D and run exact umap-learn in kernel",
-      "eval": "a.setDims(3); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'umap-learn'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
-      "until": "a.dims === 3 && a.phase === 'ready' && a.computeMode === 'umap-learn' && a.timings.umap > 0",
+      "name": "switch to 3D and run exact polars-umap in kernel",
+      "eval": "a.setDims(3); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'polars-umap'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.computeMode === 'polars-umap' && a.timings.umap > 0",
       "timeout": 300000,
       "assert": [
         "a.dims === 3",
@@ -32,11 +32,37 @@
       "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, anchorXYLen: a.anchorXY.length, umap: a.timings.umap }"
     },
     {
+      "name": "wait for hit index to be built after camera settles",
+      "until": "a.hit !== null && a._3dScreenXY !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "points are drawn after kernel 3D projection",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k]+d[k+1]+d[k+2] > 60) n++; window.__px3dk = n",
+      "until": "window.__px3dk !== undefined",
+      "assert": "window.__px3dk > 500",
+      "report": "{ drawnPixels: window.__px3dk }",
+      "screenshot": "3d-kernel-polars.png"
+    },
+    {
       "name": "3D toolbar is shown after kernel projection",
       "assert": [
         "!!document.querySelector('button[aria-label=\"Auto-rotate\"]')",
         "!!document.querySelector('button[aria-label=\"Top view\"]')"
       ]
+    },
+    {
+      "name": "umap-learn also produces 3D output from kernel",
+      "eval": "const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'umap-learn'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.computeMode === 'umap-learn' && a.timings.umap > 0",
+      "timeout": 300000,
+      "assert": [
+        "a.dims === 3",
+        "a.anchorXY.length === a.prepared.nAnchors * 3",
+        "a.anchorXY.every(Number.isFinite)"
+      ],
+      "report": "{ dims: a.dims, anchorXYLen: a.anchorXY.length, umap: a.timings.umap }",
+      "screenshot": "3d-kernel-umap-learn.png"
     },
     {
       "name": "switching back to 2D from kernel 3D works",

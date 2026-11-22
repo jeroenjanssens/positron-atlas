@@ -1363,8 +1363,8 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     if (job.nbr_idx is not None and job.nbr_sqd is not None and job.nbr_key == cache_key and job.nbr_non_anchor_pos is not None):
         return _project_from_cache(job, anchor_xy, k, cosine, core, waited_for_nbr)
 
-    # T2: Rust core handles 2D only; fall through to numpy for 3D output.
-    if core is not None and ndim == 2:
+    # T2: Rust core now handles both 2D and 3D output via out_dims parameter.
+    if core is not None:
         return _project_native(job, core, anchors, anchor_xy, k, cosine, seed)
     if cosine:  # numpy path
         anchors = anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12)
@@ -1457,7 +1457,7 @@ def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.nda
         x = np.ascontiguousarray(x, dtype=np.float32)
     job.set("indexing", 0.0, f"Indexing {len(anchors):,} anchors")
     index = core.Index(anchors, seed=seed, cosine=cosine)
-    # T2: detect output dims from anchor_xy; Rust core supports 2D only (falls back to numpy for 3D).
+    # T2: detect output dims from anchor_xy (2 or 3); Rust core now supports both.
     ndim = int(anchor_xy.size // max(len(job.anchor_pos), 1)) if job.anchor_pos is not None and len(anchor_xy) > 0 else 2
     if ndim not in (2, 3):
         ndim = 2
