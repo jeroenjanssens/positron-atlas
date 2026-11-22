@@ -356,13 +356,16 @@ Details are in the research notes of 2026-11-22.
   - **Layer list:** visibility, opacity, blending (normal, additive) and order for every layer, including the base and the annotation and shape layers. Layers can be removed.
 - **Why:** "Where do my new compounds land in our chemical space?" is the core pharma question. Mapping new rows without recomputing the layout makes it fast and stable.
 - **To-do:**
-  - [ ] Kernel: `prepare_overlay(job, name)` applies the stored transforms (mean/std, PCA components) to another frame's matching columns, with a clear error when columns are missing; `project_overlay` places those rows with the existing anchor index; outputs per layer.
-  - [ ] Protocol and host: layer ids on messages (`xyChunk`, `colors`, `rows` …), a handler in both hosts.
+  - [x] Kernel: `prepare_overlay(job, name)` applies the stored transforms (mean/std, PCA components) to another frame's matching columns, with a clear error when columns are missing; `project_overlay` places those rows with the existing anchor index; outputs per layer. *(B3, 2026-11-22: `python/positron_atlas_kernel.py` — `_OverlayState`, `prepare_overlay`, `project_overlay`, `remove_overlay`; `_Job` stores `feature_names`, `scale_mean/inv`, `pca_mean/comps`)*
+  - [x] Protocol and host: layer ids on messages (`xyChunk`), `overlayXy` KernelOutput kind; `prepareOverlay`/`projectOverlay`/`removeOverlay` ToHost; `overlayPrepared`/`overlayRemoved` ToWebview; handlers in both hosts. *(B3, 2026-11-22: `src/shared/protocol.ts`, `src/extension/atlasPanel.ts`, `test/harness/host.js`)*
   - [x] Renderer: `Layer` model (A2): a list of point layers with their own attributes, blending and order; picking returns the layer and row. *(A2, 2026-11-22: `src/webview/atlas/layers.ts`; the base map and six built-in overlays. Picking by layer comes with the overlay rows in B3.)*
   - [x] UI: a layer list section (codicons `eye`, `eye-closed`; an opacity slider; drag to reorder), built with the shared controls.
+  - [x] UI: "Add DataFrame…" button in the layer list; × button to remove point-overlay layers. *(B3, 2026-11-22: `src/webview/components/LayerList.svelte`)*
+  - [x] Overlay PointSets rendered after the base PointSets; fixed RGBA palette per overlay layer. *(B3, 2026-11-22: `src/webview/atlas/overlay.ts`, `src/webview/atlas/render.ts`)*
   - [ ] Hover cards show the layer name; legend per layer; search and filters can target a layer.
   - [ ] Export: PNG (all visible layers); HTML viewer (layers as separate point sets); "New DataFrame from selection" includes the layer.
-  - [ ] Tests: Python (transforms identical to base; placement of an overlay that equals base rows lands on the same positions); harness (overlay layer drawn, hidden, reordered: pixel assertions).
+  - [x] Tests: Python (transforms identical to base; placement of an overlay that equals base rows lands on the same positions; missing columns, pre-prepare errors). *(B3, 2026-11-22: `python/tests/test_overlay.py`)*
+  - [ ] Tests: harness (overlay layer drawn, hidden, reordered: pixel assertions).
 
 ---
 
