@@ -56,6 +56,12 @@
         "title": "Open DataFrame…",
         "category": "Atlas",
         "enablement": "isPositron"
+      },
+      {
+        "command": "positronAtlas.openExample",
+        "title": "Open example…",
+        "category": "Atlas",
+        "enablement": "isPositron"
       }
     ],
     "menus": {

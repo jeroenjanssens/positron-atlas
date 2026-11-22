@@ -3,6 +3,7 @@
 !dist/webview/**
 !dist/viewer/**
 !python/positron_atlas_kernel.py
+!python/positron_atlas_examples.py
 !package.json
 !README.md
 !CHANGELOG.md

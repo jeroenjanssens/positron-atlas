@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getPositron, type PositronApi } from './positron';
 import { AtlasPanel, VIEW_TYPE, type AtlasContext, type OpenTarget } from './atlasPanel';
-import { KernelBridge } from './kernelBridge';
+import { KernelBridge, pyStr } from './kernelBridge';
 import type { PanelState } from '../shared/protocol';
 import { isPlainName, parseDataExplorerTabLabel } from './tabLabel';
 
@@ -45,6 +45,17 @@ export function activate(context: vscode.ExtensionContext): void {
         if (target) {
           openAtlas(ctx(p), target);
         }
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Atlas: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }),
+    vscode.commands.registerCommand('positronAtlas.openExample', async () => {
+      const p = requirePositron();
+      if (!p) {
+        return;
+      }
+      try {
+        await runOpenExample(p, ctx(p), context);
       } catch (e) {
         void vscode.window.showErrorMessage(`Atlas: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -198,6 +209,88 @@ async function pickDataFrame(p: PositronApi, ctx: AtlasContext, preset?: string)
     variable = await vscode.window.showInputBox({ prompt: 'Python expression that evaluates to a DataFrame', value: wordAtCursor });
   }
   return variable ? { variable, sessionId: fg.sessionId, languageId: 'python' } : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// "Atlas: Open example" command helpers
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// "Atlas: Open example" command helpers
+// ---------------------------------------------------------------------------
+
+/** Metadata for one example dataset shown in the quick pick. */
+interface ExampleEntry {
+  id: string;
+  label: string;
+  description: string;
+}
+
+/**
+ * Example datasets available via "Atlas: Open example".
+ * Keep in sync with the loaders in python/positron_atlas_examples.py.
+ */
+const EXAMPLES: ExampleEntry[] = [
+  { id: 'mnist',   label: 'MNIST — handwritten digits',  description: '70,000 rows × 784 pixels  |  ~11 MB download' },
+  { id: 'fashion', label: 'Fashion MNIST — clothing images', description: '70,000 rows × 784 pixels  |  ~11 MB download' },
+  { id: 'covtype', label: 'Forest Cover Type',            description: '581,012 rows × 10 features  |  ~11 MB download' },
+];
+
+/**
+ * Build the Python code that loads one example into the user's namespace.
+ * Loads positron_atlas_examples.py by path (same approach as the kernel helper),
+ * calls load_example(id) and assigns the result to a variable named after the id.
+ * Cleanup names (_u, _s, _m) are prefixed to avoid colliding with user variables.
+ */
+function buildExampleCode(modulePath: string, exampleId: string): string {
+  const lines = [
+    'import importlib.util as _u',
+    `_s = _u.spec_from_file_location("_positron_atlas_examples", ${pyStr(modulePath)})`,
+    '_m = _u.module_from_spec(_s)',
+    '_s.loader.exec_module(_m)',
+    `${exampleId} = _m.load_example(${pyStr(exampleId)})`,
+    'del _u, _s, _m',
+  ];
+  return lines.join('\n');
+}
+
+async function runOpenExample(
+  p: PositronApi,
+  ctx: AtlasContext,
+  extensionCtx: vscode.ExtensionContext,
+): Promise<void> {
+  const examplesPath = vscode.Uri.joinPath(extensionCtx.extensionUri, 'python', 'positron_atlas_examples.py').fsPath;
+
+  const items = EXAMPLES.map((ex) => ({ label: ex.label, description: ex.description, _id: ex.id }));
+  const pick = await vscode.window.showQuickPick(items, {
+    title: 'Atlas: Open example',
+    placeHolder: 'Select an example dataset to download and open',
+  });
+  if (!pick) {
+    return;
+  }
+
+  const exampleId = pick._id;
+  const fg = await foregroundPython(p);
+  if (!fg) {
+    throw new Error('Start a Python console first.');
+  }
+
+  const code = buildExampleCode(examplesPath, exampleId);
+
+  // Run with a progress notification.  Download/build output goes to the Python console.
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Atlas: loading ${pick.label}…`,
+      cancellable: false,
+    },
+    async () => {
+      await p.runtime.executeCode('python', code, false, false, undefined, undefined, undefined, fg.sessionId);
+    },
+  );
+
+  openAtlas(ctx, { variable: exampleId, sessionId: fg.sessionId, languageId: 'python' });
 }
 
 async function sweepJobs(root: vscode.Uri): Promise<void> {
