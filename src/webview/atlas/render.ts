@@ -11,6 +11,7 @@ import { gatherU16 } from './utils';
 import { runSearch, searchColumn } from './search';
 import { buildRadii, buildHistFilterValues } from './colors';
 import { getLayer } from './layers';
+import { fullExtent3D, type Extent3D } from '../render/boxes';
 
 export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>): void {
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
@@ -133,6 +134,25 @@ export function render(atlas: Atlas): void {
   // is needed); in those states the existing screen positions remain valid and
   // on3DViewChange handles the camera-movement case.
   if (nd === 3 && (atlas.projection === 'running' || atlas.projection === 'stale')) atlas._3dScreenXY = null;
+
+  // B2: update the 3D data bounding box / floor grid / gizmo.
+  if (nd === 3) {
+    const posXyz = showingAll(atlas) && atlas.allXY ? atlas.allXY : atlas.anchorXY;
+    const nPts = showingAll(atlas) && atlas.allXY ? atlas.placedRows : nA;
+    let extent3d: Extent3D | null = null;
+    if (atlas.view.show3DDataBox ?? true) {
+      extent3d = fullExtent3D(posXyz, nPts);
+    }
+    atlas.renderer.setDataBox(
+      extent3d,
+      (atlas.view.show3DFloorGrid ?? false) && extent3d !== null,
+      (atlas.view.show3DGizmo ?? false) && extent3d !== null,
+    );
+  } else {
+    // Clear 3D overlays when switching to 2D.
+    atlas.renderer.setDataBox(null, false, false);
+  }
+
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     if (nd === 3) {

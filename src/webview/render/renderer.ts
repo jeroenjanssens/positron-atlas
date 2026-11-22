@@ -1,5 +1,5 @@
 import { Deck, OrbitView, type OrbitViewState } from '@deck.gl/core';
-import { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 import { buildLeaderLinesLayer } from '../atlas/leaderLines';
 import { compositeOverlay } from './composite';
@@ -7,6 +7,17 @@ import { ensureFont } from '../fonts';
 import type { AnnotationData, NavigationSettings, TitleOptions } from '../../shared/protocol';
 import type { AroundLabel } from '../labels/around';
 import { NavController } from './controller';
+import {
+  buildBoxLayers2D,
+  buildBoxLayers3D,
+  buildBoxLabelLayer,
+  buildDataBoxLayer,
+  buildFloorGridLayer,
+  buildGizmoLayer,
+  type Box2D,
+  type Box3D,
+  type Extent3D,
+} from './boxes';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
 export interface OverlayState {
@@ -163,8 +174,10 @@ export class ScatterRenderer {
    * original hard-coded order (base → outlines → labels).
    */
   private overlayDescs: OverlayDescriptor[] = [
+    { id: 'data-box', visible: true, opacity: 1 },
     { id: 'base', visible: true, opacity: 1 },
     { id: 'outlines', visible: true, opacity: 1 },
+    { id: 'boxes', visible: true, opacity: 1 },
     { id: 'labels', visible: true, opacity: 1 },
   ];
   /** B5: current annotations for the leader-lines deck.gl layer. */
@@ -177,6 +190,19 @@ export class ScatterRenderer {
   private pinnedIdx = -1;
   /** Shared all-ones filter values (no category hidden), grown as needed. */
   private ones = new Float32Array(0);
+
+  // ---- B2 box overlay state ----
+  /** Current group boxes in 2D or 3D (B2). Null = none. */
+  private boxes2D: Box2D[] | null = null;
+  private boxes3D: Box3D[] | null = null;
+  /** Whether the boxes are for 3D mode. */
+  private boxesIs3D = false;
+  /** 3D data bounding-box extent (B2). Null = hidden. */
+  private dataBoxExtent: Extent3D | null = null;
+  /** Show floor grid behind the data box (B2). */
+  private dataBoxShowGrid = false;
+  /** Show orientation gizmo (B2). */
+  private dataBoxShowGizmo = false;
 
   // ---- A3 label drag state ----
   private draggingLabel: MapLabel | null = null;
@@ -508,6 +534,33 @@ export class ScatterRenderer {
     this.render();
   }
 
+  /**
+   * Set group bounding-box overlays (B2).
+   * Pass an empty array to remove boxes.
+   * @param boxes2D  Rectangles for 2D mode.
+   * @param boxes3D  Wireframe cubes for 3D mode.
+   */
+  setBoxes(boxes2D: Box2D[], boxes3D: Box3D[]): void {
+    this.boxes2D = boxes2D.length ? boxes2D : null;
+    this.boxes3D = boxes3D.length ? boxes3D : null;
+    this.render();
+  }
+
+  /**
+   * Set the 3D data-bounding box, floor grid and gizmo (B2, 3D only).
+   * Pass null for extent to hide all three.
+   */
+  setDataBox(
+    extent: Extent3D | null,
+    showGrid: boolean,
+    showGizmo: boolean,
+  ): void {
+    this.dataBoxExtent = extent;
+    this.dataBoxShowGrid = showGrid;
+    this.dataBoxShowGizmo = showGizmo;
+    this.render();
+  }
+
   /** Fit the view to the given bounds unless the user has panned/zoomed (force overrides). */
   /**
    * @param b        World-space bounding box [minX, minY, maxX, maxY].
@@ -595,7 +648,8 @@ export class ScatterRenderer {
     // In 3D mode use depth testing so closer points occlude farther ones.
     const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-equal' } as const;
     const searchActive = this.searchFilters.some((sf) => sf !== null);
-    const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = [];
+    type AnyLayer = ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel> | LineLayer | PathLayer;
+    const layers: AnyLayer[] = [];
 
     // --- build helpers ---
 
@@ -809,6 +863,34 @@ export class ScatterRenderer {
       }
     };
 
+    /** Push deck.gl layers for group boxes (B2). */
+    const pushBoxesLayer = (layerOpacity: number): void => {
+      if (is3D) {
+        if (!this.boxes3D?.length) return;
+        for (const l of buildBoxLayers3D(this.boxes3D, layerOpacity)) layers.push(l);
+        for (const l of buildBoxLabelLayer(this.boxes3D, true, layerOpacity)) layers.push(l as unknown as TextLayer<MapLabel>);
+      } else {
+        if (!this.boxes2D?.length) return;
+        for (const l of buildBoxLayers2D(this.boxes2D, layerOpacity)) layers.push(l);
+        for (const l of buildBoxLabelLayer(this.boxes2D, false, layerOpacity)) layers.push(l as unknown as TextLayer<MapLabel>);
+      }
+    };
+
+    /** Push deck.gl layers for the 3D data box, floor grid and gizmo (B2). */
+    const pushDataBoxLayer = (layerOpacity: number): void => {
+      if (!is3D) return;
+      const dataLayer = buildDataBoxLayer(this.dataBoxExtent, layerOpacity);
+      if (dataLayer) layers.push(dataLayer);
+      if (this.dataBoxShowGrid) {
+        const gridLayer = buildFloorGridLayer(this.dataBoxExtent, 10, layerOpacity);
+        if (gridLayer) layers.push(gridLayer);
+      }
+      if (this.dataBoxShowGizmo) {
+        const gizmoLayer = buildGizmoLayer(this.dataBoxExtent, layerOpacity);
+        if (gizmoLayer) layers.push(gizmoLayer);
+      }
+    };
+
     // --- build the deck.gl layer array in descriptor order ---
     // The overlay descriptors control draw order, visibility and opacity for the named
     // buckets.  Any id not recognised is silently skipped.  The hover/pin ring is always
@@ -825,6 +907,10 @@ export class ScatterRenderer {
         // B5: leader lines as deck.gl LineLayer so they orbit correctly in 3D.
         const lineWidth = 1.5;
         layers.push(buildLeaderLinesLayer(this.annotations, is3D, desc.opacity, lineWidth) as any);
+      } else if (desc.id === 'boxes') {
+        pushBoxesLayer(desc.opacity);
+      } else if (desc.id === 'data-box') {
+        pushDataBoxLayer(desc.opacity);
       }
       // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
