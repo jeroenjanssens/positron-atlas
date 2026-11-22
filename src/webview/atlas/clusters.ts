@@ -10,13 +10,17 @@ import { gatherU16, dominantNames } from './utils';
 import { updateLabels } from './labels';
 import { recolorByClusters } from './colors';
 import { MAX_LABELS } from './types';
+import { runKMeans3D, CLUSTERS_3D_K } from './clusters3d';
 
 /** Re-cluster the current layout (when it has settled; labels follow the points meanwhile). */
 export function refreshClusters(atlas: Atlas): void {
-  // T5: auto clusters not supported in 3D (density grid is 2D only).
-  if (atlas.dims === 3) return;
   if (atlas.labels.clusters && (atlas.phase === 'ready' || atlas.paused)) {
-    void runClustering(atlas);
+    if (atlas.dims === 3) {
+      // B2/item16: 3D automatic clusters via k-means.
+      void runClustering3D(atlas);
+    } else {
+      void runClustering(atlas);
+    }
   }
 }
 
@@ -127,6 +131,83 @@ export async function runClustering(atlas: Atlas): Promise<void> {
     atlas.clusterFineNames = [];
   }
   // If colour-by-cluster is active, refresh the colours with the new cluster codes (A6).
+  if (atlas.colorByCluster) {
+    recolorByClusters(atlas);
+  }
+}
+
+/**
+ * Run k-means clustering on the 3D layout (B2 / item 16).
+ * Uses k values from CLUSTERS_3D_K based on the current detail level.
+ * Produces the same `atlas.cluster` structure as 2D clustering (outlines=[]).
+ */
+export async function runClustering3D(atlas: Atlas): Promise<void> {
+  if (!atlas.labels.clusters || !atlas.prepared || !atlas.anchorXY || atlas.dims !== 3) return;
+  const seq = ++atlas.clusterSeq;
+  const prepared = atlas.prepared;
+  const anchorPos = atlas.anchorPos;
+
+  // Use all placed rows (allXY) or just anchors.
+  const onAll = !!prepared.needsProjection && atlas.projection === 'done' && !!atlas.allXY;
+  const xyz = onAll ? atlas.allXY! : atlas.anchorXY;
+  const n = onAll ? atlas.nKept : prepared.nAnchors;
+
+  if (n < 2) return;
+
+  atlas.clustering = true;
+  atlas.clusterRunning = seq;
+
+  const detail = Math.min(5, Math.max(1, Math.round(atlas.labels.detail)));
+  const k = CLUSTERS_3D_K[detail] ?? 16;
+
+  // Run k-means asynchronously in a microtask to avoid blocking the render loop.
+  let result;
+  try {
+    // Yield to let any pending renders complete before the CPU-intensive k-means.
+    await new Promise<void>((r) => setTimeout(r, 0));
+    if (seq !== atlas.clusterSeq) {
+      if (atlas.clusterRunning === seq) atlas.clustering = false;
+      return;
+    }
+    result = runKMeans3D(xyz, n, k);
+  } catch (e) {
+    if (atlas.clusterRunning === seq) atlas.clustering = false;
+    if (seq === atlas.clusterSeq) {
+      atlas.showError(e instanceof Error ? e.message : String(e));
+    }
+    return;
+  }
+
+  if (seq !== atlas.clusterSeq || prepared !== atlas.prepared || !atlas.labels.clusters) {
+    if (atlas.clusterRunning === seq) atlas.clustering = false;
+    return;
+  }
+
+  // Build full codes array (anchors → all rows if needsProjection).
+  let codes: Uint16Array;
+  if (onAll || !prepared.needsProjection) {
+    codes = result.codes;
+  } else {
+    codes = new Uint16Array(atlas.nKept).fill(result.k);
+    if (anchorPos) {
+      for (let i = 0; i < anchorPos.length; i++) codes[anchorPos[i]] = result.codes[i];
+    }
+  }
+
+  atlas.cluster = {
+    codes,
+    codesAnchors: (prepared.needsProjection && anchorPos) ? gatherU16(codes, anchorPos) : codes,
+    k: result.k,
+    counts: result.counts,
+    outlines: [], // no hull outlines in 3D; boxes are used instead
+  };
+  atlas.clusterCount = result.k;
+  atlas.clustering = false;
+  atlas.nameClusters();
+  updateLabels(atlas);
+  // No multi-level support for 3D clusters yet.
+  atlas.clusterFine = null;
+  atlas.clusterFineNames = [];
   if (atlas.colorByCluster) {
     recolorByClusters(atlas);
   }

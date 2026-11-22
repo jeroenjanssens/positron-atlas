@@ -17,6 +17,7 @@ import { MAX_LABELS, LABEL_INTERVAL_MS } from './types';
 import { ensureFont } from '../fonts';
 import type { MapLabel } from '../render/renderer';
 import { buildAroundLabelGroups } from '../labels/around';
+import { groupExtents2D, groupExtents3D, type Box2D, type Box3D } from '../render/boxes';
 
 // ---------------------------------------------------------------------------
 // Weight range helpers (A2)
@@ -163,7 +164,7 @@ export function setLabelColumn(atlas: Atlas, c: number | null): void {
 const UNDOABLE_LABEL_OPTION_KEYS = new Set<keyof LabelOptions>([
   'minSize', 'maxSize', 'fontFamily', 'fontWeight', 'minFontWeight', 'maxFontWeight',
   'haloWidth', 'haloColor', 'lineSpacing', 'wrapWidth', 'textCase', 'colorText',
-  'outlines', 'labelStyle', 'leaderStyle', 'leaderColor', 'leaderWidth', 'highlightGroups',
+  'outlines', 'outlineStyle', 'labelStyle', 'leaderStyle', 'leaderColor', 'leaderWidth', 'highlightGroups',
   'detail', 'multiLevel',
 ]);
 
@@ -320,6 +321,109 @@ async function ensureLabelFont(atlas: Atlas): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Box overlay helpers (B2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Decide whether to show hull outlines or bounding-box overlays and apply them.
+ * - In 3D: always boxes (hulls are 2D-only).
+ * - 2D + outlineStyle='box': boxes.
+ * - 2D + outlineStyle='hull' (default): hull polygons (cluster mode only).
+ */
+function applyOutlinesOrBoxes(
+  atlas: Atlas,
+  opts: LabelOptions,
+  groups: { all: Uint16Array; anchors: Uint16Array; names: string[] },
+  plain: [number, number, number, number],
+): void {
+  if (!atlas.renderer) return;
+  const showBoundaries = opts.outlines && atlas.phase !== 'embedding';
+  const useBox = atlas.dims === 3 || (opts.outlineStyle ?? 'hull') === 'box';
+
+  if (!showBoundaries) {
+    atlas.renderer.setOutlines([]);
+    atlas.renderer.setBoxes([], []);
+    return;
+  }
+
+  if (useBox) {
+    atlas.renderer.setOutlines([]);
+    applyGroupBoxes(atlas, groups, plain, true);
+    return;
+  }
+
+  // Hull outlines (cluster mode 2D only).
+  atlas.renderer.setBoxes([], []);
+  if (opts.clusters && atlas.cluster) {
+    const coloured = clusterOutlines(atlas);
+    if (coloured) {
+      atlas.renderer.setOutlines(coloured.rings, undefined, coloured.colors);
+    } else {
+      atlas.renderer.setOutlines(atlas.cluster.outlines.flat(), [plain[0], plain[1], plain[2]] as [number, number, number]);
+    }
+  } else {
+    atlas.renderer.setOutlines([]);
+  }
+}
+
+/**
+ * Compute and push group bounding-box overlays when outlineStyle === 'box' or dims === 3.
+ * Returns the per-group RGBA colours (same order as names) for use by the caller.
+ */
+function applyGroupBoxes(
+  atlas: Atlas,
+  groups: { all: Uint16Array; anchors: Uint16Array; names: string[] },
+  plain: [number, number, number, number],
+  showBoxes: boolean,
+): void {
+  if (!atlas.renderer || !atlas.anchorXY || !atlas.prepared) return;
+
+  if (!showBoxes) {
+    atlas.renderer.setBoxes([], []);
+    return;
+  }
+
+  const k = groups.names.length;
+  const is3D = atlas.dims === 3;
+  const nd = is3D ? 3 : 2;
+
+  // Choose the best available position data.
+  const xy = (atlas.projection === 'done' || atlas.prepared.coordsMode) && atlas.allXY
+    ? atlas.allXY
+    : atlas.anchorXY;
+  const codes = (atlas.projection === 'done' || atlas.prepared.coordsMode) && atlas.allXY
+    ? groups.all
+    : groups.anchors;
+
+  // Per-group RGBA colour.
+  const groupColors: [number, number, number, number][] = groups.names.map((_, i) => {
+    if (atlas.clusterPalette && atlas.labels.clusters) {
+      const hex = atlas.clusterPalette[i % atlas.clusterPalette.length] ?? '#888888';
+      const [r, g, b] = hexToRgb(hex);
+      return [r, g, b, 180];
+    }
+    if (atlas.colorMeta?.kind === 'categorical' && atlas.colorColumn !== null && atlas.labels.column === atlas.colorColumn) {
+      const [r, g, b] = hexToRgb(atlas.categoryColor(i));
+      return [r, g, b, 180];
+    }
+    return [plain[0], plain[1], plain[2], 150];
+  });
+
+  if (is3D) {
+    const extents = groupExtents3D(xy, codes, k);
+    const boxes: Box3D[] = extents
+      .flatMap((ext, i) => ext ? [{ extent: ext, color: groupColors[i] as [number, number, number, number], label: groups.names[i] }] : []);
+    atlas.renderer.setBoxes([], boxes);
+  } else {
+    const stride: 2 | 3 = nd === 3 ? 3 : 2;
+    const extents = groupExtents2D(xy, codes, k, stride as 2 | 3);
+    const boxes: Box2D[] = extents
+      .flatMap((ext, i) => ext ? [{ extent: ext, color: groupColors[i] as [number, number, number, number], label: groups.names[i] }] : []);
+    atlas.renderer.setBoxes(boxes, []);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // updateLabels: main placement + render call
 // ---------------------------------------------------------------------------
 
@@ -337,6 +441,7 @@ export function updateLabels(atlas: Atlas): void {
       atlas.labelCount = 0;
       atlas.renderer.setLabels([]);
       atlas.renderer.setOutlines([]);
+      atlas.renderer.setBoxes([], []);
     }
     return;
   }
@@ -501,14 +606,8 @@ export function updateLabels(atlas: Atlas): void {
     // labels lands outside the visible cloud (respects userMoved via force=false).
     if (!wasAround) fitForLabelStyle(atlas, true);
 
-    // Show outlines as normal.
-    const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
-    const coloured = showOutlines ? clusterOutlines(atlas) : null;
-    if (coloured) {
-      atlas.renderer.setOutlines(coloured.rings, undefined, coloured.colors);
-    } else {
-      atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
-    }
+    // Show outlines / boxes as normal.
+    applyOutlinesOrBoxes(atlas, opts, groups, plain);
     return;
   }
 
@@ -608,13 +707,7 @@ export function updateLabels(atlas: Atlas): void {
   // set labels immediately with whatever is loaded, then re-render after the font loads.
   atlas.renderer.setLabels(out, labelStyle);
 
-  const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
-  const coloured = showOutlines ? clusterOutlines(atlas) : null;
-  if (coloured) {
-    atlas.renderer.setOutlines(coloured.rings, undefined, coloured.colors);
-  } else {
-    atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
-  }
+  applyOutlinesOrBoxes(atlas, opts, groups, plain);
 
   // Async font load: re-render once the font is ready (A2).
   void ensureLabelFont(atlas).then(() => {
