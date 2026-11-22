@@ -1,7 +1,6 @@
 **
 !dist/extension.js
 !dist/webview/**
-!dist/viewer/**
 !python/positron_atlas_kernel.py
 !package.json
 !README.md
