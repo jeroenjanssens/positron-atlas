@@ -51,8 +51,9 @@ export function buildVectors(
   for (let ii = 0; ii < idx.length; ii++) {
     const i = idx[ii];
     const base = i * nd;
-    const src: [number, number] = [xyCurr[base], xyCurr[base + 1]];
-    const tgt: [number, number] = [xyNext[base], xyNext[base + 1]];
+    // 3D vectors keep their z (they were drawn flat at z = 0).
+    const src = (nd === 3 ? [xyCurr[base], xyCurr[base + 1], xyCurr[base + 2]] : [xyCurr[base], xyCurr[base + 1]]) as VectorPair['source'];
+    const tgt = (nd === 3 ? [xyNext[base], xyNext[base + 1], xyNext[base + 2]] : [xyNext[base], xyNext[base + 1]]) as VectorPair['target'];
     const ci = i * 4;
     const color: [number, number, number, number] = colors
       ? [colors[ci], colors[ci + 1], colors[ci + 2], colors[ci + 3] ?? 255]
@@ -67,8 +68,8 @@ export function createVectorLayer(pairs: VectorPair[], opacity: number): LineLay
   return new LineLayer({
     id: 'vectors-lines',
     data: pairs,
-    getSourcePosition: (d: VectorPair) => d.source as [number, number],
-    getTargetPosition: (d: VectorPair) => d.target as [number, number],
+    getSourcePosition: (d: VectorPair) => d.source as any,
+    getTargetPosition: (d: VectorPair) => d.target as any,
     getColor: (d: VectorPair) => d.color,
     getWidth: 2,
     widthUnits: 'pixels',

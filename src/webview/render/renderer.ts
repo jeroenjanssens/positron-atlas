@@ -227,7 +227,8 @@ export class ScatterRenderer {
   private readonly collision = new CollisionFilterExtension();
   private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
   /** Extra deck.gl layers (C2: tracks, vectors). */
-  private extraLayers: unknown[] = [];
+  /** Deck layers owned by other modules (tracks, vectors), built per render with the registry's opacity. */
+  private overlayFactories = new Map<string, (opacity: number) => unknown>();
   /** Prepared-row index of the hovered point (for the ring), or -1. */
   private hoveredIdx = -1;
   /** Prepared-row index of the pinned point (for the ring), or -1. */
@@ -520,10 +521,17 @@ export class ScatterRenderer {
   }
 
   /** Set extra deck.gl layers (C2: tracks overlay, vectors overlay). */
-  setExtraLayers(layers: unknown[]): void {
-    this.extraLayers = layers;
+  /**
+   * Register (or with null remove) the deck layer for a registry id such as 'tracks'.
+   * The renderer calls the factory in the registry's draw order, with its opacity, and
+   * skips it while the layer is hidden.
+   */
+  setOverlayLayer(id: string, factory: ((opacity: number) => unknown) | null): void {
+    if (factory) this.overlayFactories.set(id, factory);
+    else this.overlayFactories.delete(id);
     this.render();
   }
+
 
   /** Return the deck.gl canvas element (for MediaRecorder). */
   getCanvas(): HTMLCanvasElement | null {
@@ -1196,12 +1204,12 @@ export class ScatterRenderer {
         pushBrushOverlayLayer(desc.opacity);
       } else if (desc.id === 'shapes') {
         pushShapesLayers(desc.opacity);
+      } else {
+        const factory = this.overlayFactories.get(desc.id);
+        if (factory) layers.push(factory(desc.opacity) as any);
       }
       // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
-
-    // --- C2 extra layers (tracks, vectors) — before the hover ring ---
-    for (const el of this.extraLayers) layers.push(el as any);
 
     // --- hover / pin ring (system layer, always last) ---
     const ringIndices: { idx: number; pinned: boolean }[] = [];

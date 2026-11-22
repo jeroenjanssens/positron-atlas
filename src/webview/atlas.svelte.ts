@@ -28,10 +28,23 @@ import type {
   JobStatus,
   VideoExportOptions,
 } from '../shared/protocol';
-import { VideoRecorder, isVideoSupported } from './render/videoExport';
-import { computeTimeFilter, stepWindow, DEFAULT_ANIMATE_SPEED, DEFAULT_WINDOW_SIZE } from './atlas/animate';
-import { buildTrackPaths, thinIndices, createPathLayer } from './atlas/tracks';
-import { buildVectors, thinVectors, createVectorLayer } from './atlas/vectors';
+import { DEFAULT_ANIMATE_SPEED, DEFAULT_WINDOW_SIZE } from './atlas/animate';
+import {
+  requestTimeValues as requestTimeValuesImpl,
+  onTimeValues as onTimeValuesImpl,
+  setAnimateWindow as setAnimateWindowImpl,
+  togglePlay as togglePlayImpl,
+  startAnimation as startAnimationImpl,
+  stopAnimation as stopAnimationImpl,
+  exportVideo as exportVideoImpl,
+} from './atlas/animateOps';
+import {
+  requestTracks as requestTracksImpl,
+  onTracks as onTracksImpl,
+  setTracksOptions as setTracksOptionsImpl,
+  saveLayoutForComparison as saveLayoutForComparisonImpl,
+  setShowVectors as setShowVectorsImpl,
+} from './atlas/tracksOps';
 import { vscode, isVsCodeWebview, float32ToBytes } from './vscode';
 import { initFonts } from './fonts';
 import { ScatterRenderer } from './render/renderer';
@@ -352,9 +365,6 @@ export class Atlas {
   trackData: TracksResult | null = $state.raw(null);
   showVectors = $state(false);
   savedXY: Float32Array | null = $state.raw(null);
-  private animateRafId: number | null = null;
-  private animateLastTs: number | null = null;
-  private _onVisibilityChange = (): void => { if (document.hidden) this.stopAnimation(); };
   prepared = $state.raw<PrepareResult | null>(null);
   kernelStatus = $state.raw<{ task: string; stage: string; progress: number; message: string } | null>(null);
   umapProgress = $state.raw<{ stage: string; progress: number; epoch: number; total: number } | null>(null);
@@ -880,38 +890,13 @@ export class Atlas {
       case 'histValuesOverlay':
         await onHistValuesOverlayImpl(this, msg);
         break;
-      // --- C2: animate ---
-      case 'timeValues': {
-        const m = msg as Extract<ToWebview, { type: 'timeValues' }>;
-        this.animateMin = m.min;
-        this.animateMax = m.max;
-        fetch(m.file.uri)
-          .then((r) => r.arrayBuffer())
-          .then((buf) => {
-            this.animateValues = new Float32Array(buf);
-            this.animateFilter = computeTimeFilter(this.animateValues, this.animate.windowPos, this.animate.windowSize);
-            this.post({ type: 'animatingChanged', animating: true });
-            this.render();
-          })
-          .catch((e: unknown) => console.error('[atlas] timeValues fetch error', e));
+      // --- C2: animate, tracks ---
+      case 'timeValues':
+        await onTimeValuesImpl(this, msg);
         break;
-      }
-      // --- C2: tracks ---
-      case 'tracks': {
-        const m = msg as Extract<ToWebview, { type: 'tracks' }>;
-        this.trackData = m.result;
-        Promise.all([
-          fetch(m.result.xyFile.uri).then((r) => r.arrayBuffer()),
-          fetch(m.result.startsFile.uri).then((r) => r.arrayBuffer()),
-          fetch(m.result.lengthsFile.uri).then((r) => r.arrayBuffer()),
-        ]).then(([xyBuf, startsBuf, lengthsBuf]) => {
-          (this as any)._trackXY = new Float32Array(xyBuf);
-          (this as any)._trackStarts = new Uint32Array(startsBuf);
-          (this as any)._trackLengths = new Uint32Array(lengthsBuf);
-          this._updateTracksLayer();
-        }).catch((e: unknown) => console.error('[atlas] tracks fetch error', e));
+      case 'tracks':
+        await onTracksImpl(this, msg);
         break;
-      }
       // --- C2: video saved confirmation ---
       case 'videoSaved':
         this.flash(`Video saved to ${(msg as Extract<ToWebview, { type: 'videoSaved' }>).path}`);
@@ -1067,122 +1052,17 @@ export class Atlas {
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
   post(msg: import('../shared/protocol').ToHost): void { vscode.post(msg); }
 
-  // ---- C2: Animate methods -------------------------------------------------------
-
-  requestTimeValues(column: number): void {
-    this.animate = { ...this.animate, column };
-    this.post({ type: 'timeValues', column });
-  }
-
-  setAnimateWindow(windowPos: number, windowSize: number): void {
-    this.animate = { ...this.animate, windowPos, windowSize };
-    if (this.animateValues !== null) {
-      this.animateFilter = computeTimeFilter(this.animateValues, windowPos, windowSize);
-      this.render();
-    }
-  }
-
-  togglePlay(): void {
-    if (this.animatePlaying) { this.stopAnimation(); } else { this.startAnimation(); }
-  }
-
-  startAnimation(): void {
-    if (this.animateValues === null) return;
-    this.animatePlaying = true;
-    this.animateLastTs = null;
-    const step = (ts: number) => {
-      if (!this.animatePlaying) return;
-      if (this.animateLastTs !== null) {
-        const dt = (ts - this.animateLastTs) / 1000;
-        const nextPos = stepWindow(this.animate.windowPos, this.animate.speed * dt, this.animate.loop);
-        if (nextPos >= 1 - 0.0002 && !this.animate.loop) {
-          this.stopAnimation();
-          return;
-        }
-        this.setAnimateWindow(nextPos, this.animate.windowSize);
-      }
-      this.animateLastTs = ts;
-      this.animateRafId = requestAnimationFrame(step);
-    };
-    this.animateRafId = requestAnimationFrame(step);
-    document.addEventListener('visibilitychange', this._onVisibilityChange);
-  }
-
-  stopAnimation(): void {
-    this.animatePlaying = false;
-    if (this.animateRafId !== null) { cancelAnimationFrame(this.animateRafId); this.animateRafId = null; }
-    document.removeEventListener('visibilitychange', this._onVisibilityChange);
-  }
-
-  /** Record a WebM video clip and send it to the host for saving (C2, item 10). */
-  async startVideoExport(opts: VideoExportOptions): Promise<void> {
-    const canvas = this.renderer?.getCanvas();
-    if (!canvas || !isVideoSupported()) return;
-    const rec = new VideoRecorder();
-    rec.start(canvas, opts.fps);
-    this.videoRecording = true;
-    const dur = (opts.durationSecs ?? 3) * 1000;
-    if (opts.mode === 'time' && this.animateValues !== null) this.startAnimation();
-    else if (opts.mode === 'turntable' && !this.autoRotate) this.toggleAutoRotate();
-    await new Promise<void>((r) => setTimeout(r, dur));
-    if (opts.mode === 'time') this.stopAnimation();
-    else if (opts.mode === 'turntable' && this.autoRotate) this.toggleAutoRotate();
-    const bytes = await rec.stop();
-    this.videoRecording = false;
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    this.post({ type: 'saveVideo', bytes, filename: `atlas-${opts.mode}-${ts}.webm` });
-  }
-
-  // ---- C2: Tracks + Vectors methods ---------------------------------------------
-
-  requestTracks(idColumn: number, timeColumn: number): void {
-    this.tracks = { ...this.tracks, idColumn, timeColumn };
-    const nd = this.dims as 2 | 3;
-    // Include anchorXY so the kernel can use it when job.xy is not set
-    // (browser-side UMAP with needsProjection=false).
-    const anchorXY = this.anchorXY ? float32ToBytes(this.anchorXY) : undefined;
-    this.post({ type: 'tracks', idColumn, timeColumn, nd, anchorXY });
-  }
-
-  setTracksOptions(opts: Partial<TracksOptions>): void {
-    this.tracks = { ...this.tracks, ...opts };
-    this._updateTracksLayer();
-  }
-
-  saveLayoutForComparison(): void {
-    if (this.anchorXY) { this.savedXY = this.anchorXY.slice(); }
-  }
-
-  setShowVectors(show: boolean): void {
-    this.showVectors = show;
-    this._updateVectorsLayer();
-  }
-
-  private _updateTracksLayer(): void {
-    if (!this.trackData || !this.renderer) return;
-    const { idColors, nTracks, nd } = this.trackData;
-    const xy = (this as any)._trackXY as Float32Array | undefined;
-    const starts = (this as any)._trackStarts as Uint32Array | undefined;
-    const lengths = (this as any)._trackLengths as Uint32Array | undefined;
-    if (!xy || !starts || !lengths) return;
-    const idx = thinIndices(nTracks);
-    const paths = buildTrackPaths(xy, starts, lengths, idColors, nd, idx);
-    const layer = createPathLayer(paths, 1.0);
-    this.renderer.setExtraLayers([layer]);
-  }
-
-  private _updateVectorsLayer(): void {
-    if (!this.showVectors || !this.savedXY || !this.anchorXY || !this.renderer) {
-      if (this.renderer && !this.trackData) this.renderer.setExtraLayers([]);
-      return;
-    }
-    const nd = this.dims as 2 | 3;
-    const n = Math.min(this.savedXY.length, this.anchorXY.length) / nd;
-    const idx = thinVectors(n);
-    const pairs = buildVectors(this.savedXY, this.anchorXY, nd, idx, null);
-    const layer = createVectorLayer(pairs, 1.0);
-    this.renderer.setExtraLayers([layer]);
-  }
+  // ---- C2: animate, video, tracks, vectors (atlas/animateOps.ts, atlas/tracksOps.ts) ----
+  requestTimeValues(column: number): void { requestTimeValuesImpl(this, column); }
+  setAnimateWindow(windowPos: number, windowSize: number): void { setAnimateWindowImpl(this, windowPos, windowSize); }
+  togglePlay(): void { togglePlayImpl(this); }
+  startAnimation(): void { startAnimationImpl(this); }
+  stopAnimation(): void { stopAnimationImpl(this); }
+  startVideoExport(opts: VideoExportOptions): Promise<void> { return exportVideoImpl(this, opts); }
+  requestTracks(idColumn: number, timeColumn: number): void { requestTracksImpl(this, idColumn, timeColumn); }
+  setTracksOptions(opts: Partial<TracksOptions>): void { setTracksOptionsImpl(this, opts); }
+  saveLayoutForComparison(): void { saveLayoutForComparisonImpl(this); }
+  setShowVectors(show: boolean): void { setShowVectorsImpl(this, show); }
 
   /** Auto-activate the lasso tool when switching to Design, restore pan when leaving. */
   applyPresetDefaults(preset: string): void {

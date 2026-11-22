@@ -3263,7 +3263,13 @@ def tracks(job_id: str, id_col: int, time_col: int, nd: int = 2, xy_path: str = 
     order = np.lexsort((times_f64, inv.astype(np.int64)))
 
     ids_s = inv[order].astype(np.uint32)
-    times_s = times_f64[order].astype(np.float32)
+    times_s = times_f64[order]
+    # Normalised to 0-1 over all rows (the webview colours by time with it); NaN -> 0.
+    finite = np.isfinite(times_s)
+    if finite.any():
+        t_lo, t_hi = float(times_s[finite].min()), float(times_s[finite].max())
+        times_s = (times_s - t_lo) / (t_hi - t_lo) if t_hi > t_lo else np.zeros_like(times_s)
+    times_s = np.where(np.isfinite(times_s), times_s, 0.0).astype(np.float32)
     unique_ids_int, starts_arr, lengths_arr = np.unique(ids_s, return_index=True, return_counts=True)
     n_tracks = int(len(unique_ids_int))
     n_points = int(n)

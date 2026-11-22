@@ -1,16 +1,25 @@
 {
   "variable": "df",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 600\ntrack_ids = np.repeat(np.arange(30), 20)\ntimes = np.tile(np.arange(20), 30).astype(float)\ndf = pd.DataFrame({'x': rng.normal(track_ids * 0.5, 0.3, n), 'y': rng.normal(0, 1, n), 'track_id': track_ids, 'time': times})\n",
-  "settings": { "pcaEnabled": false },
+  "settings": {
+    "pcaEnabled": false
+  },
   "screenshot": false,
   "steps": [
-    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
     {
       "name": "request tracks",
       "eval": "const idCol = a.describe.columns.find(c => c.name === 'track_id'); const tCol = a.describe.columns.find(c => c.name === 'time'); a.requestTracks(idCol.index, tCol.index)",
       "until": "a.trackData !== null",
       "timeout": 20000,
-      "assert": ["a.trackData !== null", "a.trackData.nTracks > 0"]
+      "assert": [
+        "a.trackData !== null",
+        "a.trackData.nTracks > 0"
+      ]
     },
     {
       "name": "tracks rendered — check for colored pixels",
@@ -19,6 +28,35 @@
       "assert": "window.__trackPixels > 500",
       "report": "{ trackPixels: window.__trackPixels, nTracks: a.trackData.nTracks }",
       "screenshot": "tracks.png"
+    },
+    {
+      "name": "track pixels with the points hidden (baseline)",
+      "eval": "a.updateLayer('base', { visible: false }); a.render(); await new Promise((r) => setTimeout(r, 200)); const url = a.renderer.toDataURL('#000000'); a.updateLayer('base', { visible: true }); a.render(); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0, b = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) { n++; r += d[k]; b += d[k + 2]; } window.__t0 = { n, r, b };",
+      "until": "window.__t0 !== undefined",
+      "assert": "window.__t0.n > 500",
+      "report": "window.__t0"
+    },
+    {
+      "name": "hiding the tracks layer in the layer list removes them",
+      "eval": "a.updateLayer('tracks', { visible: false }); a.updateLayer('base', { visible: false }); a.render(); await new Promise((r) => setTimeout(r, 200)); const url = a.renderer.toDataURL('#000000'); a.updateLayer('base', { visible: true }); a.render(); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0, b = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) { n++; r += d[k]; b += d[k + 2]; } window.__t1 = { n }; a.updateLayer('tracks', { visible: true }); a.render();",
+      "until": "window.__t1 !== undefined",
+      "assert": "window.__t1.n < window.__t0.n * 0.1",
+      "report": "window.__t1"
+    },
+    {
+      "name": "colour by time changes the track colours",
+      "eval": "a.setTracksOptions({ colorBy: 'time' }); a.updateLayer('base', { visible: false }); a.render(); await new Promise((r) => setTimeout(r, 200)); const url = a.renderer.toDataURL('#000000'); a.updateLayer('base', { visible: true }); a.render(); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0, b = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) { n++; r += d[k]; b += d[k + 2]; } window.__t2 = { n, r, b };",
+      "until": "window.__t2 !== undefined",
+      "assert": "Math.abs(window.__t2.r / window.__t2.n - window.__t0.r / window.__t0.n) > 5 || Math.abs(window.__t2.b / window.__t2.n - window.__t0.b / window.__t0.n) > 5",
+      "report": "window.__t2",
+      "screenshot": "tracks-by-time.png"
+    },
+    {
+      "name": "fading tail makes older segments fainter (fewer bright pixels)",
+      "eval": "a.setTracksOptions({ colorBy: 'id', fadingTail: true }); a.updateLayer('base', { visible: false }); a.render(); await new Promise((r) => setTimeout(r, 200)); const url = a.renderer.toDataURL('#000000'); a.updateLayer('base', { visible: true }); a.render(); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0, b = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 60) { n++; r += d[k]; b += d[k + 2]; } window.__t3 = { n };",
+      "until": "window.__t3 !== undefined",
+      "assert": "window.__t3.n < window.__t0.n * 0.95",
+      "report": "window.__t3"
     }
   ]
 }
