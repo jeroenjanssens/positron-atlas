@@ -308,6 +308,9 @@ fn scale_columns_py(py: Python<'_>, mut x: PyReadwriteArray2<'_, f32>, sub: PyRe
 #[pymodule]
 fn _positron_atlas_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
+    // Largest output dimension the placement functions accept (2D and 3D maps). The kernel
+    // helper requires this constant, so a core built before 3D support counts as outdated.
+    m.add("MAX_OUT_DIMS", 3usize)?;
     m.add_class::<Index>()?;
     m.add_function(wrap_pyfunction!(place_from_neighbors_py, m)?)?;
     m.add_function(wrap_pyfunction!(n_cpus_py, m)?)?;

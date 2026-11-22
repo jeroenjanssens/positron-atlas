@@ -42,7 +42,7 @@ _NATIVE_LOCK = threading.Lock()
 
 
 # What the helper calls in the Rust core; a core without all of them is not used.
-_NATIVE_FUNCTIONS = ("Index", "column_moments", "scale_columns", "place_from_neighbors", "n_cpus")
+_NATIVE_FUNCTIONS = ("Index", "column_moments", "scale_columns", "place_from_neighbors", "n_cpus", "MAX_OUT_DIMS")
 _NATIVE_INDEX_METHODS = ("neighbors_u32", "place")
 
 
