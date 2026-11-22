@@ -19,6 +19,8 @@ import {
   type Box3D,
   type Extent3D,
 } from './boxes';
+import type { Shape } from '../atlas/shapes';
+import { shapeToPolygon } from '../atlas/shapes';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
 export interface OverlayState {
@@ -228,6 +230,14 @@ export class ScatterRenderer {
 
   // ---- A8 view change callback ----
   private viewChangeCallback: ((zoom: number) => void) | null = null;
+
+  // ---- Brush overlay (item 7, B4) ---
+  private brushColors: Uint8Array | null = null;
+  private brushPositions: Float32Array | null = null;
+  private brushN = 0;
+
+  // ---- Shapes (item 8, B4) ---
+  private shapes: Shape[] = [];
 
   // ---- Navigation settings (item 1) ---
   /** Custom pointer + wheel handler for preset-specific navigation. */
@@ -513,6 +523,32 @@ export class ScatterRenderer {
   /** B5: update annotation data used for the leader-lines deck.gl layer. */
   setAnnotations(annotations: Map<string, AnnotationData>): void {
     this.annotations = annotations;
+    this.render();
+  }
+
+  /**
+   * Update the brush overlay (item 7, B4).
+   * `rgba` is a Uint8Array of n*4 RGBA values (one per kept row).
+   * Pass null to `rgba` or `clearBrushOverlay()` to remove the overlay.
+   */
+  setBrushOverlay(rgba: Uint8Array | null, n: number, positions: Float32Array, dims: 2 | 3): void {
+    this.brushColors = rgba;
+    this.brushPositions = dims === 2 ? positions.subarray(0, n * 2) : positions.subarray(0, n * 3);
+    this.brushN = n;
+    this.render();
+  }
+
+  /** Remove the brush overlay. */
+  clearBrushOverlay(): void {
+    this.brushColors = null;
+    this.brushPositions = null;
+    this.brushN = 0;
+    this.render();
+  }
+
+  /** Replace the shapes layer (item 8, B4). */
+  setShapes(shapes: Shape[]): void {
+    this.shapes = shapes;
     this.render();
   }
 
@@ -972,6 +1008,120 @@ export class ScatterRenderer {
       }
     };
 
+    /** Push the brush overlay ScatterplotLayer (item 7, B4). */
+    const pushBrushOverlayLayer = (layerOpacity: number): void => {
+      if (!this.brushColors || !this.brushPositions || !this.brushN) return;
+      const n = this.brushN;
+      const positions = this.brushPositions;
+      const colors = this.brushColors;
+      layers.push(
+        new ScatterplotLayer({
+          id: 'brush-overlay',
+          data: { length: n, attributes: {
+            getPosition: { value: positions, size: positions.length / n },
+            getFillColor: { value: colors, size: 4 },
+          } } as any,
+          radiusUnits: 'pixels',
+          billboard: is3D,
+          getRadius: pointSize / 2 + 1,
+          radiusMinPixels: 2,
+          stroked: false,
+          filled: true,
+          antialiasing: false,
+          opacity: layerOpacity,
+          pickable: false,
+          parameters: NORMAL as any,
+          updateTriggers: { getPosition: this.version, getFillColor: this.version },
+        } as any),
+      );
+    };
+
+    /** Push deck.gl layers for shapes (item 8, B4). */
+    const pushShapesLayers = (layerOpacity: number): void => {
+      if (!this.shapes.length) return;
+
+      // Closed shapes: PolygonLayer for fill + stroke.
+      const closedShapes = this.shapes.filter((s) => s.kind === 'rect' || s.kind === 'ellipse' || s.kind === 'polygon' || s.kind === 'freehand');
+      if (closedShapes.length) {
+        (layers as any[]).push(
+          new PolygonLayer<Shape>({
+            id: 'shapes-polygon',
+            data: closedShapes,
+            getPolygon: (s: Shape) => {
+              const poly = shapeToPolygon(s);
+              return poly ? poly.map(([x, y]) => [x, y]) : [[0, 0]];
+            },
+            stroked: true,
+            filled: true,
+            opacity: layerOpacity,
+            getFillColor: (s: Shape) => {
+              const c = s.style.fillColor;
+              return [c[0], c[1], c[2], c[3]] as [number,number,number,number];
+            },
+            getLineColor: (s: Shape) => {
+              const c = s.style.strokeColor;
+              return [c[0], c[1], c[2], c[3]] as [number,number,number,number];
+            },
+            lineWidthUnits: 'pixels',
+            getLineWidth: (s: Shape) => s.style.strokeWidth,
+            pickable: true,
+            parameters: NORMAL as any,
+            updateTriggers: { getPolygon: this.version, getFillColor: this.version, getLineColor: this.version },
+          } as any),
+        );
+      }
+
+      // Open shapes: PathLayer for lines and arrows.
+      type LS = import('../atlas/shapes').LineShape;
+      const lineShapes = this.shapes.filter((s) => s.kind === 'line' || s.kind === 'arrow') as LS[];
+      if (lineShapes.length) {
+        (layers as any[]).push(
+          new PathLayer<LS>({
+            id: 'shapes-path',
+            data: lineShapes,
+            getPath: (s: LS) => s.points,
+            getColor: (s: LS) => {
+              const c = s.style.strokeColor;
+              return [c[0], c[1], c[2], c[3]] as [number,number,number,number];
+            },
+            widthUnits: 'pixels',
+            getWidth: (s: LS) => s.style.strokeWidth,
+            pickable: true,
+            opacity: layerOpacity,
+            parameters: NORMAL as any,
+            updateTriggers: { getPath: this.version, getColor: this.version },
+          } as any),
+        );
+      }
+
+      // Text shapes: TextLayer.
+      type TS = import('../atlas/shapes').TextShape;
+      const textShapes = this.shapes.filter((s) => s.kind === 'text') as TS[];
+      if (textShapes.length) {
+        (layers as any[]).push(
+          new TextLayer<TS>({
+            id: 'shapes-text',
+            data: textShapes,
+            getText: (s: TS) => s.text,
+            getPosition: (s: TS) => [s.x, s.y],
+            getSize: (s: TS) => s.fontSize,
+            getColor: (s: TS) => {
+              const c = s.style.strokeColor;
+              return [c[0], c[1], c[2], c[3]] as [number,number,number,number];
+            },
+            fontFamily: textShapes[0]?.fontFamily ?? 'sans-serif',
+            sizeUnits: 'pixels',
+            getTextAnchor: 'middle',
+            getAlignmentBaseline: 'center',
+            pickable: true,
+            opacity: layerOpacity,
+            parameters: NORMAL as any,
+            updateTriggers: { getText: this.version, getPosition: this.version, getColor: this.version },
+          } as any),
+        );
+      }
+    };
+
     // --- build the deck.gl layer array in descriptor order ---
     // The overlay descriptors control draw order, visibility and opacity for the named
     // buckets.  Any id not recognised is silently skipped.  The hover/pin ring is always
@@ -992,6 +1142,10 @@ export class ScatterRenderer {
         pushBoxesLayer(desc.opacity);
       } else if (desc.id === 'data-box') {
         pushDataBoxLayer(desc.opacity);
+      } else if (desc.id === 'brush-overlay') {
+        pushBrushOverlayLayer(desc.opacity);
+      } else if (desc.id === 'shapes') {
+        pushShapesLayers(desc.opacity);
       }
       // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
