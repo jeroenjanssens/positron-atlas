@@ -105,6 +105,22 @@
       disabled={!atlas.prepared} onclick={() => (atlas.tool = atlas.tool === 'annotate' ? 'pan' : 'annotate')}>
       <span class="codicon codicon-pin" aria-hidden="true"></span>
     </button>
+
+    <!-- B4: Brush tagging tool (item 7) -->
+    <button class="tool" class:active={atlas.annotateTool === 'brush'} aria-pressed={atlas.annotateTool === 'brush'} aria-label="Brush"
+      title="Brush: drag over points to assign the current class. Alt+drag to erase. Click a cluster to fill it. [ / ] to resize."
+      disabled={!atlas.prepared}
+      onclick={() => atlas.setAnnotateTool(atlas.annotateTool === 'brush' ? null : 'brush')}>
+      <span class="codicon codicon-paintcan" aria-hidden="true"></span>
+    </button>
+
+    <!-- B4: Shapes tool (item 8) -->
+    <button class="tool" class:active={atlas.annotateTool === 'shapes'} aria-pressed={atlas.annotateTool === 'shapes'} aria-label="Shapes"
+      title="Shapes: draw rectangles, ellipses, polygons and other shapes on the map."
+      disabled={!atlas.prepared}
+      onclick={() => atlas.setAnnotateTool(atlas.annotateTool === 'shapes' ? null : 'shapes')}>
+      <span class="codicon codicon-symbol-misc" aria-hidden="true"></span>
+    </button>
   {/if}
 
   <span class="sep" aria-hidden="true"></span>

@@ -8,8 +8,61 @@
   import NumberInput from './controls/NumberInput.svelte';
   import FontPicker from './controls/FontPicker.svelte';
   import { formatCount } from '../logic';
+  import { BRUSH_PALETTE } from '../atlas/brush';
+  import type { ShapeType } from '../atlas/shapes';
 
   let { atlas }: { atlas: Atlas } = $props();
+
+  // ---- B4 Brush tool state ----
+  let brushColumn = $state('brush_tag');
+  const pendingTagCount = $derived.by(() => {
+    const codes = atlas.pendingBrushCodes;
+    if (!codes) return 0;
+    let n = 0;
+    for (let i = 0; i < codes.length; i++) if (codes[i] !== 65535) n++;
+    return n;
+  });
+
+  function addBrushClass() {
+    const idx = atlas.brush.classes.length;
+    if (idx >= BRUSH_PALETTE.length) return;
+    atlas.brush = { ...atlas.brush, classes: [...atlas.brush.classes, `Class ${idx + 1}`] };
+  }
+  function removeBrushClass(i: number) {
+    if (atlas.brush.classes.length <= 1) return;
+    const classes = atlas.brush.classes.filter((_, j) => j !== i);
+    const currentClass = Math.min(atlas.brush.currentClass, classes.length - 1);
+    atlas.brush = { ...atlas.brush, classes, currentClass };
+  }
+  function renameBrushClass(i: number, name: string) {
+    const classes = atlas.brush.classes.map((c, j) => j === i ? name : c);
+    atlas.brush = { ...atlas.brush, classes };
+  }
+
+  // ---- B4 Shapes tool state ----
+  let shapeType = $state<ShapeType>('rect');
+  let shapeTagColumn = $state('shape_tag');
+  let selectedShapeId = $state<string | null>(null);
+  const selectedShape = $derived(atlas.shapes.find((s) => s.id === selectedShapeId) ?? null);
+
+  function onShapesImport(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => atlas.importShapes(String(reader.result));
+    reader.readAsText(file);
+  }
+  function downloadShapes() {
+    const json = atlas.exportShapes();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${atlas.variable || 'shapes'}_shapes.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // ---- Title overlay (A1) ----
   const title = $derived(atlas.titleOverlay);
@@ -496,6 +549,187 @@
   </div>
 </Section>
 
+<!-- B4: Brush tagging (item 7) -------------------------------------------------->
+<Section {atlas} id="brush" title="Brush tagging">
+  <div class="hint muted">
+    <Info id="brush.size" />
+    Activate the <span class="codicon codicon-paintcan" style="font-size:12px;vertical-align:-1px;"></span> Brush tool in the toolbar.
+    Drag over points to assign the current class. Alt+drag to erase. Click a cluster or category point to fill.
+  </div>
+  {#if atlas.annotateTool === 'brush'}
+    <!-- Brush size slider -->
+    <Slider label="Brush size" value={atlas.brush.sizePx} min={5} max={100} step={5}
+      hint="Brush radius in screen pixels. [ to decrease, ] to increase while the brush tool is active."
+      onchange={(v) => atlas.adjustBrushSize(v - atlas.brush.sizePx)} infoId="brush.size" />
+
+    <!-- Erase toggle -->
+    <Checkbox checked={atlas.brush.erasing} onchange={(v) => (atlas.brush = { ...atlas.brush, erasing: v })}>
+      Eraser mode (Alt while dragging also erases)
+    </Checkbox>
+    <div class="hint muted">Click a dense cluster or category to fill all points at once. <Info id="brush.fill" /></div>
+
+    <!-- Class legend -->
+    <div class="brush-classes">
+      <span class="label-row">Classes <Info id="brush.class" /></span>
+      {#each atlas.brush.classes as cls, i (i)}
+        {@const [r, g, b] = BRUSH_PALETTE[i] ?? [128, 128, 128]}
+        <div class="brush-class-row" class:current={atlas.brush.currentClass === i}
+          role="button" tabindex="0"
+          onclick={() => (atlas.brush = { ...atlas.brush, currentClass: i })}
+          onkeydown={(e) => e.key === 'Enter' && (atlas.brush = { ...atlas.brush, currentClass: i })}>
+          <span class="brush-swatch" style="background:rgb({r},{g},{b})"></span>
+          <input class="text cls-name" type="text" value={cls}
+            oninput={(e) => renameBrushClass(i, (e.target as HTMLInputElement).value)}
+            onclick={(e) => e.stopPropagation()}
+            aria-label="Class name" />
+          <button class="icon-btn" title="Remove class" onclick={(e) => { e.stopPropagation(); removeBrushClass(i); }} disabled={atlas.brush.classes.length <= 1}>
+            <span class="codicon codicon-trash" style="font-size:11px;"></span>
+          </button>
+        </div>
+      {/each}
+      {#if atlas.brush.classes.length < BRUSH_PALETTE.length}
+        <button class="small" onclick={addBrushClass}>+ Add class</button>
+      {/if}
+    </div>
+
+    <!-- Pending status + write -->
+    {#if pendingTagCount > 0}
+      <div class="hint muted">{formatCount(pendingTagCount)} rows tagged (pending, not yet written).</div>
+    {/if}
+    <label class="select">
+      <span>Column <Info id="brush.write" /></span>
+      <input class="text" type="text" bind:value={brushColumn} aria-label="Column name" />
+    </label>
+    <div class="btn-row">
+      <button class="primary" disabled={pendingTagCount === 0} onclick={() => atlas.commitBrush(brushColumn)}>
+        Write {pendingTagCount > 0 ? formatCount(pendingTagCount) + ' tags' : 'to'} DataFrame
+      </button>
+      <button disabled={pendingTagCount === 0} onclick={() => atlas.cancelBrush()}>Discard pending</button>
+    </div>
+  {:else}
+    <div class="hint muted">Activate the <span class="codicon codicon-paintcan" style="font-size:12px;vertical-align:-1px;"></span> Brush tool in the toolbar first.</div>
+  {/if}
+</Section>
+
+<!-- B4: Shapes (item 8) --------------------------------------------------------->
+<Section {atlas} id="shapes" title="Shapes">
+  <div class="hint muted">
+    <Info id="shapes.type" />
+    Activate the <span class="codicon codicon-symbol-misc" style="font-size:12px;vertical-align:-1px;"></span> Shapes tool in the toolbar.
+    Click to select, drag to move, handles to resize. Delete key removes selected shape.
+  </div>
+  {#if atlas.annotateTool === 'shapes'}
+    <!-- Shape type picker -->
+    <div class="select">
+      <span>Draw <Info id="shapes.type" /></span>
+      <Select value={shapeType} ariaLabel="Shape type" onchange={(e) => (shapeType = (e.target as HTMLSelectElement).value as ShapeType)}>
+        <option value="rect">Rectangle</option>
+        <option value="ellipse">Ellipse</option>
+        <option value="polygon">Polygon</option>
+        <option value="freehand">Freehand</option>
+        <option value="line">Line</option>
+        <option value="arrow">Arrow</option>
+        <option value="text">Text</option>
+      </Select>
+    </div>
+
+    <!-- Style controls for selected shape -->
+    {#if selectedShape}
+      <div class="select"><span>Stroke <Info id="shapes.style" /></span>
+        <input type="color" class="ctrl-color" value={`#${selectedShape.style.strokeColor.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('')}`}
+          oninput={(e) => {
+            const hex = (e.target as HTMLInputElement).value;
+            const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+            atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, strokeColor: [r,g,b,selectedShape.style.strokeColor[3]] } });
+          }} />
+      </div>
+      <div class="select"><span>Fill</span>
+        <input type="color" class="ctrl-color" value={`#${selectedShape.style.fillColor.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('')}`}
+          oninput={(e) => {
+            const hex = (e.target as HTMLInputElement).value;
+            const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+            atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, fillColor: [r,g,b,selectedShape.style.fillColor[3]] } });
+          }} />
+      </div>
+      <Slider label="Stroke width" value={selectedShape.style.strokeWidth} min={0.5} max={12} step={0.5}
+        hint="Stroke width in map pixels"
+        onchange={(v) => atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, strokeWidth: v } })} infoId="shapes.style" />
+      <Slider label="Opacity" value={selectedShape.style.opacity} min={0} max={1} step={0.05}
+        format={(v) => `${Math.round(v * 100)}%`}
+        hint="Overall shape opacity (0=transparent, 1=opaque)"
+        onchange={(v) => atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, opacity: v } })} infoId="shapes.style" />
+      {#if (selectedShape.kind === 'line' || selectedShape.kind === 'arrow')}
+        <div class="select"><span>Arrowhead</span>
+          <Select value={selectedShape.style.arrowHead ?? 'none'} ariaLabel="Arrowhead"
+            onchange={(e) => atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, arrowHead: (e.target as HTMLSelectElement).value as any } })}>
+            <option value="none">None</option>
+            <option value="open">Open</option>
+            <option value="filled">Filled</option>
+          </Select>
+        </div>
+      {/if}
+      {#if selectedShape.kind === 'text'}
+        <div class="select"><span>Font</span>
+          <FontPicker value={(selectedShape as any).fontFamily ?? 'sans-serif'} ariaLabel="Text font"
+            onchange={(f) => atlas.updateShape(selectedShape.id, { fontFamily: f } as any)} />
+        </div>
+        <div class="select"><span>Size</span>
+          <NumberInput value={(selectedShape as any).fontSize ?? 14} min={6} max={96} step={1} ariaLabel="Font size"
+            onchange={(e) => atlas.updateShape(selectedShape.id, { fontSize: Number((e.target as HTMLInputElement).value) } as any)} />
+        </div>
+      {/if}
+      <!-- Tag points inside -->
+      {#if selectedShape.kind === 'rect' || selectedShape.kind === 'ellipse' || selectedShape.kind === 'polygon' || selectedShape.kind === 'freehand'}
+        <label class="select">
+          <span>Column <Info id="shapes.tag" /></span>
+          <input class="text" type="text" bind:value={shapeTagColumn} aria-label="Tag column name" />
+        </label>
+        <div class="btn-row">
+          <button class="primary" onclick={() => atlas.tagPointsInShape(selectedShape.id, shapeTagColumn)}>
+            Tag points inside
+          </button>
+          <Info id="shapes.tag" />
+        </div>
+      {/if}
+      <div class="btn-row">
+        <button onclick={() => atlas.removeShape(selectedShape.id)}>Delete shape</button>
+      </div>
+    {:else if atlas.shapes.length}
+      <div class="hint muted">Click a shape on the map to select it for editing.</div>
+    {/if}
+
+    <!-- Shapes list -->
+    {#if atlas.shapes.length}
+      <div class="ann-list" role="list">
+        {#each atlas.shapes as shape (shape.id)}
+          <div class="ann-item" role="listitem">
+            <button class="ann-goto icon-btn" title="Select shape"
+              onclick={() => (selectedShapeId = shape.id)}>
+              <span class="codicon codicon-symbol-misc" aria-hidden="true"></span>
+            </button>
+            <span class="ann-item-text">{shape.kind} {shape.id.slice(-4)}</span>
+            <button class="ann-del icon-btn" title="Delete" onclick={() => atlas.removeShape(shape.id)}>
+              <span class="codicon codicon-trash" aria-hidden="true"></span>
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <div class="btn-row">
+      <button onclick={downloadShapes} disabled={!atlas.shapes.length}>Export JSON</button>
+      <label class="file-btn" title="Import shapes from JSON">
+        Import JSON
+        <input type="file" accept=".json,application/json" onchange={onShapesImport} style="display:none" />
+      </label>
+      {#if atlas.shapes.length}
+        <button class="danger" onclick={() => { atlas.shapes = []; atlas.renderer?.setShapes([]); }}>Clear all</button>
+      {/if}
+    </div>
+  {:else}
+    <div class="hint muted">Activate the <span class="codicon codicon-symbol-misc" style="font-size:12px;vertical-align:-1px;"></span> Shapes tool in the toolbar first.</div>
+  {/if}
+</Section>
+
 <style>
   .tag-list {
     display: flex;
@@ -559,4 +793,14 @@
   .file-btn:hover { background: var(--btn-hover-bg, var(--btn-bg)); }
   .hint.error { color: var(--vscode-errorForeground, #f14c4c); }
   .danger { background: var(--vscode-errorForeground, #f14c4c); color: #fff; }
+  /* B4 brush UI */
+  .brush-classes { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+  .label-row { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .brush-class-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+  .brush-class-row:hover { background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.05)); }
+  .brush-class-row.current { background: var(--vscode-list-activeSelectionBackground, rgba(0,120,255,0.2)); }
+  .brush-swatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.3); }
+  .cls-name { flex: 1; min-width: 60px; }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  .ctrl-color { width: 32px; height: 22px; padding: 1px; border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 3px; cursor: pointer; background: none; }
 </style>

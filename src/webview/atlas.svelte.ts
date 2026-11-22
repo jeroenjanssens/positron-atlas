@@ -288,6 +288,8 @@ export class Atlas {
   brush = $state<BrushState>(createBrushState());
   /** Pending brush codes per kept row (u16; 65535 = no pending tag).  Null = brush not started. */
   pendingBrushCodes = $state.raw<Uint16Array | null>(null);
+  /** Shape draw type (item 8, B4): which shape the next drag will create. */
+  shapeDrawType = $state<import('./atlas/shapes').ShapeType>('rect');
   /** Shapes on the map (item 8, B4).  Persisted in panel state. */
   shapes = $state.raw<Shape[]>([]);
   selection = $state.raw<Uint8Array | null>(null);

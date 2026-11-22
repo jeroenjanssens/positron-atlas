@@ -5,6 +5,8 @@
   import Legend from './components/Legend.svelte';
   import PlotToolbar from './components/PlotToolbar.svelte';
   import LassoLayer from './components/LassoLayer.svelte';
+  import BrushLayer from './components/BrushLayer.svelte';
+  import ShapeLayer from './components/ShapeLayer.svelte';
   import PixelImage from './components/PixelImage.svelte';
   import HoverCard from './components/HoverCard.svelte';
   import TitleOverlay from './components/TitleOverlay.svelte';
@@ -179,6 +181,8 @@
       <!-- Glow, point annotations and labels around the map are 2D only (T5). -->
       {#if atlas.dims !== 3}<GlowOverlay {atlas} />{/if}
       <LassoLayer {atlas} />
+      {#if atlas.dims !== 3}<BrushLayer {atlas} />{/if}
+      {#if atlas.dims !== 3}<ShapeLayer {atlas} />{/if}
       <TitleOverlay {atlas} />
       {#if atlas.dims !== 3}<AnnotationOverlay {atlas} />{/if}
       <!-- A11: Around-the-map label HTML overlay -->
