@@ -640,12 +640,13 @@ The final `chembl.parquet` is cached in `~/.cache/positron-atlas/datasets/chembl
 Subsequent runs skip every step that is already cached.
 
 **Quick try:** set `SAMPLE = True` to process only the first 100,000 compounds
-(under 1 minute on most machines).
+(~2–3 minutes on most machines; fingerprinting is fast but the metadata API
+still takes ~1 minute for a small subset of named compounds).
 
 **What to try in Atlas:**
 - Hover a point to see the compound name, structure image (`image_url` column) and
   a link to the ChEMBL compound page.
-- Color by `max_phase` to highlight clinical-stage compounds (phase 4 = approved drugs).
+- Color by `phase` to highlight clinical-stage compounds (Approved = phase 4 drugs).
 - Color by `mw` (histogram filter) to explore molecular weight.
 - Search for a drug name such as *aspirin*, *imatinib*, or *sildenafil*.
 - Turn on cluster labels to discover structural families.
@@ -653,8 +654,8 @@ Subsequent runs skip every step that is already cached.
 """
 
 CHEMBL_THINGS = """\
-- **Color by `max_phase`.**  Clinical phase 4 (approved drugs) forms a distinctive
-  population; phase 0 / null compounds are the vast majority.
+- **Color by `phase`.**  Approved drugs form a distinctive population; most compounds
+  have no clinical-phase data (shown as missing).
 - **Color by `mw`** and use the histogram filter to zoom in on drug-like compounds
   (MW 150–500).  The Lipinski "rule of five" space becomes visible.
 - **Hover** a compound: the structure image is loaded from the ChEMBL image API (PNG).
@@ -672,15 +673,17 @@ def chembl_chemical_space() -> dict:
     """Generate the ChEMBL chemical space notebook."""
     cell_config = '''\
 # ── Configuration ──────────────────────────────────────────────────────────────
-# Set SAMPLE = True to process only the first 100,000 compounds (< 1 min).
-# Set SAMPLE = False for the full 2.4 M compounds (~5–15 min first run).
+# Set SAMPLE = True to process only the first 100,000 compounds (~2–3 min first
+# run: fingerprinting is fast; metadata API still fetches ~5,000 named compounds).
+# Set SAMPLE = False for the full 2.4 M compounds (~15–30 min first run).
 SAMPLE = False
 
 CHEMREPS_URL = "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_37_chemreps.txt.gz"
-N_COMPONENTS = 64     # TruncatedSVD output dimensions (f0 … f63)
-CHUNK_SIZE   = 50_000 # compounds per fingerprint / projection chunk
-SVD_SAMPLE   = 200_000  # compounds used to fit TruncatedSVD
-SAMPLE_N     = 100_000  # compounds to process in SAMPLE mode'''
+N_COMPONENTS = 64        # TruncatedSVD output dimensions (f0 … f63)
+CHUNK_SIZE   = 50_000    # compounds per fingerprint / projection chunk
+SVD_SAMPLE   = 200_000   # compounds used to fit TruncatedSVD
+SAMPLE_N     = 100_000   # compounds to process in SAMPLE mode
+SAMPLE_META_PAGES = 5    # API pages (1 k/page) to fetch in SAMPLE mode'''
 
     cell_imports = '''\
 import csv, gzip, json, time, urllib.request
@@ -842,8 +845,8 @@ else:
 
     cell_phase4 = '''\
 # ── Phase 4: fetch pref_name and max_phase for named compounds via REST API ────
-# Only compounds with a preferred name are fetched (~15,000 out of 2.4 M).
-# For the remaining compounds, the title column falls back to chembl_id.
+# ~49,000 named compounds out of 2.4 M; the rest fall back to chembl_id as title.
+# In SAMPLE mode only SAMPLE_META_PAGES × 1,000 compounds are fetched to stay fast.
 
 if CHEMBL_PATH.exists():
     print("chembl.parquet already cached — skipping Phase 4")
@@ -858,6 +861,7 @@ else:
     _offset = 0
     _limit  = 1000
     _total  = None
+    _page   = 0
 
     while True:
         _url = (
@@ -879,8 +883,12 @@ else:
             _total = _data["page_meta"]["total_count"]
             print(f"  Total named compounds: {_total:,}")
 
+        _page   += 1
         _offset += _limit
         if _offset >= _total:
+            break
+        if SAMPLE and _page >= SAMPLE_META_PAGES:
+            print(f"  SAMPLE mode: stopping after {_page} pages ({len(_meta_ids):,} compounds)")
             break
         if _offset % 5_000 == 0:
             print(f"  {_offset:,}/{_total:,} ...")
@@ -904,6 +912,8 @@ else:
     _feats = pl.read_parquet(FEATURES_PATH)
     _meta  = pl.read_parquet(META_PATH)
 
+    # Map numeric max_phase to a human-readable string so Atlas treats it as a
+    # categorical colour column rather than a numeric feature (avoids null-drops).
     chembl = (
         _feats
         .join(_meta, on="chembl_id", how="left")
@@ -917,10 +927,19 @@ else:
                 "https://www.ebi.ac.uk/chembl/api/data/image/{}.png",
                 pl.col("chembl_id"),
             ).alias("image_url"),
+            (
+                pl.when(pl.col("max_phase") == 4.0).then(pl.lit("Approved"))
+                .when(pl.col("max_phase") == 3.0).then(pl.lit("Phase 3"))
+                .when(pl.col("max_phase") == 2.0).then(pl.lit("Phase 2"))
+                .when(pl.col("max_phase") == 1.0).then(pl.lit("Phase 1"))
+                .when(pl.col("max_phase") == 0.5).then(pl.lit("Early Phase 1"))
+                .when(pl.col("max_phase") == -1.0).then(pl.lit("Withdrawn"))
+                .otherwise(pl.lit(None, dtype=pl.String))
+            ).alias("phase"),
         )
-        .drop("pref_name")
+        .drop("pref_name", "max_phase")
         .select(
-            ["chembl_id", "title", "url", "image_url", "max_phase", "mw"]
+            ["chembl_id", "title", "url", "image_url", "phase", "mw"]
             + [f"f{i}" for i in range(N_COMPONENTS)]
         )
     )
