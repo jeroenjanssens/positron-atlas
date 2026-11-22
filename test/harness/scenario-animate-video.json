@@ -9,15 +9,26 @@
       "name": "set animate column",
       "eval": "const timeCol = a.describe.columns.find(c => c.name === 'time'); a.requestTimeValues(timeCol.index)",
       "until": "a.animateValues !== null",
-      "timeout": 15000,
-      "assert": ["a.animateValues !== null"]
+      "timeout": 15000
     },
     {
-      "name": "check MediaRecorder is available for WebM/VP8",
+      "name": "check MediaRecorder is available",
       "eval": "window.__videoSupported = typeof MediaRecorder !== 'undefined' && (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') || MediaRecorder.isTypeSupported('video/webm'))",
       "until": "window.__videoSupported !== undefined",
       "assert": "window.__videoSupported === true",
       "report": "{ videoSupported: window.__videoSupported }"
+    },
+    {
+      "name": "record 1 s animation and verify valid WebM",
+      "eval": "a.startVideoExport({ mode: 'time', widthPx: 640, heightPx: 480, fps: 30, durationSecs: 1 })",
+      "until": "window.__harness.video !== undefined",
+      "timeout": 10000,
+      "assert": [
+        "window.__harness.video !== undefined",
+        "(() => { const b = Uint8Array.from(atob(window.__harness.video), c => c.charCodeAt(0)); return b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3; })()",
+        "atob(window.__harness.video).length > 10240"
+      ],
+      "report": "{ videoBytes: atob(window.__harness.video).length }"
     }
   ]
 }
