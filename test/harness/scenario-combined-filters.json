@@ -1,0 +1,95 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(77)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['value'] = np.where(np.arange(n) % 2 == 0, rng.uniform(0, 1, n), rng.uniform(9, 10, n))\ndf['label'] = [f'item_{i:04d}' for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "set title column to label, search for 'item_' (all 3000 items match)",
+      "eval": "const labelCol = a.describe.columns.find(c => c.name === 'label'); a.tooltipOpts = { ...a.tooltipOpts, titleColumn: labelCol.index }; a.search('item_')",
+      "until": "a.searchMatchCount === a.nKept",
+      "timeout": 15000,
+      "assert": [
+        "a.searchMatchCount === a.nKept"
+      ]
+    },
+    {
+      "name": "baseline: all points highlighted – measure bright pixels",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightBaseline = n",
+      "until": "window.__brightBaseline !== undefined",
+      "assert": "window.__brightBaseline > 500",
+      "report": "{ brightBaseline: window.__brightBaseline }"
+    },
+    {
+      "name": "apply histogram brush [0, 1]: keeps ~1500 of 3000 points visible",
+      "eval": "const valueCol = a.describe.columns.find(c => c.name === 'value'); a.setHistColumn(valueCol.index)",
+      "until": "a.histData !== null",
+      "timeout": 15000
+    },
+    {
+      "name": "set histogram range",
+      "eval": "a.setHistRange([0, 1])",
+      "until": "a.histFilter !== null && a.renderVisibleCount < a.nAnchors",
+      "timeout": 5000,
+      "assert": [
+        "a.renderVisibleCount > 0",
+        "a.renderVisibleCount < a.nAnchors"
+      ],
+      "report": "{ visibleAfterHist: a.renderVisibleCount, total: a.nAnchors }"
+    },
+    {
+      "name": "histogram filter: search highlights still present",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightHist = n",
+      "until": "window.__brightHist !== undefined",
+      "assert": "window.__brightHist > 100",
+      "report": "{ brightHist: window.__brightHist, brightBaseline: window.__brightBaseline }"
+    },
+    {
+      "name": "add legend filter: color by cluster, hide category 0",
+      "eval": "const clusterCol = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(clusterCol.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.colorMeta.categories.length === 4",
+      "timeout": 15000
+    },
+    {
+      "name": "hide category 0 (further reduces visible: ~3/4 × 1/2 ≈ 1125)",
+      "eval": "a.toggleCategory(0, false)",
+      "until": "a.isCategoryHidden(0) && a.renderVisibleCount < a.nAnchors",
+      "timeout": 5000,
+      "assert": [
+        "a.isCategoryHidden(0)",
+        "a.renderVisibleCount > 0",
+        "a.renderVisibleCount < a.nAnchors"
+      ],
+      "report": "{ visibleAfterLegend: a.renderVisibleCount }"
+    },
+    {
+      "name": "legend+histogram+search combined: bright pixels fewer than histogram-only",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightCombined = n",
+      "until": "window.__brightCombined !== undefined",
+      "assert": [
+        "window.__brightCombined > 50",
+        "window.__brightCombined < window.__brightBaseline * 0.65"
+      ],
+      "report": "{ brightCombined: window.__brightCombined, brightHist: window.__brightHist, brightBaseline: window.__brightBaseline }",
+      "screenshot": "combined-filter-search.png"
+    },
+    {
+      "name": "restore all categories and clear filters",
+      "eval": "a.showAllCategories(); a.setHistColumn(null); a.clearSearch()",
+      "until": "!a.anyHidden && a.histFilter === null && !a.searchQuery",
+      "timeout": 5000,
+      "assert": [
+        "!a.anyHidden",
+        "a.renderVisibleCount === a.nAnchors"
+      ]
+    }
+  ]
+}
