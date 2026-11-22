@@ -5,12 +5,13 @@
 import type { Atlas } from '../atlas.svelte';
 import { DETAIL_THRESHOLDS, assignToClusters, densityGrid } from '../labels/clusters';
 import { ClusterFinder } from '../labels/clusterWorker';
+import { KMeans3DWorker } from '../workers/KMeans3DWorker';
 import { vscode, typedArrayToBytes } from '../vscode';
 import { gatherU16, dominantNames } from './utils';
 import { updateLabels } from './labels';
 import { recolorByClusters } from './colors';
 import { MAX_LABELS } from './types';
-import { runKMeans3D, CLUSTERS_3D_K } from './clusters3d';
+import { CLUSTERS_3D_K } from './clusters3d';
 
 /** Re-cluster the current layout (when it has settled; labels follow the points meanwhile). */
 export function refreshClusters(atlas: Atlas): void {
@@ -137,9 +138,14 @@ export async function runClustering(atlas: Atlas): Promise<void> {
 }
 
 /**
- * Run k-means clustering on the 3D layout (B2 / item 16).
- * Uses k values from CLUSTERS_3D_K based on the current detail level.
- * Produces the same `atlas.cluster` structure as 2D clustering (outlines=[]).
+ * Run k-means clustering on the 3D layout off the main thread (B2 / item 16).
+ *
+ * Strategy:
+ *   - Transfer all xyz positions to the worker (zero-copy).
+ *   - The worker sub-samples up to 100 k rows for the k++ fit, then
+ *     assigns ALL n rows to the nearest centroid — also off the main thread.
+ *   - Cancellation via atlas.clusterSeq: if the seq changes while the
+ *     worker is running we discard the result.
  */
 export async function runClustering3D(atlas: Atlas): Promise<void> {
   if (!atlas.labels.clusters || !atlas.prepared || !atlas.anchorXY || atlas.dims !== 3) return;
@@ -149,7 +155,7 @@ export async function runClustering3D(atlas: Atlas): Promise<void> {
 
   // Use all placed rows (allXY) or just anchors.
   const onAll = !!prepared.needsProjection && atlas.projection === 'done' && !!atlas.allXY;
-  const xyz = onAll ? atlas.allXY! : atlas.anchorXY;
+  const srcXyz = onAll ? atlas.allXY! : atlas.anchorXY;
   const n = onAll ? atlas.nKept : prepared.nAnchors;
 
   if (n < 2) return;
@@ -160,17 +166,18 @@ export async function runClustering3D(atlas: Atlas): Promise<void> {
   const detail = Math.min(5, Math.max(1, Math.round(atlas.labels.detail)));
   const k = CLUSTERS_3D_K[detail] ?? 16;
 
-  // Run k-means asynchronously in a microtask to avoid blocking the render loop.
+  // Transfer a copy of xyz to the worker (the original is still needed by the renderer).
+  const xyzCopy = srcXyz.slice(0, n * 3);
+
+  // Create or reuse the per-atlas k-means worker.
+  atlas.kmeans3dWorker ??= new KMeans3DWorker();
+
   let result;
   try {
-    // Yield to let any pending renders complete before the CPU-intensive k-means.
-    await new Promise<void>((r) => setTimeout(r, 0));
-    if (seq !== atlas.clusterSeq) {
-      if (atlas.clusterRunning === seq) atlas.clustering = false;
-      return;
-    }
-    result = runKMeans3D(xyz, n, k);
+    result = await atlas.kmeans3dWorker.run(xyzCopy, n, k, { seed: seq });
   } catch (e) {
+    // "cancelled" means a newer run superseded this one — silent discard.
+    if (e instanceof Error && e.message === 'cancelled') return;
     if (atlas.clusterRunning === seq) atlas.clustering = false;
     if (seq === atlas.clusterSeq) {
       atlas.showError(e instanceof Error ? e.message : String(e));
@@ -178,16 +185,18 @@ export async function runClustering3D(atlas: Atlas): Promise<void> {
     return;
   }
 
+  // Check if this run is still the latest.
   if (seq !== atlas.clusterSeq || prepared !== atlas.prepared || !atlas.labels.clusters) {
     if (atlas.clusterRunning === seq) atlas.clustering = false;
     return;
   }
 
-  // Build full codes array (anchors → all rows if needsProjection).
+  // The worker assigned all n rows; we may need to expand anchor codes to all rows.
   let codes: Uint16Array;
   if (onAll || !prepared.needsProjection) {
     codes = result.codes;
   } else {
+    // Worker ran on anchors; scatter back to all rows.
     codes = new Uint16Array(atlas.nKept).fill(result.k);
     if (anchorPos) {
       for (let i = 0; i < anchorPos.length; i++) codes[anchorPos[i]] = result.codes[i];

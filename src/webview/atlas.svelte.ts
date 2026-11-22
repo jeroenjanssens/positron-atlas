@@ -29,6 +29,7 @@ import { initFonts } from './fonts';
 import { ScatterRenderer } from './render/renderer';
 import { HitIndex } from './render/hitIndex';
 import { ClusterFinder } from './labels/clusterWorker';
+import { KMeans3DWorker } from './workers/KMeans3DWorker';
 import { detectImageColumns, guessImageWidth, type ImageColumns, formatCount } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 import { DEFAULT_LABELS } from './atlas/labels-defaults';
@@ -434,6 +435,8 @@ export class Atlas {
   clusterFine: { codes: Uint16Array; codesAnchors: Uint16Array; k: number; counts: number[]; outlines: [number, number][][][] } | null = null;
   clusterFineNames: string[] = [];
   clusterFinder: ClusterFinder | null = null;
+  /** Worker for off-main-thread 3D k-means clustering (B2 / item 16). */
+  kmeans3dWorker: KMeans3DWorker | null = null;
   clusterSeq = 0;
   nameSeq = 0;
   compareSeq = 0;
@@ -534,6 +537,7 @@ export class Atlas {
   destroy(): void {
     clearTimeout(this.labelTimer);
     this.clusterFinder?.destroy();
+    this.kmeans3dWorker?.destroy();
     this.worker?.terminate();
     this.renderer?.destroy();
     this.dispatcher?.destroy();
@@ -884,6 +888,26 @@ export class Atlas {
 
   // ---- selection ---------------------------------------------------------------
   applyLasso(screen: [number, number][], mode: SelectMode): void { applyLassoImpl(this, screen, mode); }
+
+  /**
+   * Update the live lasso bounding-box overlay from screen-space polygon vertices (B2).
+   * Pass null to remove it. Called by LassoLayer.svelte on every pointer move.
+   */
+  setLassoBounds(screenPoly: [number, number][] | null): void {
+    if (!this.renderer) return;
+    if (!screenPoly || screenPoly.length < 2) {
+      this.renderer.setLassoBounds(null);
+      return;
+    }
+    // Convert screen vertices to world coordinates and compute axis-aligned bounding box.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [sx, sy] of screenPoly) {
+      const [wx, wy] = this.renderer.unproject(sx, sy);
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+      if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+    }
+    this.renderer.setLassoBounds(isFinite(minX) ? [minX, minY, maxX, maxY] : null);
+  }
   setSelection(mask: Uint8Array | null): void { setSelectionImpl(this, mask); }
   clearSelection(): void { clearSelectionImpl(this); }
   invertSelection(): void { invertSelectionImpl(this); }
