@@ -452,6 +452,8 @@ export class ScatterRenderer {
           id: `points-${s.id}-base`,
           data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
           radiusUnits: 'pixels',
+          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+          billboard: is3D,
           getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
@@ -469,6 +471,8 @@ export class ScatterRenderer {
           id: `points-${s.id}-highlight`,
           data: { length: s.length, attributes: makeAttrs(searchAndVisible) } as any,
           radiusUnits: 'pixels',
+          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+          billboard: is3D,
           getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
@@ -487,6 +491,8 @@ export class ScatterRenderer {
           id: `points-${s.id}`,
           data: { length: s.length, attributes: makeAttrs(legendValues) } as any,
           radiusUnits: 'pixels',
+          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+          billboard: is3D,
           getRadius: s.radii ? 1 : pointSize / 2,
           radiusMinPixels: 0.5,
           stroked: false,
@@ -538,8 +544,10 @@ export class ScatterRenderer {
           new ScatterplotLayer({
             id: `ring-${pinned ? 'pin' : 'hover'}-${idx}`,
             data: [pos],
-            getPosition: (d: [number, number]) => [d[0], d[1]],
+            getPosition: (d: number[]) => d as [number, number] | [number, number, number],
             radiusUnits: 'pixels',
+          // In 3D, draw points as camera-facing dots (flat discs look like dashes when tilted).
+          billboard: is3D,
             getRadius: (this.style.pointSize / 2) + 3,
             radiusMinPixels: 4,
             stroked: true,
@@ -747,13 +755,14 @@ export class ScatterRenderer {
   }
 
   /** Find the world position of a point by its index in the latest point set. */
-  private findPointPosition(idx: number): [number, number] | null {
+  private findPointPosition(idx: number): number[] | null {
     // Search the sets in reverse (last set is drawn on top).
     for (let si = this.sets.length - 1; si >= 0; si--) {
       const s = this.sets[si];
       const nd = s.positionStride ?? 2;
       if (idx < s.length) {
-        return [s.positions[nd * idx], s.positions[nd * idx + 1]];
+        // x, y (and z in 3D), so the hover ring sits on the point in both views.
+        return Array.from(s.positions.subarray(nd * idx, nd * idx + nd));
       }
     }
     return null;
