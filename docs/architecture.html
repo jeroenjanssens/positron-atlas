@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">1f97561</span> (2026-11-22).</p>
+     Checked against commit <span class="mono">f868fb9</span> (2026-11-22).</p>
   <nav>
     <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -148,7 +148,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="36" y="384" width="328" height="72" rx="8"/>
     <text class="t" x="50" y="408">deck.gl renderer</text><text class="m" x="178" y="408">render/renderer.ts</text>
     <text class="s" x="50" y="427">ScatterplotLayer (binary attributes) · Polygon · Text</text>
-    <text class="s" x="50" y="444">WebGL, orthographic view, additive density mode</text>
+    <text class="s" x="50" y="444">WebGL · density mode · glow · labels around the map</text>
 
     <rect class="box" x="36" y="476" width="328" height="84" rx="8"/>
     <text class="t" x="50" y="500">Interaction &amp; colour</text>
@@ -336,7 +336,7 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
 
 <!-- ================================================================================== -->
 <h2 id="deps"><span class="n">4</span>Dependencies</h2>
-<p class="lead">What ships in the VSIX: <code>dist/extension.js</code>, <code>dist/webview/**</code> (JavaScript bundled, including the UMAP WASM),
+<p class="lead">What ships in the VSIX: <code>dist/extension.js</code>, <code>dist/webview/**</code> (JavaScript bundled, including the UMAP WASM), <code>dist/viewer/viewer.js</code> (the stand-alone viewer that HTML exports inline), <code>media/fonts/</code> (bundled fonts and the Google Fonts catalogue),
 <code>python/positron_atlas_kernel.py</code> and, in the platform VSIX files, <code>native/&lt;platform&gt;/</code>. Nothing is installed into your Python environment.</p>
 <table>
   <thead><tr><th>Layer</th><th>Required</th><th>Optional</th><th>Build, test and benchmarks only</th></tr></thead>
@@ -487,6 +487,7 @@ const STEPS = [
 
   { phase: 'Export' },
   { from: 'W', to: 'H', text: 'savePng(bytes) · exportDataMapPlot(xy bytes)', sub: 'save dialog in the host' },
+  { note: 'W', text: ['HTML export: the webview packs positions, colours, labels,', 'annotations, tooltip text and fonts (gzip), inlines dist/viewer/viewer.js,', 'and sends the finished file; the host only writes it'] },
   { from: 'H', to: 'K', text: 'export_datamapplot(job, path, …)', sub: 'datamapplot.create_interactive_plot → HTML file' },
 
   { phase: 'Write back (after a confirmation)' },
