@@ -3,7 +3,7 @@ import { detectCoordsColumns, coordEligibleColumns, firstCoordColumn } from '../
 import type { ColumnInfo } from '../src/shared/protocol';
 
 function col(index: number, name: string, kind: ColumnInfo['kind'] = 'numeric'): ColumnInfo {
-  return { index, name, kind, dtype: 'f64' };
+  return { index, name, kind, dtype: 'f64', null_frac: 0, n_unique_est: null };
 }
 
 describe('detectCoordsColumns', () => {
