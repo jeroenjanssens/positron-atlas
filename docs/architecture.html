@@ -182,6 +182,7 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>The kernel side (prepare, placement, colours, rows, write-back)</td><td><code>python/positron_atlas_kernel.py</code></td></tr>
     <tr><td>The webview's state and logic</td><td><code>src/webview/atlas.svelte.ts</code> (state) and <code>src/webview/atlas/*.ts</code> (one module per area)</td></tr>
     <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
+    <tr><td>What is drawn, in which order</td><td><code>src/webview/atlas/layers.ts</code> (the layer registry: the base map and every overlay, with visibility, opacity, blending and draw order; the renderer and the HTML overlays both read it)</td></tr>
     <tr><td>Testing without Positron</td><td><code>test/harness/</code> (<code>just harness</code>)</td></tr>
     <tr><td>Conventions and checks</td><td><code>CONTRIBUTING.md</code></td></tr>
   </tbody>
@@ -220,8 +221,8 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="36" y="262" width="160" height="96" rx="8"/>
     <text class="t" x="50" y="286">UMAP worker</text>
     <text class="s" x="50" y="305">embedding-atlas (WASM)</text>
-    <text class="s" x="50" y="322">WebGPU, or 1 CPU thread</text>
-    <text class="s" x="50" y="339">kNN → spectral → SGD · 2D/3D</text>
+    <text class="s" x="50" y="322">WebGPU or CPU · 2D/3D</text>
+    <text class="s" x="50" y="339">kNN → spectral → SGD</text>
 
     <rect class="box" x="204" y="262" width="160" height="96" rx="8"/>
     <text class="t" x="218" y="286">Cluster worker</text>
@@ -232,7 +233,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="36" y="384" width="328" height="72" rx="8"/>
     <text class="t" x="50" y="408">deck.gl renderer</text><text class="m" x="178" y="408">render/renderer.ts</text>
     <text class="s" x="50" y="427">Scatterplot · Polygon · Text · 2D or 3D (orbit view)</text>
-    <text class="s" x="50" y="444">WebGL · density mode · glow · labels around the map</text>
+    <text class="s" x="50" y="444">density · glow · layer registry (order, opacity, blend)</text>
 
     <rect class="box" x="36" y="476" width="328" height="84" rx="8"/>
     <text class="t" x="50" y="500">Interaction &amp; colour</text>
