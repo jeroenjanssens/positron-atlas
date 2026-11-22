@@ -1021,7 +1021,7 @@ def test_cache_hit_native_vs_numpy_equality(ns, tmp_path, native):
     jid, x, labels = _prepare_with_anchors(ns, tmp_path, native=native)
     _wait_nbr_done(jid)
     job = pak._JOBS[jid]
-    assert job.nbr_idx is not None, "cache not populated"
+    assert job.nbr_idx is not None, f"cache not populated: {job.nbr_error}"
 
     path, axy = _write_axy(job, labels, tmp_path)
 
@@ -1134,3 +1134,25 @@ def test_project_while_neighbours_running(ns, tmp_path, monkeypatch):
     assert st["stage"] == "done", st
     assert st["result"]["cached"] is True, st["result"]
     assert st["result"]["waitedForNeighbours"] is True, st["result"]
+
+
+def test_outdated_native_core_falls_back_to_numpy(monkeypatch):
+    """A core missing functions the helper needs is rejected as a whole, with a clear reason."""
+    import types
+
+    import positron_atlas_kernel as pak
+
+    fake = types.ModuleType("_positron_atlas_core")
+    fake.VERSION = pak.VERSION
+    fake.Index = type("Index", (), {"place": lambda self: None})  # no neighbors_u32
+    fake.column_moments = fake.scale_columns = fake.n_cpus = lambda *a, **k: None  # no place_from_neighbors
+    monkeypatch.setattr(pak, "_NATIVE", None)
+    monkeypatch.setattr(pak, "_NATIVE_INFO", {})
+    monkeypatch.setitem(__import__("sys").modules, "_positron_atlas_core", fake)
+    monkeypatch.setattr(pak.os.path, "normpath", lambda p: getattr(fake, "__file__", p))
+    fake.__file__ = "fake-core"
+    monkeypatch.setattr(pak.os, "listdir", lambda d: ["_positron_atlas_core.abi3.so"])
+    monkeypatch.setattr(pak.os.path, "isdir", lambda d: True)
+    assert pak._native_core() is None
+    reason = pak._NATIVE_INFO["reason"]
+    assert "outdated" in reason and "place_from_neighbors" in reason and "Index.neighbors_u32" in reason

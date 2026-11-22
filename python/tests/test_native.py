@@ -282,3 +282,4 @@ def test_standardize_reports_progress_and_can_be_cancelled(tmp_path, monkeypatch
         time.sleep(0.01)
     assert st["stage"] == "done", st
     assert len(seen) >= 4 and seen == sorted(seen) and seen[-1] == pytest.approx(0.55)
+

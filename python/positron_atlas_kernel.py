@@ -41,6 +41,11 @@ _NATIVE_INFO: dict[str, Any] = {}
 _NATIVE_LOCK = threading.Lock()
 
 
+# What the helper calls in the Rust core; a core without all of them is not used.
+_NATIVE_FUNCTIONS = ("Index", "column_moments", "scale_columns", "place_from_neighbors", "n_cpus")
+_NATIVE_INDEX_METHODS = ("neighbors_u32", "place")
+
+
 def _native_target() -> str:
     """This machine as a VS Code platform name (darwin-arm64, linux-x64, win32-x64, ...)."""
     import platform
@@ -95,6 +100,13 @@ def _load_native() -> None:
             sys.modules[name] = mod
         if getattr(mod, "VERSION", None) != VERSION:
             raise RuntimeError(f"native core version {getattr(mod, 'VERSION', None)}, helper {VERSION}")
+        # A core built from older sources can carry the same version number: check that it
+        # has everything this helper calls, so an outdated build falls back to numpy as a
+        # whole instead of failing (silently) in one code path.
+        missing = [n for n in _NATIVE_FUNCTIONS if not hasattr(mod, n)]
+        missing += [f"Index.{n}" for n in _NATIVE_INDEX_METHODS if not hasattr(getattr(mod, "Index", None), n)]
+        if missing:
+            raise RuntimeError(f"native core is outdated (missing {', '.join(missing)}); rebuild it with npm run build:native")
         _NATIVE = mod
         info.update(available=True, version=mod.VERSION, path=path, target=target)
     except Exception as e:  # noqa: BLE001 - any failure means: use numpy
@@ -653,6 +665,7 @@ class _Job:
         # Set when the neighbours stage is complete (or skipped), so project can wait.
         self.nbr_done: threading.Event = threading.Event()
         self.nbr_done.set()  # starts set (no pending neighbours)
+        self.nbr_error: str | None = None
 
     def _mine(self) -> bool:
         """True unless called from a superseded (orphaned) task thread."""
@@ -884,6 +897,7 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     job.nbr_non_anchor_pos = None
     job.nbr_key = None
     job.nbr_done.clear()  # will be set after neighbours stage (or when skipped)
+    job.nbr_error = None
 
     frame = job.frame
     n = frame.n_rows
@@ -1131,8 +1145,11 @@ def _prepare_neighbours(job: _Job, x: np.ndarray, anchor_pos: np.ndarray, anchor
             job.nbr_sqd = nbr_sqd
             job.nbr_non_anchor_pos = non_anchor_pos
             job.nbr_key = (metric, k)
-    except Exception:  # noqa: BLE001 — includes "cancelled" from Rust
-        pass  # cancelled or error; nbr_done is set in finally
+    except Exception as e:  # noqa: BLE001 — includes "cancelled" from Rust
+        # Cancelled, or a real error: either way there is no cache, and project searches
+        # itself. Keep the error so it can be reported and tested instead of disappearing.
+        if not nbr_cancel.is_set():
+            job.nbr_error = f"{type(e).__name__}: {e}"
     finally:
         job.nbr_done.set()
 
