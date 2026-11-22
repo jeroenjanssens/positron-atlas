@@ -8,6 +8,7 @@
   import TooltipSection from './TooltipSection.svelte';
   import Histogram from './Histogram.svelte';
   import LayerList from './LayerList.svelte';
+  import GridPanel from './GridPanel.svelte';
   import { SEQUENTIAL } from '../color/colormaps';
   import { formatCount, formatPercent, formatStat } from '../logic';
 
@@ -388,5 +389,7 @@
   </div>
   <LayerList {atlas} />
 </Section>
+
+<GridPanel {atlas} />
 
 <TooltipSection {atlas} />

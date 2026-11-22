@@ -1226,6 +1226,31 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- C1: Grid mode (item 4) -------------------------------------------------
+
+  'grid.enabled': {
+    title: 'Grid mode (small multiples)',
+    what: 'Shows the same layout in multiple panels side by side, each coloured by a different column.',
+    intuition:
+      'The camera is shared across all panels, so panning, zooming and rotating in any panel ' +
+      'updates all panels together. ' +
+      'Hover and lasso work in any panel; the selection is reflected across the whole grid. ' +
+      'PNG export includes all panels.',
+    when: 'Use when you want to compare how two or more attributes distribute across the same layout — ' +
+      'for example, "how do cluster membership and cell type relate?".',
+    cost: 'none',
+  },
+
+  'grid.layout': {
+    title: 'Grid layout',
+    what: 'How many panels to show and how they are arranged.',
+    intuition:
+      '1 × 2 is two panels side by side; 2 × 2 is four panels in a square; ' +
+      '2 × 3 and 3 × 3 give six or nine panels.',
+    when: 'Choose based on how many columns you want to compare and how much screen space you have.',
+    cost: 'none',
+  },
+
   // ---- Plot toolbar ------------------------------------------------------------
 
   'toolbar.pan': {

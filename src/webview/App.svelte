@@ -18,6 +18,7 @@
   import { formatCount, formatSeconds, placeTooltip, resolveInvert } from './logic';
   import SearchBox from './components/SearchBox.svelte';
   import { vscode } from './vscode';
+  import { gridViewRects, panelCount, panelTitle } from './atlas/grid';
 
   const atlas = new Atlas();
   // Exposed for end-to-end tests (test/e2e).
@@ -45,7 +46,7 @@
   $effect(() => {
     JSON.stringify([atlas.prepare, atlas.umap, atlas.view, atlas.colorColumn, atlas.ui, atlas.labels,
       atlas.tooltipOpts, atlas.hiddenCategories, atlas.loadImagesFromUrls,
-      atlas.titleOverlay, atlas.annotations, atlas.annotateIdColumn]);
+      atlas.titleOverlay, atlas.annotations, atlas.annotateIdColumn, atlas.grid]);
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => atlas.variable && atlas.persist(), 400);
   });
@@ -188,6 +189,18 @@
       <!-- A11: Around-the-map label HTML overlay -->
       {#if atlas.dims !== 3 && (atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups}
         <AroundLabelsOverlay {atlas} />
+      {/if}
+      {#if atlas.grid.enabled}
+        <!-- C1: per-panel titles and legend chips (HTML overlay, one per panel) -->
+        {@const rects = gridViewRects(atlas.grid.layout, mainW, mainH)}
+        {@const nP = panelCount(atlas.grid.layout)}
+        {@const cols = atlas.describe?.columns ?? []}
+        {#each atlas.grid.panels.slice(0, nP) as panel, i}
+          {@const r = rects[i]}
+          <div class="grid-panel-title" style="left:{r.x}px; top:{r.y}px; width:{r.w}px;">
+            {panelTitle(panel, i, atlas.colorColumn, cols)}
+          </div>
+        {/each}
       {/if}
     </div>
     <Legend {atlas} />

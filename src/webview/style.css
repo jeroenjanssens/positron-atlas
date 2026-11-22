@@ -445,6 +445,24 @@ input[type='color'].color { width: 44px; height: 24px; padding: 1px 2px; cursor:
 .vscode-dark .invert-auto, .vscode-high-contrast .invert-auto { filter: invert(1); }
 .muted-text { color: var(--muted); }
 
+/* ── C1: Grid panel titles (small multiples overlay) ───────────────────── */
+.grid-panel-title {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background, rgba(0,0,0,0.5));
+  opacity: 0.85;
+  padding: 2px 6px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+}
+
 /* ── Fullscreen focus mode ──────────────────────────────────────────────── */
 .app.fullscreen footer { display: none; }
 .app.fullscreen aside .controls header,

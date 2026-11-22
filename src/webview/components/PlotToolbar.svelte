@@ -141,6 +141,16 @@
     <span class="codicon codicon-redo" aria-hidden="true"></span>
   </button>
 
+  <!-- Grid mode (C1, item 4) -->
+  {#if atlas.phase === 'ready' || atlas.paused}
+    <button class="tool" class:active={atlas.grid.enabled} aria-pressed={atlas.grid.enabled}
+      aria-label={atlas.grid.enabled ? 'Exit grid mode' : 'Grid mode (small multiples)'}
+      title={atlas.grid.enabled ? 'Exit grid mode' : `Grid mode (${navigator.platform?.startsWith('Mac') ? '⌘' : 'Ctrl'}+G)`}
+      onclick={() => atlas.toggleGrid()}>
+      <span class="codicon codicon-grid" aria-hidden="true"></span>
+    </button>
+  {/if}
+
   <!-- Fullscreen (F1) -->
   <button class="tool" class:active={atlas.fullscreen} aria-pressed={atlas.fullscreen} aria-label={atlas.fullscreen ? 'Exit full screen' : 'Full screen'}
     title={atlas.fullscreen ? 'Exit full screen' : 'Full screen: maximize the Atlas panel'}
