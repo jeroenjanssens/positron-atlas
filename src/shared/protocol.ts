@@ -226,8 +226,17 @@ export interface LabelOptions {
   textCase?: 'asis' | 'upper';
 
   // ---- A3 draggable labels ----
-  /** Screen-pixel offsets from each label's automatic position, keyed by group name. */
+  /**
+   * Map-coordinate (world) offsets from each label's automatic position, keyed by group name.
+   * Q11 (B5): stored in world units so they stay correct under pan, zoom, rotation and in 3D.
+   * Legacy screen-pixel offsets (before B5) are reset on load when dragOffsetsVersion is absent.
+   */
   dragOffsets?: Record<string, [number, number]>;
+  /**
+   * When present and equal to 'v2map', dragOffsets are in map coordinates (world units).
+   * Absent in legacy saves (< B5), which used screen pixels — reset to {} on load.
+   */
+  dragOffsetsVersion?: 'v2map';
 
   // ---- A8 multi-level labels ----
   /** Second (finer) label column for column labels; enables two-level labels. */
@@ -248,6 +257,20 @@ export interface LabelOptions {
   leaderColor?: 'cluster' | 'grey';
   /** Leader line width in CSS pixels. */
   leaderWidth?: number;
+  /**
+   * Frozen around-the-map layout: when set, the around-label overlay uses these absolute
+   * world positions instead of the auto-computed ring positions (Q14 freeze layout).
+   * Keyed by group name; value is [worldX, worldY].
+   */
+  frozenAroundLayout?: Record<string, [number, number]>;
+
+  // ---- B5 scale text with zoom ----
+  /**
+   * When true, label text scales with zoom (sizeUnits: 'common'), giving figure-like behaviour.
+   * Default: false (pixel-size labels are readable at every zoom level, like online maps).
+   * Q13 decision.
+   */
+  scaleTextWithZoom?: boolean;
 }
 
 /** Tooltip/hover settings (Explore → Tooltip section). */
@@ -297,10 +320,22 @@ export interface AnnotationData {
   worldX: number;
   /** World y coordinate of the annotated point. */
   worldY: number;
-  /** Screen-pixel x offset from the projected point to the callout box top-left. */
+  /**
+   * Map-coordinate (world-unit) x offset from the annotated point to the callout box anchor.
+   * Q12 (B5): box position = projectWorld(worldX + offsetX, worldY + offsetY).
+   * Legacy saves (before B5, offsetVersion absent) used screen pixels — reset on load.
+   */
   offsetX: number;
-  /** Screen-pixel y offset from the projected point to the callout box top-left. */
+  /**
+   * Map-coordinate (world-unit) y offset from the annotated point to the callout box anchor.
+   * World y is up, so a positive offsetY moves the box upward on screen.
+   */
   offsetY: number;
+  /**
+   * When present and equal to 'v2map', offsetX/Y are in map coordinates.
+   * Absent in legacy saves (< B5), which used screen pixels — reset to default on load.
+   */
+  offsetVersion?: 'v2map';
   /** Point's color as an rgba() string (used for badge style). */
   color?: string;
   /** Pixel values for image-style annotations — stored so they survive reload without the kernel. */

@@ -44,10 +44,12 @@
   let editingId = $state<string | null>(null);
   let editText = $state('');
 
-  // Drag state
+  // Drag state (B5: accumulate world-coordinate deltas)
   let dragId: string | null = null;
-  let dragStartX = 0;
-  let dragStartY = 0;
+  let dragStartClientX = 0;
+  let dragStartClientY = 0;
+  let dragStartCanvasX = 0; // canvas-relative start (for renderer.screenDeltaToWorld)
+  let dragStartCanvasY = 0;
   let origOffsetX = 0;
   let origOffsetY = 0;
   let isDragging = false;
@@ -59,26 +61,35 @@
     e.preventDefault();
     e.stopPropagation();
     dragId = ann.id;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
+    dragStartClientX = e.clientX;
+    dragStartClientY = e.clientY;
     origOffsetX = ann.offsetX;
     origOffsetY = ann.offsetY;
     isDragging = false;
+    // Record canvas-relative start position for world-delta computation.
+    const canvas = document.querySelector('canvas');
+    const rect = canvas?.getBoundingClientRect();
+    dragStartCanvasX = rect ? e.clientX - rect.left : e.clientX;
+    dragStartCanvasY = rect ? e.clientY - rect.top : e.clientY;
     window.addEventListener('mousemove', onWindowMouseMove);
     window.addEventListener('mouseup', onWindowMouseUp);
   }
 
   function onWindowMouseMove(e: MouseEvent) {
-    if (!dragId) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
+    if (!dragId || !atlas.renderer) return;
+    const dx = e.clientX - dragStartClientX;
+    const dy = e.clientY - dragStartClientY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDragging = true;
     if (isDragging) {
-      atlas.updateAnnotationOffset(dragId, origOffsetX + dx, origOffsetY + dy);
+      // Convert screen-pixel delta to world delta (B5: map-coordinate offsets).
+      const worldDelta = atlas.renderer.screenDeltaToWorld(
+        dragStartCanvasX, dragStartCanvasY, dx, dy,
+      );
+      atlas.updateAnnotationOffset(dragId, origOffsetX + worldDelta[0], origOffsetY + worldDelta[1]);
     }
   }
 
-  function onWindowMouseUp(e: MouseEvent) {
+  function onWindowMouseUp() {
     window.removeEventListener('mousemove', onWindowMouseMove);
     window.removeEventListener('mouseup', onWindowMouseUp);
     if (isDragging && dragId) {
@@ -124,24 +135,28 @@
     }
   }
 
-  // Build the CSS position for the callout box from anchor + offset.
-  function boxPos(ann: AnnotationData): { left: string; top: string } | null {
-    const pt = positions.get(ann.id);
-    if (!pt) return null;
-    return {
-      left: `${pt[0] + ann.offsetX}px`,
-      top: `${pt[1] + ann.offsetY}px`,
-    };
+  /**
+   * Build the CSS position for the callout box (B5: map-coordinate offsets).
+   * The box anchor is projectWorld(worldX + offsetX, worldY + offsetY).
+   */
+  function boxScreenPos(ann: AnnotationData): [number, number] | null {
+    if (!atlas.renderer) return null;
+    return atlas.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY);
   }
 
-  // Leader line endpoints: from screen anchor to box center (approximate).
-  function leaderLine(ann: AnnotationData): { x1: number; y1: number; x2: number; y2: number } | null {
-    const pt = positions.get(ann.id);
+  function boxPos(ann: AnnotationData): { left: string; top: string } | null {
+    const pt = boxScreenPos(ann);
     if (!pt) return null;
-    // Box center estimate: 60px wide, 28px tall (approximate).
-    const bx = pt[0] + ann.offsetX + 40;
-    const by = pt[1] + ann.offsetY + 14;
-    return { x1: pt[0], y1: pt[1], x2: bx, y2: by };
+    return { left: `${pt[0]}px`, top: `${pt[1]}px` };
+  }
+
+  // Leader line endpoints: from screen anchor (the annotated point) to box center (approximate).
+  function leaderLine(ann: AnnotationData): { x1: number; y1: number; x2: number; y2: number } | null {
+    const anchor = positions.get(ann.id);
+    const bp = boxScreenPos(ann);
+    if (!anchor || !bp) return null;
+    // Box center estimate: ~40px right, ~14px down from box top-left.
+    return { x1: anchor[0], y1: anchor[1], x2: bp[0] + 40, y2: bp[1] + 14 };
   }
 
   const annotationList = $derived([...atlas.annotations.values()]);

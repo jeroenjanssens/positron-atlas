@@ -74,6 +74,11 @@ export interface LabelStyle {
   lineHeight?: number;
   /** Wrap width in deck.gl em units (maxWidth). */
   maxWidth?: number;
+  /**
+   * B5 (Q13): When 'common', text scales with zoom (figure-like).
+   * When 'pixels' (default), text stays readable at every zoom.
+   */
+  sizeUnits?: 'pixels' | 'common';
 }
 
 export interface RenderStyle {
@@ -352,6 +357,18 @@ export class ScatterRenderer {
   /** World units per screen pixel at the current zoom. */
   worldPerPixel(): number {
     return Math.pow(2, -(this.viewState.zoom as number));
+  }
+
+  /**
+   * Convert a screen-pixel drag delta to a world-space delta (B5).
+   * Uses the viewport's unproject so the result is correct under 2D rotation and in 3D.
+   * x0, y0 are the drag-start CSS pixel coordinates (relative to the canvas).
+   * dx, dy are the screen-pixel displacement.
+   */
+  screenDeltaToWorld(x0: number, y0: number, dx: number, dy: number): [number, number] {
+    const w0 = this.unproject(x0, y0);
+    const w1 = this.unproject(x0 + dx, y0 + dy);
+    return [w1[0] - w0[0], w1[1] - w0[1]];
   }
 
   /** Current zoom level. */
@@ -678,8 +695,9 @@ export class ScatterRenderer {
       const weightSet = new Set(normalLabels.map((l) => l.weight ?? baseFontWeight));
       const weights = Array.from(weightSet).sort((a, b) => a - b);
 
+      const { sizeUnits: labelSizeUnits = 'pixels' } = this.labelStyle;
       const commonProps = {
-        sizeUnits: 'pixels',
+        sizeUnits: labelSizeUnits,
         fontFamily,
         characterSet: 'auto',
         fontSettings: { sdf: true, fontSize: 64, buffer: 16, radius: 16 },

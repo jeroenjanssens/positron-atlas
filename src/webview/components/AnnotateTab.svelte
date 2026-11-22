@@ -100,8 +100,11 @@
     atlas.setLabelOptions({ fineColumn: v === '' ? null : Number(v) });
   }
 
-  // A3: drag offset keys that have been moved
+  // A3/B5: drag offset keys that have been moved
   const movedLabels = $derived(Object.keys(atlas.labels.dragOffsets ?? {}));
+  // B5: around-labels freeze state
+  const isFrozen = $derived(!!atlas.labels.frozenAroundLayout && Object.keys(atlas.labels.frozenAroundLayout).length > 0);
+  const isAround = $derived((atlas.labels.labelStyle ?? 'over') === 'around');
 
   // A9: add/remove highlight groups
   function toggleHighlight(name: string, on: boolean) {
@@ -335,9 +338,9 @@
   {/if}
 </Section>
 
-<!-- A3: Label positions -->
+<!-- A3/B5: Label positions -->
 <Section {atlas} id="labelPositions" title="Label positions">
-  <div class="hint muted">Drag a label on the map (pan mode) to move it. Right-click to reset a single label's position.</div>
+  <div class="hint muted">Drag a label on the map (pan mode) to move it. Right-click to reset a single label's position. Offsets are stored in map coordinates and stay correct after pan, zoom and rotation.</div>
   {#if movedLabels.length}
     <div class="hint muted">{movedLabels.length} label{movedLabels.length === 1 ? '' : 's'} moved: {movedLabels.join(', ')}</div>
     <div class="btn-row">
@@ -347,6 +350,25 @@
   {:else}
     <div class="hint muted">No labels have been moved.</div>
   {/if}
+  {#if isAround}
+    <div class="btn-row">
+      {#if isFrozen}
+        <button onclick={() => atlas.setLabelOptions({ frozenAroundLayout: undefined })}>Unfreeze layout <Info id="labels.thawLayout" /></button>
+      {:else}
+        <button onclick={() => atlas.freezeAroundLayout()}>Freeze layout <Info id="labels.freezeLayout" /></button>
+      {/if}
+    </div>
+  {/if}
+</Section>
+
+<!-- B5: Scale text with zoom -->
+<Section {atlas} id="labelScale" title="Label scale">
+  <Checkbox
+    checked={atlas.labels.scaleTextWithZoom ?? false}
+    onchange={(v) => atlas.setLabelOptions({ scaleTextWithZoom: v })}>
+    Scale text with zoom <Info id="labels.scaleTextWithZoom" />
+  </Checkbox>
+  <div class="hint muted">Off: label size stays fixed in pixels (readable at every zoom, like online maps). On: text scales with the data (useful for figure export).</div>
 </Section>
 
 <!-- Title / subtitle / logo overlay (A1) -->

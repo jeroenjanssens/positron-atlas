@@ -86,6 +86,8 @@ import {
   scheduleLabels as scheduleLabelsImpl,
   updateLabels as updateLabelsImpl,
   setDragOffset as setDragOffsetImpl,
+  freezeAroundLayout as freezeAroundLayoutImpl,
+  thawAroundLayout as thawAroundLayoutImpl,
 } from './atlas/labels';
 import {
   refreshClusters as refreshClustersImpl,
@@ -342,6 +344,11 @@ export class Atlas {
   // ---- A11: around-the-map labels ---------------------------------------------
   /** World-space group data for the AroundLabelsOverlay; null when labelStyle is 'over'. */
   aroundLabelGroups = $state.raw<import('./labels/around').AroundLabelGroup[] | null>(null);
+  /**
+   * B5/Q14: When true, the AroundLabelsOverlay should call atlas.freezeAroundLayout(positions)
+   * on its next tick with the current screen positions, then reset this flag.
+   */
+  _pendingFreezeAroundLayout = false;
 
   // ---- A12: glow overlay -------------------------------------------------------
   /**
@@ -483,9 +490,20 @@ export class Atlas {
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
     this.renderer.onPointer((p) => this.onPointer(p));
-    // Label drags and resets are undoable (A3).
+    // Label drags and resets are undoable (A3/B5).
+    // Store drag start to convert screen delta → world delta (B5: map-coordinate offsets).
+    let _labelDragStart: [number, number] = [0, 0];
     this.renderer.onLabelDrag({
-      onEnd: (label, delta) => moveLabelImpl(this, label.key ?? label.text, delta),
+      onStart: (_label, screenPos) => { _labelDragStart = screenPos; },
+      onEnd: (label, screenDelta) => {
+        // Convert screen-pixel delta to world-coordinate delta through the viewport.
+        // This is correct under 2D rotation and in 3D (Q11).
+        const worldDelta = this.renderer!.screenDeltaToWorld(
+          _labelDragStart[0], _labelDragStart[1],
+          screenDelta[0], screenDelta[1],
+        );
+        moveLabelImpl(this, label.key ?? label.text, worldDelta);
+      },
       onRightClick: (label) => resetLabelImpl(this, label.key ?? label.text),
     });
     // A8: re-schedule labels when zoom changes.  A12: also invalidate glow.
@@ -808,10 +826,25 @@ export class Atlas {
   requestLabelCodes(): void { requestLabelCodesImpl(this); }
   scheduleLabels(): void { scheduleLabelsImpl(this); }
   updateLabels(): void { updateLabelsImpl(this); }
-  /** Set/clear a drag offset for a label group (A3). key = group name. */
+  /** Set/clear a drag offset for a label group (A3/B5: map-coordinate offset). key = group name. */
   setDragOffset(key: string, offset: [number, number] | null): void { setDragOffsetImpl(this, key, offset); }
   /** Clear all drag offsets (A3). Records an undo entry. */
   resetAllDragOffsets(): void { resetAllLabelsImpl(this); }
+  /**
+   * Freeze the around-labels ring at its current screen positions (Q14/B5).
+   * The overlay calls this with the current rendered screen positions keyed by group name.
+   * Pass an empty record to call this from the UI — the overlay will pass positions next render.
+   * When no around-label data is available, this is a no-op.
+   */
+  freezeAroundLayout(screenPositions?: Record<string, [number, number]>): void {
+    if (screenPositions) {
+      freezeAroundLayoutImpl(this, screenPositions);
+    } else {
+      // Signal the overlay to call with positions on next tick.
+      this._pendingFreezeAroundLayout = true;
+    }
+  }
+  thawAroundLayout(): void { thawAroundLayoutImpl(this); }
 
   // ---- clusters ----------------------------------------------------------------
   refreshClusters(): void { refreshClustersImpl(this); }

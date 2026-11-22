@@ -75,15 +75,19 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     const detail = Number.isFinite(l.detail) ? Math.min(5, Math.max(1, Math.round(l.detail))) : DEFAULT_LABELS.detail;
     const nameBy = l.nameBy === 'features' || l.nameBy === 'number' ? l.nameBy : typeof l.nameBy === 'number' && valid.has(l.nameBy) ? l.nameBy : 'number';
     const fineColumn = typeof l.fineColumn === 'number' && valid.has(l.fineColumn) ? l.fineColumn : null;
-    // Validate dragOffsets: only keep entries with numeric [dx,dy] arrays.
+    // Validate and migrate dragOffsets (B5: map-coordinate offsets).
+    // Legacy saves (dragOffsetsVersion absent) used screen pixels — reset to avoid
+    // wrong positions after the B5 coordinate change.
+    const dragOffsetsVersion = l.dragOffsetsVersion === 'v2map' ? 'v2map' as const : undefined;
     const dragOffsets: Record<string, [number, number]> = {};
-    if (l.dragOffsets) {
+    if (dragOffsetsVersion === 'v2map' && l.dragOffsets) {
       for (const [k, v] of Object.entries(l.dragOffsets)) {
         if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') {
           dragOffsets[k] = [v[0], v[1]];
         }
       }
     }
+    // If dragOffsetsVersion is absent, dragOffsets stay empty (legacy positions reset).
     atlas.labels = {
       column: col, minSize, maxSize, colorText: l.colorText !== false,
       clusters: l.clusters === true && col === null, detail, nameBy, outlines: l.outlines !== false,
@@ -97,8 +101,9 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
       haloWidth: Number.isFinite(l.haloWidth) ? Math.min(30, Math.max(0, l.haloWidth!)) : 10,
       haloColor: typeof l.haloColor === 'string' ? l.haloColor : '',
       textCase: l.textCase === 'upper' ? 'upper' : 'asis',
-      // A3 draggable
+      // A3/B5 draggable labels (map-coordinate offsets)
       dragOffsets,
+      dragOffsetsVersion: dragOffsetsVersion ?? 'v2map',
       // A8 multi-level
       fineColumn,
       multiLevel: l.multiLevel === true,
@@ -109,6 +114,12 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
       leaderStyle: l.leaderStyle === 'curved' ? 'curved' : l.leaderStyle === 'wedge' ? 'wedge' : 'straight',
       leaderColor: l.leaderColor === 'grey' ? 'grey' : 'cluster',
       leaderWidth: typeof l.leaderWidth === 'number' ? Math.min(10, Math.max(0.5, l.leaderWidth)) : 1.5,
+      // B5 scale-text-with-zoom
+      scaleTextWithZoom: l.scaleTextWithZoom === true,
+      // B5 freeze around-labels layout
+      frozenAroundLayout: (l.frozenAroundLayout && typeof l.frozenAroundLayout === 'object')
+        ? l.frozenAroundLayout as Record<string, [number, number]>
+        : undefined,
     };
   }
   if (state?.view) {
@@ -181,12 +192,20 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
       logoWidth: typeof t.logoWidth === 'number' ? t.logoWidth : 0,
     };
   }
-  // Restore annotations (A4).
+  // Restore annotations (A4/B5: migrate legacy screen-pixel offsets to map coordinates).
   if (state?.annotations) {
     const map = new Map<string, import('../../shared/protocol').AnnotationData>();
     for (const [k, v] of Object.entries(state.annotations)) {
       if (v && typeof v.id === 'string' && typeof v.rowKey === 'string') {
-        map.set(k, v as import('../../shared/protocol').AnnotationData);
+        let ann = v as import('../../shared/protocol').AnnotationData;
+        // B5 migration: if the annotation has no offsetVersion, its offsetX/Y were screen pixels.
+        // Reset them to a small map-unit default; the user can re-drag to their preferred position.
+        if (ann.offsetVersion !== 'v2map') {
+          // Use a fixed 60px-equivalent at zoom 0 (wpp=1 at zoom 0, so 60 world units ≈ 60px).
+          // The actual renderer may not be ready yet, so use zoom=0 approximation.
+          ann = { ...ann, offsetX: 60, offsetY: 20, offsetVersion: 'v2map' };
+        }
+        map.set(k, ann);
       }
     }
     atlas.annotations = map;

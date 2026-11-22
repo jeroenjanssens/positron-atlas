@@ -889,7 +889,7 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
-  // ---- Annotate → Label positions (A3) ----------------------------------------
+  // ---- Annotate → Label positions (A3/B5) ----------------------------------------
 
   'labels.resetPositions': {
     title: 'Reset all label positions',
@@ -897,6 +897,38 @@ export const HELP: Record<string, HelpEntry> = {
     intuition:
       'Each label is returned to the position chosen by the density-weighted placement algorithm. ' +
       'Individual labels can also be reset by right-clicking them on the map.',
+    cost: 'none',
+  },
+
+  // ---- Annotate → B5 scale text with zoom ----------------------------------------
+
+  'labels.scaleTextWithZoom': {
+    title: 'Scale text with zoom',
+    what: 'When on, label text grows and shrinks as you zoom in and out.',
+    intuition:
+      'Off (default): labels stay the same pixel size at every zoom, like street labels on an online map — readable at all scales. ' +
+      'On: labels scale proportionally with the map — useful for figure export where you want text to have a fixed relationship to the data.',
+    when: 'Turn on when exporting a figure to a specific scale; leave off for interactive exploration.',
+    cost: 'none',
+  },
+
+  // ---- Annotate → B5 freeze around-label layout ----------------------------------
+
+  'labels.freezeLayout': {
+    title: 'Freeze layout',
+    what: 'Locks the around-the-map label ring into map coordinates so it stays in place when panning.',
+    intuition:
+      'Normally, around-the-map labels are recomputed every frame to stay at the edge of the cloud. ' +
+      'Freezing converts the current ring positions to map coordinates, so the labels behave like dragged labels: ' +
+      'they pan and zoom with the data, and each label stays near its own group even after panning.',
+    when: 'Before exporting a figure where you want the labels to hold their position.',
+    cost: 'none',
+  },
+
+  'labels.thawLayout': {
+    title: 'Unfreeze layout',
+    what: 'Returns to automatically recomputed around-the-map label positions.',
+    intuition: 'The frozen positions are cleared and the ring algorithm resumes placing labels at the cloud edge.',
     cost: 'none',
   },
 

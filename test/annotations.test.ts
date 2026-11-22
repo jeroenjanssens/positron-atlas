@@ -176,8 +176,10 @@ describe('exportAnnotationsJson / importAnnotationsJson', () => {
 
     const json = exportAnnotationsJson(atlas);
     const parsed = JSON.parse(json);
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed).toHaveLength(2);
+    // B5: new format is { v: 2, annotations: [...] }
+    expect(parsed.v).toBe(2);
+    expect(Array.isArray(parsed.annotations)).toBe(true);
+    expect(parsed.annotations).toHaveLength(2);
 
     // Import into a fresh atlas.
     const atlas2 = makeAtlas();

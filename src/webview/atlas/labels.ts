@@ -63,25 +63,56 @@ export function matchDragOffsets(
   return result;
 }
 
-/** Set or clear the drag offset for a label (A3). Called from atlas methods. */
+/** Set or clear the drag offset for a label (A3/B5). Called from atlas methods.
+ *  Offsets are in map coordinates (world units) since B5. */
 export function setDragOffset(atlas: Atlas, key: string, offset: [number, number] | null): void {
   const existing = atlas.labels.dragOffsets ?? {};
   if (offset === null) {
     const next = { ...existing };
     delete next[key];
-    atlas.labels = { ...atlas.labels, dragOffsets: next };
+    atlas.labels = { ...atlas.labels, dragOffsets: next, dragOffsetsVersion: 'v2map' };
   } else {
-    atlas.labels = { ...atlas.labels, dragOffsets: { ...existing, [key]: offset } };
+    atlas.labels = { ...atlas.labels, dragOffsets: { ...existing, [key]: offset }, dragOffsetsVersion: 'v2map' };
   }
   atlas.persist();
   updateLabels(atlas);
 }
 
-/** Clear all drag offsets (A3). Called from "Reset all label positions" button. */
+/** Clear all drag offsets (A3/B5). Called from "Reset all label positions" button. */
 export function resetAllDragOffsets(atlas: Atlas): void {
-  atlas.labels = { ...atlas.labels, dragOffsets: {} };
+  atlas.labels = { ...atlas.labels, dragOffsets: {}, dragOffsetsVersion: 'v2map' };
   atlas.persist();
   updateLabels(atlas);
+}
+
+/**
+ * Freeze the current around-label layout (Q14 / B5).
+ * Stores the current on-screen around-label positions as absolute world coordinates.
+ * After freezing, the labels don't move with the auto-computed ring; they behave like dragged labels.
+ * @param aroundLabelGroups – the current computed around-label data from atlas.aroundLabelGroups
+ * @param projectWorld – the renderer's projectWorld function (inverse: unproject is passed separately)
+ * @param unproject – the renderer's unproject function
+ */
+export function freezeAroundLayout(
+  atlas: Atlas,
+  screenPositions: Record<string, [number, number]>,
+): void {
+  if (Object.keys(screenPositions).length === 0) return;
+  const renderer = atlas.renderer;
+  if (!renderer) return;
+  const frozen: Record<string, [number, number]> = {};
+  for (const [key, [sx, sy]] of Object.entries(screenPositions)) {
+    const world = renderer.unproject(sx, sy);
+    frozen[key] = world;
+  }
+  atlas.labels = { ...atlas.labels, frozenAroundLayout: frozen };
+  atlas.persist();
+}
+
+/** Clear the frozen around-label layout (Q14). */
+export function thawAroundLayout(atlas: Atlas): void {
+  atlas.labels = { ...atlas.labels, frozenAroundLayout: undefined };
+  atlas.persist();
 }
 
 // ---------------------------------------------------------------------------
@@ -375,9 +406,8 @@ export function updateLabels(atlas: Atlas): void {
     ? collisionPriorities(allCounts, allLevels)
     : collisionPriorities(counts);
 
-  // ---- Drag offsets (A3) ----
+  // ---- Drag offsets (A3/B5: map-coordinate offsets) ----
   const dragOffsets = opts.dragOffsets ?? {};
-  const wpp = atlas.renderer.worldPerPixel();
 
   // ---- Zoom-dependent fine label opacity (A8) ----
   // Fine labels fade in between fittedZoom+1 and fittedZoom+1.5.
@@ -477,10 +507,10 @@ export function updateLabels(atlas: Atlas): void {
     const ci = colorIndex?.get(l.text);
     const baseColor = ci !== undefined ? labelTextColor(hexToRgb(atlas.categoryColor(ci)), plain) : plain;
 
-    // Apply drag offset in world coordinates.
+    // Apply drag offset (B5: offset is in map/world coordinates, applied directly).
     const offset = dragOffsets[rawText] ?? dragOffsets[l.text];
     const position: [number, number] = offset
-      ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
+      ? [l.x + offset[0], l.y + offset[1]]
       : [l.x, l.y];
 
     const isHighlighted = highlightSet.has(rawText) || highlightSet.has(l.text);
@@ -515,7 +545,7 @@ export function updateLabels(atlas: Atlas): void {
       const text = applyCase(rawText);
       const offset = dragOffsets[rawText];
       const position: [number, number] = offset
-        ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
+        ? [l.x + offset[0], l.y + offset[1]]
         : [l.x, l.y];
 
       const isHighlighted = highlightSet.has(rawText);
@@ -547,6 +577,8 @@ export function updateLabels(atlas: Atlas): void {
     haloWidth: opts.haloWidth ?? 10,
     lineHeight: opts.lineSpacing ?? 0.95,
     maxWidth: opts.wrapWidth ?? 9,
+    // B5 (Q13): 'common' scales text with zoom; 'pixels' keeps size constant.
+    sizeUnits: (opts.scaleTextWithZoom ? 'common' : 'pixels') as 'pixels' | 'common',
   };
 
   // Font must be loaded before deck.gl rasterizes glyphs; ensureFont is async so we

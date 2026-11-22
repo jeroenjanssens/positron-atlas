@@ -24,32 +24,48 @@ export const DEFAULT_TITLE: TitleOptions = {
   logoWidth: 0,
 };
 
-/** Default screen-pixel offset for a new callout box: 60 px right, 0 px up. */
-const DEFAULT_OFFSET_X = 60;
-const DEFAULT_OFFSET_Y = -20;
+/**
+ * Default callout box offset in screen pixels (used only to derive a world offset).
+ * B5: the stored offset is in map (world) coordinates.
+ */
+const DEFAULT_OFFSET_X_PX = 60;
+const DEFAULT_OFFSET_Y_PX = -20;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Compute a smart default callout offset that avoids the legend (top-right).
+ * Compute a smart default callout offset in map coordinates (B5).
  * Flips left when the annotated point is in the right 40% of the plot area,
  * and flips downward when it is in the top 30%.
+ *
+ * Returns a [dx, dy] in world units such that
+ *   projectWorld(worldX + dx, worldY + dy) ≈ callout box top-left at the current zoom.
+ * World y is up, so a positive dy moves the box up on screen.
  */
-function smartDefaultOffset(atlas: Atlas, worldX: number, worldY: number): [number, number] {
+export function smartDefaultOffset(atlas: Atlas, worldX: number, worldY: number): [number, number] {
+  const wpp = atlas.renderer?.worldPerPixel() ?? 1;
   const pt = atlas.renderer?.projectWorld(worldX, worldY);
-  if (!pt) return [DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y];
-  // Use the renderer's container for width; fall back to window.
   const W = (typeof window !== 'undefined' ? window.innerWidth : 800);
   const H = (typeof window !== 'undefined' ? window.innerHeight : 600);
   const legendW = atlas.legendWidth?.() ?? 0;
   const plotW = W - legendW;
-  const inRightZone = pt[0] > plotW * 0.6;
-  const inTopZone = pt[1] < H * 0.3;
-  const ox = inRightZone ? -(DEFAULT_OFFSET_X + 80) : DEFAULT_OFFSET_X;
-  const oy = inTopZone ? 40 : DEFAULT_OFFSET_Y;
-  return [ox, oy];
+
+  let ox_px = DEFAULT_OFFSET_X_PX;
+  let oy_px = DEFAULT_OFFSET_Y_PX; // negative = up on screen
+
+  if (pt) {
+    const inRightZone = pt[0] > plotW * 0.6;
+    const inTopZone = pt[1] < H * 0.3;
+    ox_px = inRightZone ? -(DEFAULT_OFFSET_X_PX + 80) : DEFAULT_OFFSET_X_PX;
+    oy_px = inTopZone ? 40 : DEFAULT_OFFSET_Y_PX;
+  }
+
+  // Convert screen pixels to world units.
+  // Screen x right  → world x right  (+)
+  // Screen y down   → world y up      (flip sign)
+  return [ox_px * wpp, -oy_px * wpp];
 }
 
 /** Create a data-URL thumbnail from a loaded image URI (max maxSize px on either side). */
@@ -163,6 +179,7 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
     worldY,
     offsetX: ox,
     offsetY: oy,
+    offsetVersion: 'v2map',  // B5: offsets are in map (world) coordinates
     color: pointColor(atlas, prepIdx),
   };
 
@@ -322,12 +339,12 @@ export function requestAnnotationPixels(atlas: Atlas, annId: string, prepIdx: nu
   vscode.post({ type: 'rows', seq, indices: [prepIdx], imageColumns: imageCols?.length ? imageCols : undefined });
 }
 
-/** Update the drag offset of an annotation. */
+/** Update the callout box offset of an annotation (B5: offset is in map coordinates). */
 export function updateAnnotationOffset(atlas: Atlas, id: string, offsetX: number, offsetY: number): void {
   const ann = atlas.annotations.get(id);
   if (!ann) return;
   const next = new Map(atlas.annotations);
-  next.set(id, { ...ann, offsetX, offsetY });
+  next.set(id, { ...ann, offsetX, offsetY, offsetVersion: 'v2map' });
   atlas.annotations = next;
 }
 
@@ -386,20 +403,44 @@ export function updateAnnotationStyle(atlas: Atlas, id: string, style: Annotatio
   });
 }
 
-/** Export all annotations as a JSON string. */
+/**
+ * Export all annotations as a JSON string (B5: includes format version).
+ * Format: { v: 2, annotations: AnnotationData[] }
+ */
 export function exportAnnotationsJson(atlas: Atlas): string {
   const arr = [...atlas.annotations.values()];
-  return JSON.stringify(arr, null, 2);
+  return JSON.stringify({ v: 2, annotations: arr }, null, 2);
 }
 
-/** Import annotations from a JSON string (replaces current annotations). */
+/**
+ * Import annotations from a JSON string (replaces current annotations).
+ * Accepts both the new { v: 2, annotations: [...] } format and the legacy array format.
+ * Legacy annotations without offsetVersion: 'v2map' have their offsets reset to defaults.
+ */
 export function importAnnotationsJson(atlas: Atlas, json: string): void {
   const before = new Map(atlas.annotations);
-  const arr = JSON.parse(json) as AnnotationData[];
+  const parsed = JSON.parse(json);
+
+  // Support both new envelope format and legacy bare-array format.
+  let arr: AnnotationData[];
+  if (Array.isArray(parsed)) {
+    arr = parsed as AnnotationData[];
+  } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.annotations)) {
+    arr = parsed.annotations as AnnotationData[];
+  } else {
+    arr = [];
+  }
+
+  const wpp = atlas.renderer?.worldPerPixel() ?? 1;
   const next = new Map<string, AnnotationData>();
   for (const ann of arr) {
     if (ann && typeof ann.id === 'string' && typeof ann.rowKey === 'string') {
-      next.set(ann.id, ann);
+      let a = ann;
+      // Migrate legacy screen-pixel offsets: reset to a small world-unit default.
+      if (a.offsetVersion !== 'v2map') {
+        a = { ...a, offsetX: DEFAULT_OFFSET_X_PX * wpp, offsetY: DEFAULT_OFFSET_Y_PX * -wpp, offsetVersion: 'v2map' };
+      }
+      next.set(a.id, a);
     }
   }
   atlas.annotations = next;

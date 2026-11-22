@@ -26,10 +26,12 @@
   // Recomputed every rAF tick.
   let rendered = $state<AroundLabel[]>([]);
 
-  // Drag state (mirrors A3 drag for 'over' labels).
+  // Drag state (B5: world-coordinate offsets, mirroring A3 drag for 'over' labels).
   let dragKey: string | null = null;
-  let dragStartX = 0;
-  let dragStartY = 0;
+  let dragStartClientX = 0;
+  let dragStartClientY = 0;
+  let dragStartCanvasX = 0; // canvas-relative start (for renderer.screenDeltaToWorld)
+  let dragStartCanvasY = 0;
   let origOffsetX = 0;
   let origOffsetY = 0;
   let isDragging = false;
@@ -49,15 +51,13 @@
 
     const opts = atlas.labels;
     const dragOffsets = opts.dragOffsets ?? {};
+    const frozenLayout = opts.frozenAroundLayout ?? {};
 
-    // Apply stored drag offsets to the world positions.
-    const groupsWithOffsets = groups.map(g => {
-      const off = dragOffsets[g.key];
-      return off ? { ...g, worldX: g.worldX, worldY: g.worldY, _screenOffX: off[0], _screenOffY: off[1] } : g;
-    });
-
+    // B5: apply world-coordinate drag offsets.
+    // Groups with a frozen position skip the around-layout and use the frozen world position directly.
+    // Groups with a drag offset have the offset added to their auto around-layout world position.
     const result = computeAroundLabels(
-      groupsWithOffsets,
+      groups,
       (wx, wy) => atlas.renderer!.projectWorld(wx, wy),
       viewW,
       viewH,
@@ -72,14 +72,33 @@
       atlas.nAnchors,
     );
 
-    // Apply drag offsets to the computed screen positions.
+    // Apply world-coordinate drag offsets: convert the auto screen pos to world, add offset, project back.
     rendered = result.map(al => {
+      // Frozen layout takes precedence (Q14 freeze action).
+      const frozen = frozenLayout[al.key];
+      if (frozen) {
+        const fpt = atlas.renderer!.projectWorld(frozen[0], frozen[1]);
+        if (fpt) return { ...al, screenX: fpt[0], screenY: fpt[1] };
+      }
       const off = dragOffsets[al.key];
       if (off) {
-        return { ...al, screenX: al.screenX + off[0], screenY: al.screenY + off[1] };
+        // Convert the auto screen position to world, apply offset, project back.
+        const autoWorld = atlas.renderer!.unproject(al.screenX, al.screenY);
+        const pt = atlas.renderer!.projectWorld(autoWorld[0] + off[0], autoWorld[1] + off[1]);
+        if (pt) return { ...al, screenX: pt[0], screenY: pt[1] };
       }
       return al;
     });
+
+    // B5/Q14: handle a pending freeze request from atlas.freezeAroundLayout().
+    if (atlas._pendingFreezeAroundLayout) {
+      atlas._pendingFreezeAroundLayout = false;
+      const positions: Record<string, [number, number]> = {};
+      for (const al of rendered) {
+        positions[al.key] = [al.screenX, al.screenY];
+      }
+      atlas.freezeAroundLayout(positions);
+    }
 
     rafId = requestAnimationFrame(tick);
   }
@@ -98,24 +117,33 @@
     e.preventDefault();
     e.stopPropagation();
     dragKey = al.key;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
+    dragStartClientX = e.clientX;
+    dragStartClientY = e.clientY;
     const existing = atlas.labels.dragOffsets?.[al.key] ?? [0, 0];
     origOffsetX = existing[0];
     origOffsetY = existing[1];
     beforeDragOffsets = { ...(atlas.labels.dragOffsets ?? {}) };
     isDragging = false;
+    // Record canvas-relative start position for world-delta computation (B5).
+    const canvas = document.querySelector('canvas');
+    const rect = canvas?.getBoundingClientRect();
+    dragStartCanvasX = rect ? e.clientX - rect.left : e.clientX;
+    dragStartCanvasY = rect ? e.clientY - rect.top : e.clientY;
     window.addEventListener('mousemove', onWindowMove);
     window.addEventListener('mouseup', onWindowUp);
   }
 
   function onWindowMove(e: MouseEvent) {
-    if (!dragKey) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
+    if (!dragKey || !atlas.renderer) return;
+    const dx = e.clientX - dragStartClientX;
+    const dy = e.clientY - dragStartClientY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDragging = true;
     if (isDragging) {
-      atlas.setDragOffset(dragKey, [origOffsetX + dx, origOffsetY + dy]);
+      // Convert screen-pixel delta to world delta (B5: map-coordinate offsets).
+      const worldDelta = atlas.renderer.screenDeltaToWorld(
+        dragStartCanvasX, dragStartCanvasY, dx, dy,
+      );
+      atlas.setDragOffset(dragKey, [origOffsetX + worldDelta[0], origOffsetY + worldDelta[1]]);
     }
   }
 
