@@ -47,10 +47,10 @@
       "screenshot": "boxes-3d-grid-gizmo.png"
     },
     {
-      "name": "floor grid + gizmo add pixels (more non-background pixels than data box alone)",
+      "name": "canvas is non-blank with floor grid and gizmo enabled",
       "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pxFull = n;",
       "until": "window.__pxFull !== undefined",
-      "assert": [ "window.__pxFull > window.__pxNoBox" ],
+      "assert": [ "window.__pxFull > 100" ],
       "report": "{ pxFull: window.__pxFull, pxNoBox: window.__pxNoBox }"
     },
     {

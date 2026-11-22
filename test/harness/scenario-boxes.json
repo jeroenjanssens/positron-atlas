@@ -78,7 +78,7 @@
     },
     {
       "name": "selection box: lasso a region and verify selection box appears",
-      "eval": "const c = a.renderer.container; const w = c.clientWidth, h = c.clientHeight; const poly = [[w*0.3, h*0.3], [w*0.7, h*0.3], [w*0.7, h*0.7], [w*0.3, h*0.7]]; a.applyLasso(poly, 'replace')",
+      "eval": "const c = a.renderer.container; const w = c.clientWidth, ht = c.clientHeight; const poly = [[w*0.3, ht*0.3], [w*0.7, ht*0.3], [w*0.7, ht*0.7], [w*0.3, ht*0.7]]; a.applyLasso(poly, 'replace')",
       "until": "a.selectedCount > 0",
       "timeout": 5000,
       "assert": [
