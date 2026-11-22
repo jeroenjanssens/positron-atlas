@@ -21,7 +21,7 @@
     },
     {
       "name": "wide window bright pixels (hc)",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) w++; window.__hcWide=w",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) w++; window.__hcWide=w",
       "until": "window.__hcWide !== undefined",
       "assert": "window.__hcWide > 50"
     },
@@ -33,7 +33,7 @@
     },
     {
       "name": "narrow fewer bright pixels (hc)",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__hcNarrow=n",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__hcNarrow=n",
       "until": "window.__hcNarrow !== undefined",
       "assert": "window.__hcNarrow < window.__hcWide",
       "report": "{ hcWide: window.__hcWide, hcNarrow: window.__hcNarrow }",

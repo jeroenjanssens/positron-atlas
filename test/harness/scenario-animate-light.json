@@ -21,7 +21,7 @@
     },
     {
       "name": "wide window pixel count on light background",
-      "eval": "const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) w++; window.__lightWide=w",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) w++; window.__lightWide=w",
       "until": "window.__lightWide !== undefined",
       "assert": "window.__lightWide > 50"
     },
@@ -33,7 +33,7 @@
     },
     {
       "name": "narrow window fewer dark pixels than wide",
-      "eval": "const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) n++; window.__lightNarrow=n",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) n++; window.__lightNarrow=n",
       "until": "window.__lightNarrow !== undefined",
       "assert": "window.__lightNarrow < window.__lightWide",
       "report": "{ lightWide: window.__lightWide, lightNarrow: window.__lightNarrow }",

@@ -21,7 +21,7 @@
     },
     {
       "name": "wide window bright pixels",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0,0,cv.width,cv.height).data; let n = 0; for (let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__widePixels = n",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0,0,cv.width,cv.height).data; let n = 0; for (let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__widePixels = n",
       "until": "window.__widePixels !== undefined",
       "assert": "window.__widePixels > 50"
     },
@@ -33,7 +33,7 @@
     },
     {
       "name": "narrow window bright pixels — must be less than wide",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0,0,cv.width,cv.height).data; let n = 0; for (let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__narrowPixels = n",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const g = cv.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0,0,cv.width,cv.height).data; let n = 0; for (let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__narrowPixels = n",
       "until": "window.__narrowPixels !== undefined",
       "assert": ["window.__narrowPixels < window.__widePixels", "window.__narrowPixels >= 0"],
       "report": "{ widePixels: window.__widePixels, narrowPixels: window.__narrowPixels }",

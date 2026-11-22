@@ -80,12 +80,16 @@ export function render(atlas: Atlas): void {
   let sets: import('../render/renderer').PointSet[];
   let filters: (FilterAttribute | null)[];
 
-  const animateVals = atlas.animateFilter ?? null;
-
+  /**
+   * Build a combined (legend + histogram + animate) FilterAttribute for one point set.
+   * @param codes   Category codes for this set (already gathered to this set's row order).
+   * @param histVals Histogram filter values aligned with this set (or null).
+   * @param animSlice Animate-window filter values aligned with this set (or null).
+   */
   const filterForCodes = (
     codes: Uint16Array | null,
     histVals: Float32Array | null,
-    histOffset = 0,
+    animSlice: Float32Array | null = null,
   ): FilterAttribute | null => {
     const hidden = (atlas.colorColumn !== null && !atlas.colorByCluster)
       ? atlas.hiddenCategories.get(atlas.colorColumn)
@@ -95,9 +99,9 @@ export function render(atlas: Atlas): void {
       ? (codes ?? atlas.cluster.codes)
       : null;
     const activeCodes = clusterCodes ?? (hidden && hidden.size > 0 ? codes : null);
-    if (!activeCodes && !histVals && !animateVals) return null;
-    const length = activeCodes ? activeCodes.length : (histVals ? histVals.length : (animateVals ? animateVals.length - histOffset : 0));
-    // Combined filter: 1 if visible in BOTH legend and histogram brush.
+    if (!activeCodes && !histVals && !animSlice) return null;
+    const length = activeCodes ? activeCodes.length : (histVals ? histVals.length : (animSlice ? animSlice.length : 0));
+    // Combined filter: 1 if visible in ALL active filters.
     const out = new Float32Array(length).fill(1);
     if (activeCodes && hidden && hidden.size > 0 && !atlas.colorByCluster) {
       for (let i = 0; i < activeCodes.length; i++) {
@@ -109,18 +113,26 @@ export function render(atlas: Atlas): void {
         if (histVals[i] < 0.5) out[i] = 0;
       }
     }
-    // C2 animate filter: AND with time-window gate (offset accounts for split all/anchor sets).
-    if (animateVals !== null) {
-      for (let i = 0; i < out.length; i++) {
-        const ai = i + histOffset;
-        if (ai < animateVals.length && animateVals[ai] < 0.5) out[i] = 0;
+    // C2 animate filter: AND with the pre-gathered time-window slice.
+    if (animSlice) {
+      for (let i = 0; i < Math.min(out.length, animSlice.length); i++) {
+        if (animSlice[i] < 0.5) out[i] = 0;
       }
     }
     // Wrap in a FilterAttribute with an always-empty hidden set (we pre-computed the filter).
     return { codes: activeCodes ?? new Uint16Array(length), hidden: new Set(), precomputed: out };
   };
 
+  /** Gather a Float32Array by anchorPos indices (C2 animate filter). */
+  const gatherF32 = (vals: Float32Array, pos: Uint32Array): Float32Array => {
+    const out = new Float32Array(pos.length);
+    for (let i = 0; i < pos.length; i++) out[i] = vals[pos[i]];
+    return out;
+  };
+
   const nd = atlas.dims;
+  const animateVals = atlas.animateFilter ?? null;
+
   if (showingAll(atlas) && atlas.allXY && atlas.colorsAll && atlas.anchorPos) {
     const placed = atlas.placedRows;
     const first = lowerBound(atlas.anchorPos, placed);
@@ -128,23 +140,35 @@ export function render(atlas: Atlas): void {
     const histAnchors = buildHistFilterValues(atlas, nA - first, first);
     const radiiAll = buildRadii(atlas, placed, 0);
     const radiiAnchors = buildRadii(atlas, nA - first, first);
+    // Animate filter slices: placed rows are indices 0..placed-1 (contiguous kept rows);
+    // remaining anchors are at anchorPos[first..nA-1] in kept-row space.
+    const animAll = animateVals ? animateVals.subarray(0, placed) : null;
+    const animAnchors = animateVals ? gatherF32(animateVals, atlas.anchorPos).subarray(first) : null;
     sets = [
       { id: 'all', layerId: 'base', positions: atlas.allXY.subarray(0, placed * nd), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, positionStride: nd, radii: radiiAll ?? undefined, layerOpacity: baseLO, layerBlending: baseLB },
       { id: 'anchors', layerId: 'base', positions: atlas.anchorXY.subarray(first * nd), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, positionStride: nd, radii: radiiAnchors ?? undefined, layerOpacity: baseLO, layerBlending: baseLB },
     ];
     filters = [
-      filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null, histAll),
-      filterForCodes(atlas.colorValues instanceof Uint16Array ? gatherU16(atlas.colorValues, atlas.anchorPos).subarray(first) : null, histAnchors, first),
+      filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null, histAll, animAll),
+      filterForCodes(atlas.colorValues instanceof Uint16Array ? gatherU16(atlas.colorValues, atlas.anchorPos).subarray(first) : null, histAnchors, animAnchors),
     ];
   } else {
     const histAll = buildHistFilterValues(atlas, nA, 0);
     const radiiAnchors = buildRadii(atlas, nA, 0);
+    // Animate filter: when needsProjection=true, anchors are at anchorPos[0..nA-1];
+    // when needsProjection=false, nA === nKept so direct slice is correct.
+    const animAll = animateVals
+      ? (atlas.prepared.needsProjection && atlas.anchorPos
+          ? gatherF32(animateVals, atlas.anchorPos)
+          : animateVals.subarray(0, nA))
+      : null;
     sets = [{ id: 'anchors', layerId: 'base', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, positionStride: nd, radii: radiiAnchors ?? undefined, layerOpacity: baseLO, layerBlending: baseLB }];
     filters = [filterForCodes(
       atlas.colorValues instanceof Uint16Array
         ? (atlas.prepared.needsProjection && atlas.anchorPos ? gatherU16(atlas.colorValues, atlas.anchorPos) : atlas.colorValues)
         : null,
       histAll,
+      animAll,
     )];
   }
   // B3/Item 9: split base PointSets by symbol code when symbolValuesAnchors is set.
