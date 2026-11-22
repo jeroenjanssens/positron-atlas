@@ -84,11 +84,12 @@
       "report": "window.__pxCheck2"
     },
     {
-      "name": "default offset avoids legend (offsetX negative when in right zone, or small positive)",
+      "name": "default offset avoids legend (B5: world units, non-zero, offsetVersion v2map)",
       "assert": [
-        "Math.abs([...a.annotations.values()][0].offsetX) > 20"
+        "Math.abs([...a.annotations.values()][0].offsetX) > 0",
+        "[...a.annotations.values()][0].offsetVersion === 'v2map'"
       ],
-      "report": "{ offsetX: [...a.annotations.values()][0].offsetX, offsetY: [...a.annotations.values()][0].offsetY }"
+      "report": "{ offsetX: [...a.annotations.values()][0].offsetX, offsetY: [...a.annotations.values()][0].offsetY, offsetVersion: [...a.annotations.values()][0].offsetVersion }"
     },
     {
       "name": "JSON round-trip preserves image style and dataUrl",
