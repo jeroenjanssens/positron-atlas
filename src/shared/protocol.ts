@@ -422,6 +422,11 @@ export interface PanelState {
   }[];
   /** 2D map rotation angle in degrees (item 14). 0 = north-up. */
   rotation2D?: number;
+  /** Shapes on the map (item 8, B4).  Versioned JSON.  Stored as a plain object so the
+   *  panel serialiser can include it without importing the shapes module. */
+  shapes?: unknown;
+  /** Brush tool class names (item 7, B4). */
+  brushClasses?: string[];
 }
 
 /** A user-overridden keybinding from keybindings.json (item 2 cheat sheet). */
@@ -662,6 +667,13 @@ export type ToHost =
   | { type: 'webviewBlurred' }
   /** Notify host that nav preset changed (for positronAtlas.navPreset context key). */
   | { type: 'navPresetChanged'; preset: string }
+  /**
+   * Notify host that the active annotate sub-tool changed (item 7+8, B4).
+   * Host sets positronAtlas.annotateTool context key so that [ / ] dispatch
+   * brush size instead of rotation when the brush is active.
+   * tool = null means the annotate sub-tool is inactive.
+   */
+  | { type: 'annotateToolChanged'; tool: 'brush' | 'shapes' | null }
   /** User dismissed the first-run hint; host persists atlasHintShownV1 to globalState. */
   | { type: 'hintSeen' }
   /**

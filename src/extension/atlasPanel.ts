@@ -868,6 +868,10 @@ export class AtlasPanel {
       case 'navPresetChanged':
         await this.setNavPresetContext(m.preset);
         break;
+      // --- Annotate sub-tool changed (item 7+8, B4) ---
+      case 'annotateToolChanged':
+        await vscode.commands.executeCommand('setContext', 'positronAtlas.annotateTool', m.tool ?? '').then(undefined, () => undefined);
+        break;
       // --- First-run hint dismissed (item 2) ---
       case 'hintSeen':
         await this.ctx.extension.globalState.update('atlasHintShownV1', true);

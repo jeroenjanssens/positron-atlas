@@ -160,6 +160,13 @@ export class InputDispatcher {
       case 'edit.redo':
         a.redo();
         break;
+      // ---- Brush tool (item 7) --------------------------------------------------
+      case 'brush.sizeUp':
+        a.adjustBrushSize(5);
+        break;
+      case 'brush.sizeDown':
+        a.adjustBrushSize(-5);
+        break;
     }
   }
 
@@ -225,14 +232,21 @@ export class InputDispatcher {
         e.preventDefault();
         break;
       case '[':
-        // [ rotates counter-clockwise in 2D.
-        // In brush mode (B4) this will change brush size instead — handled by context.
-        this.dispatch('view.rotateLeft');
+        // In brush mode (B4), [ decreases brush size.  Otherwise, rotate left.
+        if (this.atlas.annotateTool === 'brush') {
+          this.dispatch('brush.sizeDown');
+        } else {
+          this.dispatch('view.rotateLeft');
+        }
         e.preventDefault();
         break;
       case ']':
-        // ] rotates clockwise in 2D.
-        this.dispatch('view.rotateRight');
+        // In brush mode (B4), ] increases brush size.  Otherwise, rotate right.
+        if (this.atlas.annotateTool === 'brush') {
+          this.dispatch('brush.sizeUp');
+        } else {
+          this.dispatch('view.rotateRight');
+        }
         e.preventDefault();
         break;
       case 'n':

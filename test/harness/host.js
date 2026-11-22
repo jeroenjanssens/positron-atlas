@@ -566,6 +566,11 @@
       case 'navPresetChanged':
         harness.log.push(`navPreset: ${m.preset}`);
         break;
+      // --- Annotate sub-tool changed (item 7+8, B4) ---
+      case 'annotateToolChanged':
+        harness.annotateTool = m.tool;
+        harness.log.push(`annotateToolChanged: ${m.tool}`);
+        break;
       // --- First-run hint dismissed (item 2) ---
       case 'hintSeen':
         harness.log.push('hintSeen');

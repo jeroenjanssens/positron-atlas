@@ -36,9 +36,16 @@ export type ActionId =
   | 'edit.undo'
   | 'edit.redo'
   | 'select.all'
-  | 'select.clear';
+  | 'select.clear'
+  | 'brush.sizeUp'
+  | 'brush.sizeDown';
 
-/** Which contexts a binding applies in. */
+/**
+ * Which contexts a binding applies in.
+ * '2d-brush' means the binding is only active while the brush tool is active in 2D.
+ * This is enforced by the dispatcher (which checks atlas.annotateTool) and by the
+ * VS Code `when` clause `positronAtlas.annotateTool == 'brush'` (set by the host).
+ */
 export type BindingContext = '2d' | '3d' | 'both' | '2d-brush';
 
 /**
@@ -284,6 +291,24 @@ export const BINDINGS: BindingEntry[] = [
     win: 'ctrl+shift+z',
     section: 'misc',
     context: 'both',
+  },
+  // ---- Brush tool (item 7, B4) ------------------------------------------------
+  // [ and ] adjust brush size when the brush tool is active.  In all other states,
+  // [ and ] dispatch view.rotateLeft / view.rotateRight (see above).  The dispatcher
+  // checks atlas.annotateTool; in Positron, the when clause gates the keybinding.
+  {
+    actionId: 'brush.sizeDown',
+    label: 'Decrease brush size',
+    key: '[',
+    section: 'annotate',
+    context: '2d-brush',
+  },
+  {
+    actionId: 'brush.sizeUp',
+    label: 'Increase brush size',
+    key: ']',
+    section: 'annotate',
+    context: '2d-brush',
   },
   // ---- Preset-specific: CAD fit keys -------------------------------------------
   {
