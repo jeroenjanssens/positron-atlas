@@ -1,6 +1,6 @@
 # Plan: napari-inspired features, navigation presets and a controls cheat sheet
 
-Status: **proposal, nothing implemented**. Written 2026-11-22 against local `main` (`d9a00aa`).
+Status: **accepted 2026-11-22**: all recommendations (Q1–Q14) and the wave plan were accepted as written; implementation runs in waves A–C. Written 2026-11-22 against local `main` (`d9a00aa`).
 
 This plan follows [`roadmap-plan.md`](roadmap-plan.md), whose items are done.
 

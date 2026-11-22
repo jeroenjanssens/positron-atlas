@@ -140,6 +140,8 @@ See `docs/benchmarks.md` in the source repository.
 
 ## Development
 
+Conventions and checks for contributors are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 With [just](https://just.systems):
 
 ```sh
