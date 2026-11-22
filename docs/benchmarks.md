@@ -173,4 +173,12 @@ Atlas offers polars-umap first when both are installed.
 
 - The neighbour search runs in its own thread right after `prepare`, while the browser computes the anchor layout, so the first placement usually only waits for the weighted mean too.
 - The cache costs 8 bytes per row and neighbour (u32 index + f32 squared distance): 80 MB for 10⁶ rows at k = 10. It is skipped above `positronAtlas.neighborCacheMB` (default 1,024 MB).
-- The cache holds euclidean neighbours. With the cosine metric, placement searches again (and doesn't cache).
+- The cache is keyed by metric and k, so cosine neighbours are cached too (2026-11-22). If both don't fit in the budget, the euclidean entries are evicted first; a cosine cache that alone exceeds the budget is skipped and the job status says why.
+
+Cosine metric, numpy (`python/bench_project.py`, same machine):
+
+| Rows × dims | Cosine neighbours (first placement) | Re-place from the cache | Per row |
+|---|---:|---:|---:|
+| 10⁵ × 50 | 0.88 s | 0.017 s | 0.21 µs |
+| 10⁶ × 20 | 14.75 s | 0.18 s | 0.20 µs |
+| 10⁵ × 1,000 | 2.96 s | 0.018 s | 0.20 µs |
