@@ -385,30 +385,32 @@ function drawShapesOnCanvas(
           else ctx.lineTo(s[0] * dpr, s[1] * dpr);
         }
         ctx.stroke();
-        // Draw arrowhead for 'arrow'.
-        if (shape.kind === 'arrow' && pts.length >= 2) {
-          const last = pts[pts.length - 1];
-          const prev = pts[pts.length - 2];
-          const s1 = projectWorld(last[0], last[1]);
-          const s2 = projectWorld(prev[0], prev[1]);
-          if (s1 && s2) {
-            const angle = Math.atan2(s1[1] - s2[1], s1[0] - s2[0]);
-            const len = 10 * dpr;
-            ctx.beginPath();
-            ctx.moveTo(s1[0] * dpr, s1[1] * dpr);
-            ctx.lineTo(
-              (s1[0] - len * Math.cos(angle - Math.PI / 6)) * dpr,
-              (s1[1] - len * Math.sin(angle - Math.PI / 6)) * dpr,
-            );
-            ctx.lineTo(
-              (s1[0] - len * Math.cos(angle + Math.PI / 6)) * dpr,
-              (s1[1] - len * Math.sin(angle + Math.PI / 6)) * dpr,
-            );
-            ctx.closePath();
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.fill();
-          }
-        }
+        // Draw arrowhead(s) based on style.arrowHead.
+        const ah = shape.style.arrowHead ?? (shape.kind === 'arrow' ? 'end' : 'none');
+        const drawArrowTip = (tipPt: [number, number], fromPt: [number, number]) => {
+          const s1 = projectWorld(tipPt[0], tipPt[1]);
+          const s2 = projectWorld(fromPt[0], fromPt[1]);
+          if (!s1 || !s2) return;
+          const angle = Math.atan2(s1[1] - s2[1], s1[0] - s2[0]);
+          const len = 10 * dpr;
+          ctx.beginPath();
+          ctx.moveTo(s1[0] * dpr, s1[1] * dpr);
+          ctx.lineTo(
+            (s1[0] - len * Math.cos(angle - Math.PI / 6)) * dpr,
+            (s1[1] - len * Math.sin(angle - Math.PI / 6)) * dpr,
+          );
+          ctx.lineTo(
+            (s1[0] - len * Math.cos(angle + Math.PI / 6)) * dpr,
+            (s1[1] - len * Math.sin(angle + Math.PI / 6)) * dpr,
+          );
+          ctx.closePath();
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.fill();
+        };
+        if ((ah === 'end' || ah === 'both') && pts.length >= 2)
+          drawArrowTip(pts[pts.length - 1], pts[pts.length - 2]);
+        if ((ah === 'start' || ah === 'both') && pts.length >= 2)
+          drawArrowTip(pts[0], pts[1]);
       }
     } else {
       // Closed shapes: use shapeToPolygon to get vertices.

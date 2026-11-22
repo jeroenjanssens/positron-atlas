@@ -658,13 +658,26 @@
         format={(v) => `${Math.round(v * 100)}%`}
         hint="Overall shape opacity (0=transparent, 1=opaque)"
         onchange={(v) => atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, opacity: v } })} infoId="shapes.style" />
+      <div class="select"><span>Dash</span>
+        <Select value={(() => { const d = selectedShape.style.dash; if (!d || d.length === 0) return 'solid'; if (d[0] <= 3) return 'dotted'; return 'dashed'; })()} ariaLabel="Dash style"
+          onchange={(e) => {
+            const v = (e.target as HTMLSelectElement).value;
+            const dash = v === 'dashed' ? [6, 4] : v === 'dotted' ? [2, 4] : [];
+            atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, dash } });
+          }}>
+          <option value="solid">Solid</option>
+          <option value="dashed">Dashed</option>
+          <option value="dotted">Dotted</option>
+        </Select>
+      </div>
       {#if (selectedShape.kind === 'line' || selectedShape.kind === 'arrow')}
         <div class="select"><span>Arrowhead</span>
           <Select value={selectedShape.style.arrowHead ?? 'none'} ariaLabel="Arrowhead"
             onchange={(e) => atlas.updateShape(selectedShape.id, { style: { ...selectedShape.style, arrowHead: (e.target as HTMLSelectElement).value as any } })}>
             <option value="none">None</option>
-            <option value="open">Open</option>
-            <option value="filled">Filled</option>
+            <option value="end">At end</option>
+            <option value="start">At start</option>
+            <option value="both">Both ends</option>
           </Select>
         </div>
       {/if}
@@ -727,6 +740,9 @@
     </div>
   {:else}
     <div class="hint muted">Activate the <span class="codicon codicon-symbol-misc" style="font-size:12px;vertical-align:-1px;"></span> Shapes tool in the toolbar first.</div>
+  {/if}
+  {#if atlas.dims === 3}
+    <div class="hint muted">Shapes are drawn on the 2D projection plane and are not available in 3D view. Switch to 2D to draw or edit shapes.</div>
   {/if}
 </Section>
 
