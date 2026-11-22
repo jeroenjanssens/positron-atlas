@@ -1373,6 +1373,71 @@ export const HELP: Record<string, HelpEntry> = {
       'It tells you which direction you are looking after orbiting the camera.',
     cost: 'none',
   },
+
+  // ---- Brush (item 7, B4) -------------------------------------------------------
+  'brush.size': {
+    title: 'Brush size',
+    what: 'Radius of the brush tool in screen pixels.',
+    intuition:
+      'Drag the slider or press [ (decrease) / ] (increase) while the brush tool is active. ' +
+      'A smaller brush gives more precise control; a larger brush is faster for tagging dense clusters. ' +
+      'Range: 5–100 pixels.',
+    cost: 'none',
+  },
+  'brush.class': {
+    title: 'Brush class',
+    what: 'The class name that will be assigned to points you paint.',
+    intuition:
+      'Each class gets a colour from the brush palette. Add up to 8 classes. ' +
+      'Hold Alt while dragging to erase (remove the pending tag).',
+    cost: 'none',
+  },
+  'brush.fill': {
+    title: 'Fill cluster / category',
+    what: 'Click a point to tag all points in the same cluster or category.',
+    intuition:
+      'If a cluster exists, all points in the same cluster as the clicked point are tagged. ' +
+      'Otherwise, all points with the same color-column category are tagged. ' +
+      'This is useful when you want to quickly assign a whole cluster to a class.',
+    cost: 'none',
+  },
+  'brush.write': {
+    title: 'Write to DataFrame',
+    what: 'Write the pending brush tags to a column in the DataFrame.',
+    intuition:
+      'Opens a confirmation dialog. The column name you choose is created (or updated) with ' +
+      'one class name per tagged row. Rows you did not paint keep their existing value ' +
+      '(keepOthers=true). The pending overlay disappears once written.',
+    cost: 'none',
+  },
+  // ---- Shapes (item 8, B4) -------------------------------------------------------
+  'shapes.type': {
+    title: 'Shape type',
+    what: 'The type of shape to draw: rectangle, ellipse, polygon, freehand (closed), line, arrow, or text.',
+    intuition:
+      'Rectangle and ellipse are drawn by dragging a bounding box. ' +
+      'Polygon and line are built by clicking to place each vertex; double-click to finish. ' +
+      'Freehand follows the cursor like a lasso and closes automatically. ' +
+      'Arrow is a line with an arrowhead at the end.',
+    cost: 'none',
+  },
+  'shapes.style': {
+    title: 'Shape style',
+    what: 'Visual appearance of the selected shape: stroke colour, fill colour, width, opacity and dash.',
+    intuition:
+      'Changes apply immediately to the selected shape. Stroke colour controls the outline; ' +
+      'fill colour controls the interior (set alpha to 0 for a transparent fill). ' +
+      'Text shapes use the stroke colour for the text.',
+    cost: 'none',
+  },
+  'shapes.tag': {
+    title: 'Tag points inside shape',
+    what: 'Assign the current brush class to all points inside a closed shape.',
+    intuition:
+      'Only closed shapes (rectangle, ellipse, polygon, freehand) can be used for tagging. ' +
+      'Uses the same even-odd rule as the lasso selection. Opens the same write dialog as the brush.',
+    cost: 'none',
+  },
 };
 
 /** Look up a help entry by its dot-separated id.  Returns undefined when not found. */

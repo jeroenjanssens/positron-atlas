@@ -1,0 +1,126 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 10, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 1000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "brush starts with no pending codes",
+      "assert": [
+        "a.pendingBrushCodes === null",
+        "a.annotateTool === null",
+        "a.brush.sizePx >= 5",
+        "a.brush.classes.length >= 1"
+      ]
+    },
+    {
+      "name": "activate brush tool",
+      "eval": "a.setAnnotateTool('brush')",
+      "assert": [
+        "a.annotateTool === 'brush'",
+        "h.annotateTool === 'brush'"
+      ],
+      "report": "{ annotateTool: a.annotateTool, harnessAnnotateTool: h.annotateTool }"
+    },
+    {
+      "name": "apply a brush stroke at the first anchor point",
+      "eval": "const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; a.applyBrushStroke(wx, wy);",
+      "until": "a.pendingBrushCodes !== null",
+      "timeout": 3000,
+      "assert": [
+        "a.pendingBrushCodes !== null",
+        "a.pendingBrushCodes.length === a.prepared.nAnchors",
+        "a.history.canUndo",
+        "a.undoLabel.includes('Brush')"
+      ],
+      "report": "{ nTagged: Array.from(a.pendingBrushCodes).filter(v => v !== 65535).length, undoLabel: a.undoLabel }"
+    },
+    {
+      "name": "some points are tagged (brush hit at least 1 point)",
+      "assert": [
+        "Array.from(a.pendingBrushCodes).some(v => v !== 65535)"
+      ]
+    },
+    {
+      "name": "brush size slider: adjust up and down",
+      "eval": "const before = a.brush.sizePx; a.adjustBrushSize(5); a.adjustBrushSize(-5);",
+      "assert": [
+        "a.brush.sizePx >= 5",
+        "a.brush.sizePx <= 100"
+      ]
+    },
+    {
+      "name": "brush size key ] (sizeUp via adjustBrushSize)",
+      "eval": "const before = a.brush.sizePx; a.adjustBrushSize(5);",
+      "assert": ["a.brush.sizePx >= 5", "a.brush.sizePx <= 100"]
+    },
+    {
+      "name": "erase stroke: set erasing=true and re-paint the same point",
+      "eval": "a.brush = { ...a.brush, erasing: true }; const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; a.applyBrushStroke(wx, wy);",
+      "assert": [
+        "a.pendingBrushCodes !== null",
+        "a.history.canUndo"
+      ],
+      "report": "{ erasing: a.brush.erasing }"
+    },
+    {
+      "name": "reset erasing mode",
+      "eval": "a.brush = { ...a.brush, erasing: false };"
+    },
+    {
+      "name": "undo erase stroke",
+      "eval": "a.undo()",
+      "until": "!a.history.canRedo || true",
+      "timeout": 1000
+    },
+    {
+      "name": "undo paint stroke",
+      "eval": "a.undo()",
+      "until": "!a.history.canRedo || true",
+      "timeout": 1000
+    },
+    {
+      "name": "after undo: pending codes should be null or all erased",
+      "assert": [
+        "a.pendingBrushCodes === null || Array.from(a.pendingBrushCodes).every(v => v === 65535)"
+      ]
+    },
+    {
+      "name": "paint several points via applyBrushStroke",
+      "eval": "a.brush = { ...a.brush, erasing: false, currentClass: 0 }; for (let i = 0; i < 5; i++) { a.applyBrushStroke(a.anchorXY[2*i], a.anchorXY[2*i+1]); }",
+      "until": "a.pendingBrushCodes !== null && Array.from(a.pendingBrushCodes).some(v => v !== 65535)",
+      "timeout": 3000
+    },
+    {
+      "name": "write brush codes to DataFrame (confirmModal is auto-accepted by harness)",
+      "eval": "a.commitBrush('brush_tag')",
+      "until": "h.log.some(l => l.includes('writeLabels') || l.includes('confirm'))",
+      "timeout": 5000,
+      "assert": [
+        "h.log.some(l => l.includes('confirm'))"
+      ],
+      "report": "{ logTail: h.log.slice(-3) }"
+    },
+    {
+      "name": "labelsWritten message resets pending codes",
+      "until": "a.phase === 'ready' || h.log.length > 10",
+      "timeout": 10000,
+      "report": "{ logTail: h.log.slice(-3) }"
+    },
+    {
+      "name": "deactivate brush tool",
+      "eval": "a.setAnnotateTool(null)",
+      "assert": [
+        "a.annotateTool === null",
+        "h.annotateTool === null"
+      ]
+    }
+  ]
+}

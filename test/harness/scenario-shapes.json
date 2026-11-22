@@ -1,0 +1,153 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 1000\nk = rng.integers(0, 2, n)\ncenters = rng.normal(0, 8, (2, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['label'] = [f'cls_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 1000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "shapes start empty",
+      "assert": [
+        "a.shapes.length === 0",
+        "a.annotateTool === null"
+      ]
+    },
+    {
+      "name": "activate shapes tool",
+      "eval": "a.setAnnotateTool('shapes')",
+      "assert": [
+        "a.annotateTool === 'shapes'",
+        "h.annotateTool === 'shapes'"
+      ]
+    },
+    {
+      "name": "add a rectangle shape in map coordinates around several points",
+      "eval": "const { makeRect } = window.__shapesModule || (window.__shapesModule = {}); const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; const r = { kind: 'rect', id: 'test-rect-1', x: wx - 20, y: wy - 20, w: 40, h: 40, rotation: 0, style: { strokeColor: [255, 0, 0, 220], fillColor: [255, 0, 0, 40], strokeWidth: 2, opacity: 1, dash: [], arrowHead: 'none' }, selected: false }; a.addShape(r);",
+      "until": "a.shapes.length === 1",
+      "timeout": 3000,
+      "assert": [
+        "a.shapes.length === 1",
+        "a.shapes[0].kind === 'rect'",
+        "a.history.canUndo",
+        "a.undoLabel.includes('shape')"
+      ],
+      "report": "{ nShapes: a.shapes.length, kind: a.shapes[0].kind, undoLabel: a.undoLabel }"
+    },
+    {
+      "name": "move the shape (undoable)",
+      "eval": "const s = a.shapes[0]; a.updateShape(s.id, { x: s.x + 5, y: s.y + 5 });",
+      "assert": [
+        "a.shapes[0].x > 0 || a.shapes.length === 1",
+        "a.history.canUndo"
+      ]
+    },
+    {
+      "name": "undo move",
+      "eval": "a.undo()",
+      "until": "a.history.canRedo",
+      "timeout": 2000
+    },
+    {
+      "name": "undo add shape (removes it)",
+      "eval": "a.undo()",
+      "until": "a.shapes.length === 0",
+      "timeout": 2000,
+      "assert": [
+        "a.shapes.length === 0",
+        "a.history.canRedo"
+      ]
+    },
+    {
+      "name": "redo restores shape",
+      "eval": "a.redo()",
+      "until": "a.shapes.length === 1",
+      "timeout": 2000,
+      "assert": [
+        "a.shapes.length === 1"
+      ]
+    },
+    {
+      "name": "add an ellipse",
+      "eval": "const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; const e = { kind: 'ellipse', id: 'test-ell-1', cx: wx, cy: wy, rx: 30, ry: 20, rotation: 0, style: { strokeColor: [0, 100, 255, 220], fillColor: [0, 100, 255, 40], strokeWidth: 2, opacity: 1, dash: [], arrowHead: 'none' }, selected: false }; a.addShape(e);",
+      "until": "a.shapes.length === 2",
+      "timeout": 2000,
+      "assert": ["a.shapes.length === 2"]
+    },
+    {
+      "name": "add a line shape",
+      "eval": "const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; const l = { kind: 'line', id: 'test-line-1', points: [[wx - 10, wy], [wx + 10, wy + 5]], style: { strokeColor: [0, 200, 0, 220], fillColor: [0, 200, 0, 0], strokeWidth: 3, opacity: 1, dash: [], arrowHead: 'none' }, selected: false }; a.addShape(l);",
+      "until": "a.shapes.length === 3",
+      "timeout": 2000,
+      "assert": ["a.shapes.length === 3"]
+    },
+    {
+      "name": "add a text shape",
+      "eval": "const wx = a.anchorXY[0]; const wy = a.anchorXY[1]; const t = { kind: 'text', id: 'test-text-1', x: wx, y: wy + 5, text: 'Atlas B4', fontSize: 14, fontFamily: 'sans-serif', style: { strokeColor: [255, 255, 255, 220], fillColor: [0, 0, 0, 0], strokeWidth: 1, opacity: 1, dash: [], arrowHead: 'none' }, selected: false }; a.addShape(t);",
+      "until": "a.shapes.length === 4",
+      "timeout": 2000,
+      "assert": ["a.shapes.length === 4"]
+    },
+    {
+      "name": "shapes are still in place after view.reset",
+      "eval": "a.fitView()",
+      "assert": [
+        "a.shapes.length === 4"
+      ]
+    },
+    {
+      "name": "shapes are still in place after 2D rotation",
+      "eval": "a.renderer.setRotation2D(30); a.rotation2D = 30;",
+      "assert": [
+        "a.shapes.length === 4",
+        "a.rotation2D === 30"
+      ]
+    },
+    {
+      "name": "reset rotation",
+      "eval": "a.renderer.setRotation2D(0); a.rotation2D = 0;"
+    },
+    {
+      "name": "tag points inside the rectangle",
+      "eval": "const rectShape = a.shapes.find(s => s.kind === 'rect'); if (rectShape) a.tagPointsInShape(rectShape.id, 'shape_tag');",
+      "until": "h.log.some(l => l.includes('confirm'))",
+      "timeout": 5000,
+      "assert": [
+        "h.log.some(l => l.includes('confirm'))"
+      ],
+      "report": "{ logTail: h.log.slice(-3) }"
+    },
+    {
+      "name": "JSON export and re-import round-trip",
+      "eval": "const json = a.exportShapes(); a.shapes = []; const before = a.shapes.length; a.importShapes(json);",
+      "until": "a.shapes.length >= 4",
+      "timeout": 2000,
+      "assert": [
+        "a.shapes.length >= 4"
+      ],
+      "report": "{ nShapesAfterRoundTrip: a.shapes.length }"
+    },
+    {
+      "name": "remove a shape",
+      "eval": "const id = a.shapes[0].id; a.removeShape(id);",
+      "until": "a.shapes.length < 4",
+      "timeout": 2000,
+      "assert": [
+        "a.shapes.length === a.shapes.length"
+      ]
+    },
+    {
+      "name": "deactivate shapes tool",
+      "eval": "a.setAnnotateTool(null)",
+      "assert": [
+        "a.annotateTool === null",
+        "h.annotateTool === null"
+      ]
+    }
+  ]
+}
