@@ -335,6 +335,12 @@ export function updateLabels(atlas: Atlas): void {
 
   // ---- Highlight groups (A9) ----
   const highlightSet = new Set(opts.highlightGroups ?? []);
+  // Badge fill for groups without a category colour (e.g. automatic clusters): the mean colour
+  // of the group's points, darkened until white text on it is readable.
+  const groupColor =
+    highlightSet.size > 0 && atlas.colorsAnchors
+      ? groupMeanColors(groups.anchors, atlas.colorsAnchors, groups.names.length)
+      : null;
 
   // ---- Apply text case (A2) ----
   const applyCase = (text: string): string => opts.textCase === 'upper' ? text.toUpperCase() : text;
@@ -356,11 +362,14 @@ export function updateLabels(atlas: Atlas): void {
       : [l.x, l.y];
 
     const isHighlighted = highlightSet.has(rawText) || highlightSet.has(l.text);
-    const badge: [number, number, number, number] | undefined = isHighlighted && ci !== undefined
-      ? [...hexToRgb(atlas.categoryColor(ci)), 220] as [number, number, number, number]
-      : isHighlighted
-      ? [...plain.slice(0, 3), 220] as [number, number, number, number]
-      : undefined;
+    const gi = groups.names.indexOf(l.text);
+    const badge: [number, number, number, number] | undefined = !isHighlighted
+      ? undefined
+      : ci !== undefined
+      ? [...readableBadge(hexToRgb(atlas.categoryColor(ci))), 230]
+      : groupColor && gi >= 0 && groupColor[gi]
+      ? [...readableBadge(groupColor[gi]!), 230]
+      : [...readableBadge([110, 110, 110]), 230];
 
     out.push({
       text,
@@ -431,4 +440,37 @@ export function updateLabels(atlas: Atlas): void {
       atlas.renderer.setLabels(out, { ...labelStyle, fontFamily: resolvedFontFamily(atlas) });
     }
   });
+}
+
+
+/** Mean RGB of the points in each group (codes per point, RGBA colours per point); null for empty groups. */
+export function groupMeanColors(codes: ArrayLike<number>, rgba: ArrayLike<number>, k: number): ([number, number, number] | null)[] {
+  const sum = new Float64Array(k * 3);
+  const n = new Uint32Array(k);
+  const m = Math.min(codes.length, Math.floor(rgba.length / 4));
+  for (let i = 0; i < m; i++) {
+    const c = codes[i];
+    if (c >= k) continue; // noise / other
+    sum[3 * c] += rgba[4 * i];
+    sum[3 * c + 1] += rgba[4 * i + 1];
+    sum[3 * c + 2] += rgba[4 * i + 2];
+    n[c]++;
+  }
+  return Array.from({ length: k }, (_, c) =>
+    n[c] ? ([sum[3 * c] / n[c], sum[3 * c + 1] / n[c], sum[3 * c + 2] / n[c]].map(Math.round) as [number, number, number]) : null,
+  );
+}
+
+/** Darken a colour until white text on it reaches a contrast ratio of at least 3:1. */
+export function readableBadge(rgb: [number, number, number]): [number, number, number] {
+  const lum = (c: number[]) => {
+    const f = (v: number) => {
+      const x = v / 255;
+      return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  };
+  let c = [...rgb];
+  for (let i = 0; i < 20 && 1.05 / (lum(c) + 0.05) < 3; i++) c = c.map((v) => v * 0.85);
+  return c.map(Math.round) as [number, number, number];
 }

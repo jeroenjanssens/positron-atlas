@@ -174,3 +174,16 @@ describe('collisionPriorities with multi-level (A8)', () => {
     }
   });
 });
+
+describe('highlight badge colours', () => {
+  it('averages the colours of each group and keeps white text readable', async () => {
+    const { groupMeanColors, readableBadge } = await import('../src/webview/atlas/labels');
+    const codes = new Uint16Array([0, 0, 1, 2]);
+    const rgba = new Uint8Array([200, 0, 0, 255, 100, 0, 0, 255, 0, 0, 200, 255, 9, 9, 9, 255]);
+    const m = groupMeanColors(codes, rgba, 2);
+    expect(m[0]).toEqual([150, 0, 0]);
+    expect(m[1]).toEqual([0, 0, 200]);
+    const b = readableBadge([240, 240, 240]);
+    expect(Math.max(...b)).toBeLessThan(160); // light grey is darkened for white text
+  });
+});
