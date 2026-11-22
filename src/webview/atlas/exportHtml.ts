@@ -127,6 +127,8 @@ function buildLabels(atlas: Atlas): BlobLabel[] {
     text: l.text,
     x: l.position[0],
     y: l.position[1],
+    // item 16: include worldZ for 3D labels so the viewer can render them at the correct depth.
+    ...(l.worldZ !== undefined ? { z: l.worldZ } : {}),
     size: l.size,
     color: l.color,
     priority: l.priority,
@@ -144,6 +146,7 @@ function buildAnnotations(atlas: Atlas): BlobAnnotation[] {
       style: ann.style,
       worldX: ann.worldX,
       worldY: ann.worldY,
+      worldZ: ann.worldZ,
       offsetX: ann.offsetX,
       offsetY: ann.offsetY,
       offsetVersion: ann.offsetVersion,
@@ -169,6 +172,50 @@ function buildBoxes(atlas: Atlas): BlobBox2D[] {
     color: toHexColor(b.color),
     label: b.label,
   }));
+}
+
+/** item 16: build 3D bounding-box descriptors for the viewer blob. */
+function buildBoxes3D(atlas: Atlas): import('../../shared/viewerBlob').BlobBox3D[] | undefined {
+  if (!atlas.renderer || atlas.dims !== 3) return undefined;
+  const boxes3D = (atlas.renderer as any).boxes3D as import('../render/boxes').Box3D[] | null;
+  if (!boxes3D?.length) return undefined;
+  return boxes3D.map((b) => ({
+    extent: b.extent,
+    color: toHexColor(b.color),
+    label: b.label,
+  }));
+}
+
+/** item 16: build data-box descriptor for the viewer blob (3D only). */
+function buildDataBox3D(
+  atlas: Atlas,
+): { extent: [number, number, number, number, number, number]; showGrid: boolean; showGizmo: boolean } | undefined {
+  if (!atlas.renderer || atlas.dims !== 3) return undefined;
+  const extent = (atlas.renderer as any).dataBoxExtent as import('../render/boxes').Extent3D | null;
+  if (!extent) return undefined;
+  return {
+    extent,
+    showGrid: !!(atlas.view.show3DFloorGrid ?? false),
+    showGizmo: !!(atlas.view.show3DGizmo ?? false),
+  };
+}
+
+/** item 16: build camera3D descriptor from the renderer's current state. */
+function buildCamera3D(
+  atlas: Atlas,
+): import('../../shared/viewerBlob').BlobHeader['camera3D'] | undefined {
+  if (!atlas.renderer || atlas.dims !== 3) return undefined;
+  const vs = (atlas.renderer as any).viewState as import('@deck.gl/core').OrbitViewState;
+  if (!vs) return undefined;
+  const rawTarget = Array.isArray(vs.target) ? (vs.target as number[]) : [0, 0, 0];
+  const target: [number, number, number] = [rawTarget[0] ?? 0, rawTarget[1] ?? 0, rawTarget[2] ?? 0];
+  return {
+    target,
+    zoom: (vs.zoom as number) ?? 0,
+    rotationX: (vs.rotationX as number) ?? 20,
+    rotationOrbit: (vs.rotationOrbit as number) ?? 0,
+    orthographic: !!(atlas.renderer as any).ortho3D,
+  };
 }
 
 function buildTitle(atlas: Atlas): BlobTitle {
@@ -245,25 +292,26 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
   }
 
   // Build combined XY and RGBA arrays (base + overlays).
+  // For 3D (nd===3) positions are stored with stride 3; overlay parts already have stride nd.
   const nd = atlas.dims;
   let combinedXY: Float32Array;
   let combinedRGBA: Uint8Array;
-  if (nd === 2 && overlayXYParts.length > 0) {
-    combinedXY = new Float32Array(nTotal * 2);
+  if (overlayXYParts.length > 0) {
+    combinedXY = new Float32Array(nTotal * nd);
     combinedRGBA = new Uint8Array(nTotal * 4);
-    combinedXY.set(rawXY.subarray(0, nBase * 2), 0);
+    combinedXY.set(rawXY.subarray(0, nBase * nd), 0);
     combinedRGBA.set(rawRgba.subarray(0, nBase * 4), 0);
-    let pos2 = nBase * 2, pos4 = nBase * 4;
+    let posXY = nBase * nd, pos4 = nBase * 4;
     for (let i = 0; i < overlayXYParts.length; i++) {
-      combinedXY.set(overlayXYParts[i], pos2);
+      combinedXY.set(overlayXYParts[i], posXY);
       combinedRGBA.set(overlayRGBAParts[i], pos4);
-      pos2 += overlayXYParts[i].length;
+      posXY += overlayXYParts[i].length;
       pos4 += overlayRGBAParts[i].length;
     }
   } else {
-    combinedXY = rawXY.slice(0, nBase * Math.max(nd, 2));
+    combinedXY = rawXY.slice(0, nBase * nd);
     combinedRGBA = rawRgba.slice(0, nBase * 4);
-    nTotal = nBase; // 3D overlays not yet supported in export
+    nTotal = nBase;
   }
 
   const nPoints = nTotal;
@@ -278,7 +326,7 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
     codes: rawCodes ? rawCodes.slice() : null,
     radii: rawRadii ? rawRadii.slice() : null,
     headerBase: {
-      v: 1,
+      v: 2,
       n: nPoints,
       bg: plotBackground(atlas),
       tooltipCols: tooltipColDescs,
@@ -296,6 +344,13 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       overlays: overlayDescs.length > 0 ? overlayDescs : undefined,
       // B4: embed shapes so the HTML viewer can render them.
       shapes: atlas.shapes.length ? (atlas.shapes as unknown as import('../../shared/viewerBlob').BlobShape[]) : undefined,
+      // item 16: 3D fields (undefined for 2D exports — viewer checks positionStride).
+      positionStride: nd === 3 ? 3 : undefined,
+      camera3D: buildCamera3D(atlas),
+      boxes3D: buildBoxes3D(atlas),
+      dataBox3D: buildDataBox3D(atlas),
+      // item 16: image invert setting for the viewer.
+      imageInvert: atlas.view.imageInvert !== false ? atlas.view.imageInvert : undefined,
     },
     variable: atlas.variable,
   };

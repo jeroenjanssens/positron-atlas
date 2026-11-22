@@ -151,6 +151,11 @@ export class InputDispatcher {
       case 'view.toggle3D':
         a.setDims(a.dims === 2 ? 3 : 2);
         break;
+      case 'view.toggle3DOrtho':
+        if (a.dims === 3) {
+          a.setView({ orthographic3D: !a.view.orthographic3D });
+        }
+        break;
       case 'view.showControls':
         a.cheatSheetVisible = !a.cheatSheetVisible;
         break;
@@ -287,6 +292,12 @@ export class InputDispatcher {
       case '3':
         if (!shift && this.atlas.dims === 3) {
           this.dispatch('view.side'); e.preventDefault();
+        }
+        break;
+      case '5':
+        // Toggle orthographic / perspective (Blender numpad-5 analogue, item 13).
+        if (!shift && this.atlas.dims === 3) {
+          this.dispatch('view.toggle3DOrtho'); e.preventDefault();
         }
         break;
       case 'numpad7':

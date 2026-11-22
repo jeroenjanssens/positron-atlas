@@ -12,7 +12,9 @@
  */
 
 export const BLOB_MAGIC = 'ATLS';
-export const BLOB_VERSION = 1;
+export const BLOB_VERSION = 2;
+/** Oldest blob version this reader accepts (version 1 = 2D-only, version 2 = adds 3D fields). */
+export const BLOB_MIN_VERSION = 1;
 
 /** Describes the offset + byteLength of one binary section within the blob's data region. */
 export type SectionRef = [offset: number, byteLength: number];
@@ -32,6 +34,8 @@ export interface BlobLabel {
   text: string;
   x: number;
   y: number;
+  /** World z of the label (3D mode only). Absent = 0. */
+  z?: number;
   size: number;
   color: [number, number, number, number];
   priority: number;
@@ -159,6 +163,40 @@ export interface BlobHeader {
   }[];
   /** B2: 2D axis-aligned bounding-box overlays. */
   boxes?: BlobBox2D[];
+
+  // ---- item 16: 3D viewer support ----
+  /**
+   * Number of floats per point in the xy section.
+   * 2 = x,y (default, v1 blobs); 3 = x,y,z (3D blobs, v2+).
+   */
+  positionStride?: 2 | 3;
+  /**
+   * Stored camera state for 3D exports so the viewer opens at the same angle.
+   * Absent for 2D blobs.
+   */
+  camera3D?: {
+    target: [number, number, number];
+    zoom: number;
+    rotationX: number;
+    rotationOrbit: number;
+    orthographic: boolean;
+  };
+  /** B2: 3D wireframe-cube group-box overlays. Absent for 2D blobs. */
+  boxes3D?: BlobBox3D[];
+  /**
+   * 3D data-bounding box extent and display options.
+   * Absent for 2D blobs or when the data box is hidden.
+   */
+  dataBox3D?: {
+    extent: [number, number, number, number, number, number];
+    showGrid: boolean;
+    showGizmo: boolean;
+  };
+  /**
+   * Image invert setting to apply to image URL thumbnails in the viewer.
+   * false = off (default), true = always, 'auto' = only in dark themes.
+   */
+  imageInvert?: boolean | 'auto';
 }
 
 /** A 2D axis-aligned bounding-box overlay embedded in the viewer blob (B2). */
@@ -166,6 +204,16 @@ export interface BlobBox2D {
   /** [minX, minY, maxX, maxY] in map/world coordinates. */
   extent: [number, number, number, number];
   /** CSS hex colour string (e.g. "#ff8800"). */
+  color: string;
+  /** Optional corner label. */
+  label?: string;
+}
+
+/** A 3D axis-aligned bounding-box overlay embedded in the viewer blob (B2, item 16). */
+export interface BlobBox3D {
+  /** [minX, minY, minZ, maxX, maxY, maxZ] in world coordinates. */
+  extent: [number, number, number, number, number, number];
+  /** CSS hex colour string. */
   color: string;
   /** Optional corner label. */
   label?: string;
@@ -279,7 +327,7 @@ export function unpackBlob(raw: Uint8Array): UnpackedBlob {
   const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
   if (magic !== BLOB_MAGIC) throw new Error(`Invalid blob magic: ${magic}`);
   const version = dv.getUint32(4, true);
-  if (version !== BLOB_VERSION) throw new Error(`Unsupported blob version: ${version}`);
+  if (version < BLOB_MIN_VERSION || version > BLOB_VERSION) throw new Error(`Unsupported blob version: ${version}`);
   const headerLen = dv.getUint32(8, true);
   const headerBytes = raw.subarray(12, 12 + headerLen);
   const header: BlobHeader = JSON.parse(new TextDecoder().decode(headerBytes));

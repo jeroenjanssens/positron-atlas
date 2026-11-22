@@ -241,6 +241,22 @@
     {#if atlas.dims === 3}<div class="hint muted">Glow not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
     <!-- B2: 3D data-frame overlays -->
     {#if atlas.dims === 3}
+      <!-- item 13: 3D view options -->
+      <div class="select">
+        <span>Projection <Info id="explore.orthographic3D" /></span>
+        <Select
+          value={atlas.view.orthographic3D ? 'orthographic' : 'perspective'}
+          ariaLabel="3D projection"
+          onchange={(e) => atlas.setView({ orthographic3D: (e.target as HTMLSelectElement).value === 'orthographic' })}>
+          <option value="perspective">Perspective</option>
+          <option value="orthographic">Orthographic</option>
+        </Select>
+      </div>
+      <Checkbox
+        checked={atlas.view.depthFade ?? false}
+        onchange={(v) => atlas.setView({ depthFade: v })}>
+        Depth fade <Info id="explore.depthFade" />
+      </Checkbox>
       <Checkbox
         checked={atlas.view.show3DDataBox ?? true}
         onchange={(v) => atlas.setView({ show3DDataBox: v })}>

@@ -26,11 +26,20 @@ export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>)
     v.show3DDataBox !== undefined ||
     v.show3DFloorGrid !== undefined ||
     v.show3DGizmo !== undefined;
+  // item 13: 3D view options — apply directly to the renderer.
+  const orthoChanged = v.orthographic3D !== undefined && v.orthographic3D !== atlas.view.orthographic3D;
+  const depthFadeChanged = v.depthFade !== undefined && v.depthFade !== atlas.view.depthFade;
   if (v.images !== undefined && v.images !== atlas.view.images) {
     atlas.tooltip = null;
   }
   atlas.view = { ...atlas.view, ...v };
   atlas.renderer?.setStyle(atlas.view);
+  if (orthoChanged) {
+    atlas.renderer?.setOrtho3D(atlas.view.orthographic3D ?? false);
+  }
+  if (depthFadeChanged) {
+    atlas.renderer?.setDepthFade(atlas.view.depthFade ?? false);
+  }
   if (paletteChanged || backgroundChanged) {
     atlas.mapColors = null;
     if (atlas.phase === 'ready' || atlas.paused) {

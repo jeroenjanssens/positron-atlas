@@ -388,6 +388,12 @@ export interface PanelState {
     glow?: boolean;
     glowStrength?: number;
     glowRadius?: number;
+    // item 13: 3D view options
+    show3DDataBox?: boolean;
+    show3DFloorGrid?: boolean;
+    show3DGizmo?: boolean;
+    orthographic3D?: boolean;
+    depthFade?: boolean;
   };
   labels?: LabelOptions;
   /** Sidebar tab and the ids of collapsed sections. */

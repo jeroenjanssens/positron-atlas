@@ -69,15 +69,14 @@
 </Section>
 
 <Section {atlas} id="export-html" title="Interactive HTML">
-  {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
   <div class="btn-row">
-    <button disabled={!atlas.prepared || atlas.dims === 3} onclick={() => { atlas.htmlExportOpen = true; }}
+    <button disabled={!atlas.prepared} onclick={() => { atlas.htmlExportOpen = true; }}
       title="Export the map as a self-contained HTML file that works offline in any browser">
       HTML…
     </button>
     <Info id="export.exportHtml" />
   </div>
-  <div class="hint muted">Self-contained HTML with pan/zoom, hover, legend toggles, and search.</div>
+  <div class="hint muted">Self-contained HTML with pan/zoom, hover, legend toggles, and search. Works in 2D and 3D.</div>
 </Section>
 
 {#if atlas.htmlExportOpen}

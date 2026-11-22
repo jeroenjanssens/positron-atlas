@@ -1,6 +1,31 @@
-import { Deck, OrbitView, type OrbitViewState } from '@deck.gl/core';
+import { Deck, LayerExtension, OrbitView, type OrbitViewState } from '@deck.gl/core';
 import { IconLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
+
+/**
+ * deck.gl LayerExtension that fades far points based on NDC fragment depth (item 13).
+ * Injects into fs:DECKGL_FILTER_COLOR to scale alpha by distance from camera.
+ * GPU-only: zero CPU overhead at any point count.
+ */
+class DepthFadeExtension extends LayerExtension {
+  static override extensionName = 'DepthFadeExtension';
+
+  override getShaders() {
+    return {
+      modules: [{
+        name: 'depth-fade',
+        inject: {
+          'fs:DECKGL_FILTER_COLOR': `
+            // Depth fade: far fragments (high NDC z) fade to near-transparent.
+            // gl_FragCoord.z is 0 (near) to 1 (far) in WebGL NDC depth.
+            float _df_fade = 1.0 - clamp((gl_FragCoord.z - 0.35) * 4.0, 0.0, 0.85);
+            color.a *= _df_fade;
+          `,
+        },
+      }],
+    };
+  }
+}
 import { buildLeaderLinesLayer } from '../atlas/leaderLines';
 import { compositeOverlay } from './composite';
 import { ensureFont } from '../fonts';
@@ -168,6 +193,12 @@ export class ScatterRenderer {
   private viewState: OrbitViewState = { target: [0, 0, 0], zoom: 0 };
   /** Current output dimensionality: 2 = top-down OrbitView (orthographic), 3 = OrbitView (T2/T3). */
   private dims: 2 | 3 = 2;
+  /** Use orthographic projection in 3D (item 13). No-op in 2D (always orthographic). */
+  private ortho3D = false;
+  /** Enable depth-fade extension on ScatterplotLayers in 3D (item 13). */
+  private depthFadeEnabled = false;
+  /** Singleton depth-fade extension instance (attached per-layer when enabled). */
+  private readonly depthFade = new DepthFadeExtension();
   private version = 0;
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
   private userMoved = false;
@@ -712,6 +743,10 @@ export class ScatterRenderer {
     // In 3D mode use depth testing so closer points occlude farther ones.
     const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-equal' } as const;
     const searchActive = this.searchFilters.some((sf) => sf !== null);
+    // item 13: depth fade extension appended when enabled in 3D.
+    const baseExts = is3D && this.depthFadeEnabled
+      ? [this.dataFilter, this.depthFade]
+      : [this.dataFilter];
     type AnyLayer = ScatterplotLayer | IconLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel> | LineLayer | PathLayer;
     const layers: AnyLayer[] = [];
 
@@ -775,7 +810,7 @@ export class ScatterRenderer {
               opacity: density ? Math.max(0.02, effectiveOpacity * 0.03) : effectiveOpacity * 0.18,
               pickable: false, parameters: setParams as any,
               updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
-              extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
+              extensions: baseExts, filterRange: [0.5, 1.5] as [number, number],
             }));
             layers.push(new IconLayer({
               id: `points-${s.id}-highlight`,
@@ -785,7 +820,7 @@ export class ScatterRenderer {
               opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
               pickable: false, parameters: setParams as any,
               updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
-              extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
+              extensions: baseExts, filterRange: [0.5, 1.5] as [number, number],
             }));
           } else {
             // Base pass: all legend-visible points at reduced opacity.
@@ -804,7 +839,7 @@ export class ScatterRenderer {
               pickable: false,
               parameters: setParams as any,
               updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-              extensions: [this.dataFilter],
+              extensions: baseExts,
               filterRange: [0.5, 1.5] as [number, number],
             }));
             // Highlight pass: only matching & legend-visible points at full opacity.
@@ -823,7 +858,7 @@ export class ScatterRenderer {
               pickable: false,
               parameters: setParams as any,
               updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
-              extensions: [this.dataFilter],
+              extensions: baseExts,
               filterRange: [0.5, 1.5] as [number, number],
             }));
           }
@@ -844,7 +879,7 @@ export class ScatterRenderer {
             opacity: density ? Math.max(0.02, effectiveOpacity * 0.15) : effectiveOpacity,
             pickable: false, parameters: setParams as any,
             updateTriggers: { getPosition: this.version, getColor: this.version, getFilterValue: this.version },
-            extensions: [this.dataFilter], filterRange: [0.5, 1.5] as [number, number],
+            extensions: baseExts, filterRange: [0.5, 1.5] as [number, number],
           }));
         } else {
           // No search: single layer with combined legend+histogram filter.
@@ -864,7 +899,7 @@ export class ScatterRenderer {
             parameters: setParams as any,
             updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
             // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
-            extensions: [this.dataFilter],
+            extensions: baseExts,
             filterRange: [0.5, 1.5] as [number, number],
           }));
         }
@@ -1209,7 +1244,7 @@ export class ScatterRenderer {
       };
       this.viewState = orbitState;
       this.deck.setProps({
-        views: new OrbitView({ id: 'orbit', orbitAxis: 'Z' }),
+        views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: this.ortho3D }),
         viewState: orbitState as any,
         // Drag rotates; Shift-drag/right-drag pans; scroll zooms.
         controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: false, dragMode: 'rotate' } as any,
@@ -1235,6 +1270,66 @@ export class ScatterRenderer {
       });
     }
     this.version++;
+    this.render();
+  }
+
+  /**
+   * Set orthographic / perspective projection for 3D (item 13).
+   * No-op in 2D (always orthographic).
+   */
+  setOrtho3D(v: boolean): void {
+    if (this.ortho3D === v) return;
+    this.ortho3D = v;
+    if (this.dims === 3) {
+      this.deck.setProps({ views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: v }) });
+    }
+    this.render();
+  }
+
+  /** Toggle orthographic / perspective for 3D (item 13, keybinding key 5). */
+  toggleOrtho3D(): void {
+    this.setOrtho3D(!this.ortho3D);
+  }
+
+  /** Whether orthographic 3D is active. */
+  get isOrtho3D(): boolean { return this.ortho3D; }
+
+  /**
+   * Enable / disable depth fade in 3D (item 13).
+   * Depth fade fades far points (high NDC z) using a GPU fragment shader extension.
+   * No-op in 2D.
+   */
+  setDepthFade(v: boolean): void {
+    if (this.depthFadeEnabled === v) return;
+    this.depthFadeEnabled = v;
+    this.render();
+  }
+
+  /**
+   * Restore a 3D camera state directly (item 16, viewer).
+   * Sets target, zoom, rotationX, rotationOrbit and orthographic in one call.
+   */
+  restoreCamera3D(state: {
+    target: [number, number, number];
+    zoom: number;
+    rotationX: number;
+    rotationOrbit: number;
+    orthographic: boolean;
+  }): void {
+    if (this.dims !== 3) return;
+    this.ortho3D = state.orthographic;
+    const vs: OrbitViewState = {
+      target: state.target,
+      zoom: state.zoom,
+      rotationX: state.rotationX,
+      rotationOrbit: state.rotationOrbit,
+    };
+    this.viewState = vs;
+    this.deck.setProps({
+      views: new OrbitView({ id: 'orbit', orbitAxis: 'Z', orthographic: state.orthographic }),
+      viewState: vs as any,
+    });
+    this.userMoved = true; // prevent auto-fit from resetting the restored camera
     this.render();
   }
 

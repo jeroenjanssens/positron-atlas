@@ -25,6 +25,7 @@ export type ActionId =
   | 'view.front'
   | 'view.side'
   | 'view.toggle3D'
+  | 'view.toggle3DOrtho'
   | 'view.toggleFullScreen'
   | 'view.rotateLeft'
   | 'view.rotateRight'
@@ -233,6 +234,14 @@ export const BINDINGS: BindingEntry[] = [
     label: 'Toggle 2D / 3D',
     section: 'view',
     context: 'both',
+  },
+  // ---- item 13: 3D projection toggle (Blender numpad-5 analogue) -----------------
+  {
+    actionId: 'view.toggle3DOrtho',
+    label: 'Toggle perspective / orthographic (3D)',
+    key: '5',
+    section: 'view',
+    context: '3d',
   },
   {
     actionId: 'view.toggleFullScreen',

@@ -1438,6 +1438,28 @@ export const HELP: Record<string, HelpEntry> = {
       'Uses the same even-odd rule as the lasso selection. Opens the same write dialog as the brush.',
     cost: 'none',
   },
+  // ---- item 13: 3D view options ----
+  'explore.orthographic3D': {
+    title: 'Projection',
+    what: 'Sets the 3D camera projection to perspective (depth cues, default) or orthographic (parallel lines).',
+    intuition:
+      'Perspective makes near objects look bigger and far objects smaller, giving a natural depth impression. ' +
+      'Orthographic keeps sizes equal regardless of distance, like a technical drawing — useful for comparing cluster sizes accurately. ' +
+      'Press 5 to toggle (like Blender Numpad 5).',
+    when: 'Switch to orthographic when you need to compare cluster sizes or positions without perspective distortion.',
+    cost: 'none',
+  },
+
+  'explore.depthFade': {
+    title: 'Depth fade',
+    what: 'Fades points that are farther from the camera to emphasise depth.',
+    intuition:
+      'When the cloud is dense, far points can visually compete with near ones. ' +
+      'Depth fade makes near points more opaque and far points more transparent, strengthening the sense of 3D structure. ' +
+      'The effect is applied on the GPU fragment shader — no CPU cost even at 1 M points.',
+    when: 'Enable when the 3D structure is hard to read because near and far points look equally bright.',
+    cost: 'none',
+  },
 };
 
 /** Look up a help entry by its dot-separated id.  Returns undefined when not found. */

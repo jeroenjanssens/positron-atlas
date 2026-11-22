@@ -34,6 +34,12 @@ export interface ViewOptions {
   show3DFloorGrid?: boolean;
   /** Show the X/Y/Z orientation gizmo in the bottom corner of the 3D data box. */
   show3DGizmo?: boolean;
+
+  // ---- item 13: 3D view options ----
+  /** Use orthographic (parallel) projection in 3D instead of perspective. Default false. */
+  orthographic3D?: boolean;
+  /** Fade points that are farther from the camera to emphasise depth (depth fog). Default false. */
+  depthFade?: boolean;
 }
 
 export type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';
