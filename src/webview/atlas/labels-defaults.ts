@@ -13,4 +13,21 @@ export const DEFAULT_LABELS: LabelOptions = {
   detail: 2,
   nameBy: 'number',
   outlines: true,
+  // A2 typography
+  fontFamily: '',
+  fontWeight: 600,
+  minFontWeight: 400,
+  maxFontWeight: 700,
+  wrapWidth: 9,
+  lineSpacing: 0.95,
+  haloWidth: 10,
+  haloColor: '',
+  textCase: 'asis',
+  // A3 draggable
+  dragOffsets: {},
+  // A8 multi-level
+  fineColumn: null,
+  multiLevel: false,
+  // A9 highlighted
+  highlightGroups: [],
 };

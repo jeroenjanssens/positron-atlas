@@ -28,6 +28,7 @@ import { ClusterFinder } from './labels/clusterWorker';
 import { detectImageColumns, guessImageWidth, type ImageColumns, formatCount } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 import { DEFAULT_LABELS } from './atlas/labels-defaults';
+import { initFonts } from './fonts';
 import { LruCache, type CachedRow } from './hover/cache';
 import { TextsStore } from './hover/texts';
 
@@ -68,6 +69,8 @@ import {
   onLabelCodes as onLabelCodesImpl,
   scheduleLabels as scheduleLabelsImpl,
   updateLabels as updateLabelsImpl,
+  setDragOffset as setDragOffsetImpl,
+  resetAllDragOffsets as resetAllDragOffsetsImpl,
 } from './atlas/labels';
 import {
   refreshClusters as refreshClustersImpl,
@@ -254,7 +257,14 @@ export class Atlas {
   labelCodes: Uint16Array | null = null;
   labelCodesAnchors: Uint16Array | null = null;
   labelTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Fine (secondary) label codes for A8 column multi-level. */
+  fineLabelCodes: Uint16Array | null = null;
+  fineLabelCodesAnchors: Uint16Array | null = null;
+  fineLabelMeta: import('../shared/protocol').CategoricalColorMeta | null = null;
   cluster: { codes: Uint16Array; codesAnchors: Uint16Array; k: number; counts: number[]; outlines: [number, number][][][] } | null = null;
+  /** Fine (second level) cluster result for A8 multi-level cluster labels. */
+  clusterFine: { codes: Uint16Array; codesAnchors: Uint16Array; k: number; counts: number[]; outlines: [number, number][][][] } | null = null;
+  clusterFineNames: string[] = [];
   clusterFinder: ClusterFinder | null = null;
   clusterSeq = 0;
   nameSeq = 0;
@@ -293,6 +303,25 @@ export class Atlas {
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
     this.renderer.onPointer((p) => this.onPointer(p));
+    // A3: wire up label drag callbacks.
+    this.renderer.onLabelDrag({
+      onEnd: (label, delta) => {
+        // Accumulate the new offset on top of any existing one.
+        const key = label.key ?? label.text;
+        const existing = this.labels.dragOffsets?.[key] ?? [0, 0];
+        setDragOffsetImpl(this, key, [existing[0] + delta[0], existing[1] + delta[1]]);
+      },
+      onRightClick: (label, _pos) => {
+        const key = label.key ?? label.text;
+        setDragOffsetImpl(this, key, null);
+      },
+    });
+    // A8: re-schedule labels when zoom changes.
+    this.renderer.onViewChange((_zoom) => {
+      scheduleLabelsImpl(this);
+    });
+    // D11: initialise the font module with the current vscode postMessage function.
+    initFonts({ postMessage: (msg) => vscode.post(msg as any) });
     createWorkerImpl(this);
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
       this.inbox = this.inbox
@@ -507,6 +536,10 @@ export class Atlas {
   requestLabelCodes(): void { requestLabelCodesImpl(this); }
   scheduleLabels(): void { scheduleLabelsImpl(this); }
   updateLabels(): void { updateLabelsImpl(this); }
+  /** Set/clear a drag offset for a label group (A3). key = group name. */
+  setDragOffset(key: string, offset: [number, number] | null): void { setDragOffsetImpl(this, key, offset); }
+  /** Clear all drag offsets (A3). */
+  resetAllDragOffsets(): void { resetAllDragOffsetsImpl(this); }
 
   // ---- clusters ----------------------------------------------------------------
   refreshClusters(): void { refreshClustersImpl(this); }

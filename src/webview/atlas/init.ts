@@ -51,7 +51,37 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     const maxSize = Number.isFinite(l.maxSize) ? Math.min(64, Math.max(minSize, l.maxSize)) : Math.max(minSize, 26);
     const detail = Number.isFinite(l.detail) ? Math.min(5, Math.max(1, Math.round(l.detail))) : DEFAULT_LABELS.detail;
     const nameBy = l.nameBy === 'features' || l.nameBy === 'number' ? l.nameBy : typeof l.nameBy === 'number' && valid.has(l.nameBy) ? l.nameBy : 'number';
-    atlas.labels = { column: col, minSize, maxSize, colorText: l.colorText !== false, clusters: l.clusters === true && col === null, detail, nameBy, outlines: l.outlines !== false };
+    const fineColumn = typeof l.fineColumn === 'number' && valid.has(l.fineColumn) ? l.fineColumn : null;
+    // Validate dragOffsets: only keep entries with numeric [dx,dy] arrays.
+    const dragOffsets: Record<string, [number, number]> = {};
+    if (l.dragOffsets) {
+      for (const [k, v] of Object.entries(l.dragOffsets)) {
+        if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') {
+          dragOffsets[k] = [v[0], v[1]];
+        }
+      }
+    }
+    atlas.labels = {
+      column: col, minSize, maxSize, colorText: l.colorText !== false,
+      clusters: l.clusters === true && col === null, detail, nameBy, outlines: l.outlines !== false,
+      // A2 typography
+      fontFamily: typeof l.fontFamily === 'string' ? l.fontFamily : '',
+      fontWeight: Number.isFinite(l.fontWeight) ? Math.min(900, Math.max(100, l.fontWeight!)) : 600,
+      minFontWeight: Number.isFinite(l.minFontWeight) ? Math.min(900, Math.max(100, l.minFontWeight!)) : 400,
+      maxFontWeight: Number.isFinite(l.maxFontWeight) ? Math.min(900, Math.max(100, l.maxFontWeight!)) : 700,
+      wrapWidth: Number.isFinite(l.wrapWidth) ? Math.min(80, Math.max(0, l.wrapWidth!)) : 9,
+      lineSpacing: Number.isFinite(l.lineSpacing) ? Math.min(3, Math.max(0.5, l.lineSpacing!)) : 0.95,
+      haloWidth: Number.isFinite(l.haloWidth) ? Math.min(30, Math.max(0, l.haloWidth!)) : 10,
+      haloColor: typeof l.haloColor === 'string' ? l.haloColor : '',
+      textCase: l.textCase === 'upper' ? 'upper' : 'asis',
+      // A3 draggable
+      dragOffsets,
+      // A8 multi-level
+      fineColumn,
+      multiLevel: l.multiLevel === true,
+      // A9 highlighted
+      highlightGroups: Array.isArray(l.highlightGroups) ? l.highlightGroups.filter((g) => typeof g === 'string') : [],
+    };
   }
   if (state?.view) {
     atlas.view = { ...atlas.view, ...state.view };

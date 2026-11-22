@@ -623,6 +623,150 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Annotate → Label typography (A2) ----------------------------------------
+
+  'labels.fontFamily': {
+    title: 'Font',
+    what: 'The font family used to draw cluster and column labels on the map.',
+    intuition:
+      'The bundled fonts (Cinzel, Montserrat, Roboto, etc.) are available offline and load instantly. ' +
+      'You can also type any font name installed on your machine; deck.gl uses the browser\'s font stack. ' +
+      'Google Fonts downloads are supported when positronAtlas.downloadGoogleFonts is set.',
+    when: 'To match a DataMapPlot look (Cinzel for a dramatic title style, Montserrat for a modern sans-serif look).',
+    cost: 'none',
+  },
+
+  'labels.fontWeight': {
+    title: 'Font weight',
+    what: 'The base font weight for all labels (100 = thin, 400 = regular, 600 = semibold, 700 = bold, 900 = black).',
+    intuition:
+      'Variable-weight fonts (Montserrat, Roboto, Inter) render smoothly at any weight. ' +
+      'The weight range sliders below can give smaller groups lighter labels and larger groups heavier ones, ' +
+      'similar to DataMapPlot\'s min_font_weight / max_font_weight.',
+    cost: 'none',
+  },
+
+  'labels.minFontWeight': {
+    title: 'Min weight (small groups)',
+    what: 'Font weight for the label of the smallest group.',
+    intuition:
+      'When set lower than the max weight, smaller groups get lighter labels (e.g. weight 300), ' +
+      'while larger groups get heavier ones — the same visual idea as DataMapPlot\'s min_font_weight. ' +
+      'Works best with variable-weight fonts (Montserrat, Roboto, Inter).',
+    cost: 'none',
+    dataMapPlot: 'min_font_weight',
+  },
+
+  'labels.maxFontWeight': {
+    title: 'Max weight (large groups)',
+    what: 'Font weight for the label of the largest group.',
+    intuition:
+      'The largest group\'s label gets this weight; smaller groups get weights between min and max weight, ' +
+      'proportional to the square root of their point count — the same as DataMapPlot\'s max_font_weight. ' +
+      'Works best with variable-weight fonts.',
+    cost: 'none',
+    dataMapPlot: 'max_font_weight',
+  },
+
+  'labels.wrapWidth': {
+    title: 'Wrap width',
+    what: 'The approximate number of characters before a label is wrapped to the next line.',
+    intuition:
+      'Long group names (e.g. "North American English Dialects") wrap into two lines when the character count exceeds this value. ' +
+      'Set to 0 to disable wrapping entirely. ' +
+      'Like DataMapPlot\'s label_wrap_width.',
+    cost: 'none',
+    dataMapPlot: 'label_wrap_width',
+  },
+
+  'labels.lineSpacing': {
+    title: 'Line spacing',
+    what: 'The line height multiplier for multi-line labels.',
+    intuition:
+      'Values around 0.95–1.1 give compact labels; values above 1.5 spread lines apart noticeably. ' +
+      'Like DataMapPlot\'s line_spacing.',
+    cost: 'none',
+    dataMapPlot: 'line_spacing',
+  },
+
+  'labels.haloWidth': {
+    title: 'Halo width',
+    what: 'The width of the outline/halo drawn behind each label.',
+    intuition:
+      'A thin halo (10–15) makes labels readable against colorful or cluttered backgrounds by drawing a soft outline in the background color. ' +
+      'Set to 0 to remove the halo entirely. ' +
+      'Like DataMapPlot\'s text_outline_width.',
+    cost: 'none',
+    dataMapPlot: 'text_outline_width',
+  },
+
+  'labels.haloColor': {
+    title: 'Halo color',
+    what: 'The color of the label halo/outline.',
+    intuition:
+      'By default (Auto) the halo matches the plot background, making labels appear to float. ' +
+      'Set a custom color to create a colored outline effect. ' +
+      'Like DataMapPlot\'s text_outline_color.',
+    cost: 'none',
+    dataMapPlot: 'text_outline_color',
+  },
+
+  'labels.textCase': {
+    title: 'Letter case',
+    what: 'Whether to transform label text to uppercase.',
+    intuition:
+      '"As is" keeps the original category or cluster name. ' +
+      '"UPPERCASE" is a common choice for display-style atlas maps (like DataMapPlot\'s display galleries).',
+    cost: 'none',
+  },
+
+  // ---- Annotate → Highlighted labels (A9) -------------------------------------
+
+  'labels.highlightGroups': {
+    title: 'Highlighted groups',
+    what: 'Groups shown as filled badges: solid cluster-color background with white bold text.',
+    intuition:
+      'Highlighted labels stand out from the rest of the map labels. ' +
+      'Use this to call attention to key regions of the map (like DataMapPlot\'s highlight_labels). ' +
+      'Enter each group name exactly as it appears in the label column or cluster names.',
+    cost: 'none',
+    dataMapPlot: 'highlight_labels',
+  },
+
+  // ---- Annotate → Label positions (A3) ----------------------------------------
+
+  'labels.resetPositions': {
+    title: 'Reset all label positions',
+    what: 'Moves all dragged labels back to their automatically computed positions.',
+    intuition:
+      'Each label is returned to the position chosen by the density-weighted placement algorithm. ' +
+      'Individual labels can also be reset by right-clicking them on the map.',
+    cost: 'none',
+  },
+
+  // ---- Annotate → Multi-level labels (A8) -------------------------------------
+
+  'labels.multiLevel': {
+    title: 'Show two levels of detail',
+    what: 'Adds a second, finer layer of cluster labels that appear when you zoom in.',
+    intuition:
+      'Coarse labels (fewer, larger clusters) are always visible; fine labels appear as you zoom in and there is room for them. ' +
+      'The fine labels have lower collision priority than the coarse ones (like DataMapPlot\'s hierarchical_collision_priority), ' +
+      'so they never push out the coarse labels.',
+    cost: 'none',
+    dataMapPlot: 'hierarchical_collision_priority',
+  },
+
+  'labels.fineColumn': {
+    title: 'Fine labels by',
+    what: 'A second, finer column whose values are drawn as an additional layer of smaller labels.',
+    intuition:
+      'For example, if the coarse column is "region" and the fine column is "city", ' +
+      'region labels are always visible and city labels appear when zoomed in. ' +
+      'Fine labels have lower collision priority and are smaller than coarse labels.',
+    cost: 'none',
+  },
+
   // ---- Annotate → Tags ---------------------------------------------------------
 
   'tags.tag': {

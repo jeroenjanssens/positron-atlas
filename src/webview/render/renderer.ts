@@ -19,12 +19,26 @@ export interface MapLabel {
   color: [number, number, number, number];
   /** Higher wins when labels overlap (CollisionFilterExtension). */
   priority: number;
+  /** Font weight for this label (100–900). When undefined, uses LabelStyle.fontWeight. */
+  weight?: number;
+  /** Badge background color (RGBA). When set, renders as a filled badge. */
+  badge?: [number, number, number, number];
+  /** Original group name used as the drag-offset key. */
+  key?: string;
 }
 
 export interface LabelStyle {
   /** Outline (halo) color, usually the plot background, as RGBA. */
   outline: [number, number, number, number];
   fontFamily: string;
+  /** Base font weight (100–900). Default 600. */
+  fontWeight?: number;
+  /** Halo/outline width multiplier passed to outlineWidth (0 = no halo). */
+  haloWidth?: number;
+  /** Line height multiplier. */
+  lineHeight?: number;
+  /** Wrap width in deck.gl em units (maxWidth). */
+  maxWidth?: number;
 }
 
 export interface RenderStyle {
@@ -62,7 +76,7 @@ export class ScatterRenderer {
   private version = 0;
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
   private userMoved = false;
-  private labels: MapLabel[] = [];
+  labels: MapLabel[] = [];
   private outlines: [number, number][][] = [];
   private outlineColor: [number, number, number] = [200, 200, 200];
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
@@ -74,6 +88,20 @@ export class ScatterRenderer {
   private pinnedIdx = -1;
   /** Shared all-ones filter values (no category hidden), grown as needed. */
   private ones = new Float32Array(0);
+
+  // ---- A3 label drag state ----
+  private draggingLabel: MapLabel | null = null;
+  private dragStartScreen: [number, number] = [0, 0];
+  private labelHovered = false;
+  private labelDragCallback: {
+    onStart?: (label: MapLabel, screenPos: [number, number]) => void;
+    onMove?: (label: MapLabel, screenDelta: [number, number]) => void;
+    onEnd?: (label: MapLabel, screenDelta: [number, number]) => void;
+    onRightClick?: (label: MapLabel, screenPos: [number, number]) => void;
+  } = {};
+
+  // ---- A8 view change callback ----
+  private viewChangeCallback: ((zoom: number) => void) | null = null;
 
   private allVisible(n: number): Float32Array {
     if (this.ones.length < n) this.ones = new Float32Array(Math.max(n, this.ones.length * 2)).fill(1);
@@ -97,9 +125,13 @@ export class ScatterRenderer {
           this.userMoved = true;
         }
         this.deck.setProps({ viewState });
+        const zoom = typeof viewState.zoom === 'number' ? viewState.zoom : 0;
+        this.viewChangeCallback?.(zoom);
         return viewState;
       },
       onHover: (info: any) => {
+        const isLabelHit = !!(info?.layer?.id?.startsWith('labels') && info.object);
+        this.labelHovered = isLabelHit;
         if (!info || info.x < 0 || !info.coordinate) {
           this.pointerListeners.forEach((l) => l(null));
           return;
@@ -107,14 +139,74 @@ export class ScatterRenderer {
         const world: [number, number] = [info.coordinate[0], info.coordinate[1]];
         this.pointerListeners.forEach((l) => l({ x: info.x, y: info.y, world }));
       },
-      getCursor: ({ isDragging }: any) => (isDragging ? 'grabbing' : 'crosshair'),
+      // Deck-level drag: intercept label drags before the controller pans.
+      onDragStart: (info: any) => {
+        if (info?.layer?.id?.startsWith('labels') && info.object) {
+          this.draggingLabel = info.object as MapLabel;
+          this.dragStartScreen = [info.x, info.y];
+          this.labelDragCallback.onStart?.(this.draggingLabel, [info.x, info.y]);
+          return true; // prevent map pan
+        }
+      },
+      onDrag: (info: any) => {
+        if (this.draggingLabel) {
+          const delta: [number, number] = [info.x - this.dragStartScreen[0], info.y - this.dragStartScreen[1]];
+          this.labelDragCallback.onMove?.(this.draggingLabel, delta);
+        }
+      },
+      onDragEnd: (info: any) => {
+        if (this.draggingLabel) {
+          const delta: [number, number] = [info.x - this.dragStartScreen[0], info.y - this.dragStartScreen[1]];
+          this.labelDragCallback.onEnd?.(this.draggingLabel, delta);
+          this.draggingLabel = null;
+        }
+      },
+      onClick: (info: any, event: any) => {
+        if (info?.layer?.id?.startsWith('labels') && info.object && (event?.srcEvent?.button === 2 || event?.rightButton)) {
+          this.labelDragCallback.onRightClick?.(info.object as MapLabel, [info.x, info.y]);
+        }
+      },
+      getCursor: ({ isDragging }: any) => {
+        if (this.draggingLabel) return 'grabbing';
+        if (this.labelHovered) return 'grab';
+        return isDragging ? 'grabbing' : 'crosshair';
+      },
       useDevicePixels: true,
       layers: [],
     } as any);
+
+    // Also listen for context-menu (right-click) events on the canvas.
+    container.addEventListener('contextmenu', (e) => {
+      const canvas = container.querySelector('canvas');
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const info = (this.deck as any).pickObject?.({ x, y, radius: 4 });
+      if (info?.layer?.id?.startsWith('labels') && info.object) {
+        e.preventDefault();
+        this.labelDragCallback.onRightClick?.(info.object as MapLabel, [x, y]);
+      }
+    });
   }
 
   onPointer(cb: (p: { x: number; y: number; world: [number, number] } | null) => void): void {
     this.pointerListeners.push(cb);
+  }
+
+  /** Register label drag/right-click callbacks (A3). */
+  onLabelDrag(cb: {
+    onStart?: (label: MapLabel, screenPos: [number, number]) => void;
+    onMove?: (label: MapLabel, screenDelta: [number, number]) => void;
+    onEnd?: (label: MapLabel, screenDelta: [number, number]) => void;
+    onRightClick?: (label: MapLabel, screenPos: [number, number]) => void;
+  }): void {
+    this.labelDragCallback = cb;
+  }
+
+  /** Register a callback fired when the zoom level changes (A8). */
+  onViewChange(cb: (zoom: number) => void): void {
+    this.viewChangeCallback = cb;
   }
 
   /** World coordinates of a point in CSS pixels relative to the plot. */
@@ -351,39 +443,73 @@ export class ScatterRenderer {
       }
     }
     if (this.labels.length) {
-      const { outline, fontFamily } = this.labelStyle;
-      layers.push(
-        new TextLayer<MapLabel>({
-          id: 'labels',
-          data: this.labels,
-          getText: (d: MapLabel) => d.text,
-          getPosition: (d: MapLabel) => d.position,
-          getSize: (d: MapLabel) => d.size,
-          getColor: (d: MapLabel) => d.color,
-          sizeUnits: 'pixels',
-          fontFamily,
-          fontWeight: 600,
-          characterSet: 'auto',
-          // deck.gl divides outlineWidth by the SDF radius: 10/16 gives a halo of about 15% of
-          // the font size, enough to read colored text on top of points of the same color.
-          fontSettings: { sdf: true, fontSize: 64, buffer: 16, radius: 16 },
-          outlineWidth: 10,
-          outlineColor: outline,
-          lineHeight: 0.95,
-          maxWidth: 9,
-          wordBreak: 'break-word',
-          getTextAnchor: 'middle',
-          getAlignmentBaseline: 'center',
-          pickable: false,
-          // Hide labels that would overlap a label with a higher priority (bigger group).
-          extensions: [this.collision],
-          collisionEnabled: true,
-          getCollisionPriority: (d: MapLabel) => d.priority,
-          // Test collisions on slightly enlarged labels, so kept labels keep some space.
-          collisionTestProps: { sizeScale: 1.4 },
-          parameters: NORMAL as any,
-        } as any),
-      );
+      const { outline, fontFamily, fontWeight: baseFontWeight = 600, haloWidth: haloW = 10, lineHeight: lh = 0.95, maxWidth: mw = 9 } = this.labelStyle;
+      // Split into badge labels and normal labels; group normal by weight bucket for per-label weight variation.
+      const badgeLabels = this.labels.filter((l) => l.badge);
+      const normalLabels = this.labels.filter((l) => !l.badge);
+      // Collect unique weights among normal labels; fall back to baseFontWeight.
+      const weightSet = new Set(normalLabels.map((l) => l.weight ?? baseFontWeight));
+      const weights = Array.from(weightSet).sort((a, b) => a - b);
+
+      const commonProps = {
+        sizeUnits: 'pixels',
+        fontFamily,
+        characterSet: 'auto',
+        fontSettings: { sdf: true, fontSize: 64, buffer: 16, radius: 16 },
+        outlineWidth: haloW,
+        outlineColor: outline,
+        lineHeight: lh,
+        maxWidth: mw,
+        wordBreak: 'break-word',
+        getTextAnchor: 'middle',
+        getAlignmentBaseline: 'center',
+        pickable: true,  // needed for drag (A3) and context menu
+        extensions: [this.collision],
+        collisionEnabled: true,
+        getCollisionPriority: (d: MapLabel) => d.priority,
+        collisionTestProps: { sizeScale: 1.4 },
+        parameters: NORMAL as any,
+      } as const;
+
+      // Normal labels – one TextLayer per distinct weight bucket.
+      for (const w of weights) {
+        const bucket = normalLabels.filter((l) => (l.weight ?? baseFontWeight) === w);
+        if (!bucket.length) continue;
+        layers.push(
+          new TextLayer<MapLabel>({
+            id: `labels-w${w}`,
+            data: bucket,
+            getText: (d: MapLabel) => d.text,
+            getPosition: (d: MapLabel) => d.position,
+            getSize: (d: MapLabel) => d.size,
+            getColor: (d: MapLabel) => d.color,
+            fontWeight: w,
+            ...commonProps,
+          } as any),
+        );
+      }
+
+      // Badge labels (A9): filled background, white text, slightly higher collision priority.
+      if (badgeLabels.length) {
+        layers.push(
+          new TextLayer<MapLabel>({
+            id: 'labels-badges',
+            data: badgeLabels,
+            getText: (d: MapLabel) => d.text,
+            getPosition: (d: MapLabel) => d.position,
+            getSize: (d: MapLabel) => d.size,
+            getColor: [255, 255, 255, 255],
+            fontWeight: 800,
+            background: true,
+            getBackgroundColor: (d: MapLabel) => d.badge ?? [0, 0, 0, 200],
+            backgroundPadding: [4, 2, 4, 2],
+            getBorderColor: [255, 255, 255, 60],
+            getBorderWidth: 1,
+            ...commonProps,
+            outlineWidth: 0, // badges have solid background; no halo needed
+          } as any),
+        );
+      }
     }
     this.deck.setProps({ layers });
   }

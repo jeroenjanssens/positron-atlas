@@ -1,5 +1,6 @@
 /**
  * Label placement: label source, label codes, updateLabels.
+ * Implements A2 (typography), A3 (draggable labels), A8 (multi-level), A9 (highlighted badges).
  */
 
 import type { Atlas } from '../atlas.svelte';
@@ -8,9 +9,93 @@ import { vscode, fetchTyped } from '../vscode';
 import { collisionPriorities, labelSizes, placeGroupLabels } from '../labels/place';
 import { hexToRgb } from '../color/colormaps';
 import { toHex } from '../logic';
-import { gatherU16, contrastText, labelTextColor, fontFamily } from './utils';
+import { gatherU16, contrastText, labelTextColor, fontFamily as editorFontFamily } from './utils';
 import { plotBackground } from './render';
 import { MAX_LABELS, LABEL_INTERVAL_MS } from './types';
+import { ensureFont } from '../fonts';
+import type { MapLabel } from '../render/renderer';
+
+// ---------------------------------------------------------------------------
+// Weight range helpers (A2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-label font weight interpolated from minWeight (smallest group) to maxWeight (largest group),
+ * proportional to the square root of the count. Only 3 distinct buckets are exposed to deck.gl
+ * since each TextLayer weight generates a separate glyph atlas.
+ *
+ * Exported so vitest can test it.
+ */
+export function weightRange(counts: number[], minWeight: number, maxWeight: number): number[] {
+  if (counts.length === 0) return [];
+  if (minWeight === maxWeight) return counts.map(() => minWeight);
+  const top = Math.sqrt(Math.max(...counts, 0));
+  if (top <= 0) return counts.map(() => minWeight);
+  // Quantize into 3 buckets to limit the number of TextLayers.
+  const buckets = [minWeight, Math.round((minWeight + maxWeight) / 2 / 100) * 100, maxWeight];
+  return counts.map((c) => {
+    const t = Math.sqrt(Math.max(0, c)) / top;
+    const idx = t < 0.33 ? 0 : t < 0.67 ? 1 : 2;
+    return buckets[idx];
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Drag offset helpers (A3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Match stored drag offsets (keyed by group name) to new group names after reclustering.
+ * Exact name matches are retained; unmatched names are dropped.
+ */
+export function matchDragOffsets(
+  offsets: Record<string, [number, number]> | undefined,
+  newNames: string[],
+): Record<string, [number, number]> {
+  if (!offsets) return {};
+  const result: Record<string, [number, number]> = {};
+  for (const name of newNames) {
+    if (offsets[name]) result[name] = offsets[name];
+  }
+  return result;
+}
+
+/** Set or clear the drag offset for a label (A3). Called from atlas methods. */
+export function setDragOffset(atlas: Atlas, key: string, offset: [number, number] | null): void {
+  const existing = atlas.labels.dragOffsets ?? {};
+  if (offset === null) {
+    const next = { ...existing };
+    delete next[key];
+    atlas.labels = { ...atlas.labels, dragOffsets: next };
+  } else {
+    atlas.labels = { ...atlas.labels, dragOffsets: { ...existing, [key]: offset } };
+  }
+  atlas.persist();
+  updateLabels(atlas);
+}
+
+/** Clear all drag offsets (A3). Called from "Reset all label positions" button. */
+export function resetAllDragOffsets(atlas: Atlas): void {
+  atlas.labels = { ...atlas.labels, dragOffsets: {} };
+  atlas.persist();
+  updateLabels(atlas);
+}
+
+// ---------------------------------------------------------------------------
+// Fine-column codes (A8)
+// ---------------------------------------------------------------------------
+
+/** Fetch and store label codes for the secondary (fine) column (A8). */
+export function requestFineLabelCodes(atlas: Atlas): void {
+  const fc = atlas.labels.fineColumn;
+  if (fc !== null && fc !== undefined && !atlas.labels.clusters && atlas.prepared) {
+    vscode.post({ type: 'labelCodes', column: fc, maxCategories: MAX_LABELS, purpose: 'labels' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Source / options setters
+// ---------------------------------------------------------------------------
 
 export function setLabelSource(atlas: Atlas, source: number | 'clusters' | null): void {
   const clusters = source === 'clusters';
@@ -21,6 +106,9 @@ export function setLabelSource(atlas: Atlas, source: number | 'clusters' | null)
   atlas.labelMeta = null;
   atlas.labelCodes = null;
   atlas.labelCodesAnchors = null;
+  atlas.fineLabelCodes = null;
+  atlas.fineLabelCodesAnchors = null;
+  atlas.fineLabelMeta = null;
   if (typeof source === 'number') {
     requestLabelCodes(atlas);
   } else if (clusters) {
@@ -38,8 +126,12 @@ export function setLabelOptions(atlas: Atlas, o: Partial<LabelOptions>): void {
   atlas.labels = { ...atlas.labels, ...o };
   if (atlas.labels.clusters && o.detail !== undefined && o.detail !== prev.detail) {
     atlas.refreshClusters();
+  } else if (atlas.labels.clusters && o.multiLevel !== undefined && o.multiLevel !== prev.multiLevel) {
+    atlas.refreshClusters();
   } else if (atlas.labels.clusters && o.nameBy !== undefined && o.nameBy !== prev.nameBy) {
     atlas.nameClusters();
+  } else if (!atlas.labels.clusters && o.fineColumn !== undefined && o.fineColumn !== prev.fineColumn) {
+    requestFineLabelCodes(atlas);
   }
   updateLabels(atlas);
 }
@@ -54,7 +146,7 @@ export async function onLabelCodes(atlas: Atlas, column: number, file: FileRef, 
   if (meta.kind !== 'categorical') {
     return;
   }
-  const wanted = purpose === 'names' ? atlas.labels.clusters && atlas.labels.nameBy === column : !atlas.labels.clusters && column === atlas.labels.column;
+  const wanted = purpose === 'names' ? atlas.labels.clusters && atlas.labels.nameBy === column : !atlas.labels.clusters && (column === atlas.labels.column || column === atlas.labels.fineColumn);
   if (!wanted) {
     return;
   }
@@ -70,12 +162,18 @@ export async function onLabelCodes(atlas: Atlas, column: number, file: FileRef, 
     }
     return;
   }
-  if (column !== atlas.labels.column || atlas.labels.clusters) {
-    return;
+  if (atlas.labels.clusters) return;
+
+  const isFine = column === atlas.labels.fineColumn && column !== atlas.labels.column;
+  if (isFine) {
+    atlas.fineLabelCodes = codes;
+    atlas.fineLabelCodesAnchors = atlas.prepared?.needsProjection ? gatherU16(codes, atlas.anchorPos) : codes;
+    atlas.fineLabelMeta = meta;
+  } else if (column === atlas.labels.column) {
+    atlas.labelCodes = codes;
+    atlas.labelCodesAnchors = atlas.prepared?.needsProjection ? gatherU16(codes, atlas.anchorPos) : codes;
+    atlas.labelMeta = meta;
   }
-  atlas.labelCodes = codes;
-  atlas.labelCodesAnchors = atlas.prepared?.needsProjection ? gatherU16(codes, atlas.anchorPos) : codes;
-  atlas.labelMeta = meta;
   updateLabels(atlas);
 }
 
@@ -92,7 +190,10 @@ export function scheduleLabels(atlas: Atlas): void {
   }
 }
 
-/** The group codes and names that label the map right now, or null. */
+// ---------------------------------------------------------------------------
+// labelGroups: returns the main group codes/names for the current label mode
+// ---------------------------------------------------------------------------
+
 function labelGroups(atlas: Atlas): { all: Uint16Array; anchors: Uint16Array; names: string[] } | null {
   if (atlas.labels.clusters) {
     const c = atlas.cluster;
@@ -103,6 +204,34 @@ function labelGroups(atlas: Atlas): { all: Uint16Array; anchors: Uint16Array; na
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Font resolution (A2)
+// ---------------------------------------------------------------------------
+
+function resolvedFontFamily(atlas: Atlas): string {
+  const ff = atlas.labels.fontFamily;
+  return ff && ff !== '' ? ff : editorFontFamily();
+}
+
+/** Ensure the configured font is loaded before we render labels. */
+async function ensureLabelFont(atlas: Atlas): Promise<void> {
+  const ff = atlas.labels.fontFamily;
+  if (!ff || ff === '') return; // editor font is already available
+  try {
+    const weight = atlas.labels.fontWeight ?? 600;
+    const minW = atlas.labels.minFontWeight ?? weight;
+    const maxW = atlas.labels.maxFontWeight ?? weight;
+    const weights = Array.from(new Set([minW, Math.round((minW + maxW) / 2 / 100) * 100, maxW, weight])).filter((w) => w >= 100 && w <= 900);
+    await ensureFont(ff, weights);
+  } catch {
+    // Font unavailable: fall back to editor font silently.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// updateLabels: main placement + render call
+// ---------------------------------------------------------------------------
 
 /** Place the labels on the points currently shown and hand them to the renderer. */
 export function updateLabels(atlas: Atlas): void {
@@ -121,32 +250,167 @@ export function updateLabels(atlas: Atlas): void {
     }
     return;
   }
-  const placed =
-    atlas.projection === 'done' && atlas.allXY
-      ? placeGroupLabels(atlas.allXY, groups.all, atlas.nKept, groups.names)
-      : placeGroupLabels(atlas.anchorXY, groups.anchors, atlas.prepared.nAnchors, groups.names);
-  const counts = placed.map((l) => l.count);
-  const sizes = labelSizes(counts, atlas.labels.minSize, atlas.labels.maxSize);
-  const priorities = collisionPriorities(counts);
+
+  const opts = atlas.labels;
   const background = atlas.plotBackground();
   const plain = contrastText(background);
   const cm = atlas.colorMeta;
   const colorIndex =
-    !atlas.labels.clusters && atlas.labels.colorText && atlas.labels.column === atlas.colorColumn && cm?.kind === 'categorical'
+    !opts.clusters && opts.colorText && opts.column === atlas.colorColumn && cm?.kind === 'categorical'
       ? new Map(cm.categories.map((c, i) => [c, i]))
       : null;
-  const out: import('../render/renderer').MapLabel[] = placed.map((l, i) => {
-    const ci = colorIndex?.get(l.text);
-    return {
-      text: l.text === '' ? '(empty)' : l.text,
-      position: [l.x, l.y],
-      size: sizes[i],
-      color: ci !== undefined ? labelTextColor(hexToRgb(atlas.categoryColor(ci)), plain) : plain,
-      priority: priorities[i],
+
+  // ---- Place main (coarse) labels ----
+  const placed =
+    atlas.projection === 'done' && atlas.allXY
+      ? placeGroupLabels(atlas.allXY, groups.all, atlas.nKept, groups.names)
+      : placeGroupLabels(atlas.anchorXY, groups.anchors, atlas.prepared.nAnchors, groups.names);
+
+  const counts = placed.map((l) => l.count);
+  const sizes = labelSizes(counts, opts.minSize, opts.maxSize);
+  const weights = weightRange(counts, opts.minFontWeight ?? (opts.fontWeight ?? 600), opts.maxFontWeight ?? (opts.fontWeight ?? 600));
+
+  // ---- Place fine labels (A8) ----
+  let finePlaced: ReturnType<typeof placeGroupLabels> = [];
+  let fineSizes: number[] = [];
+  let fineWeights: number[] = [];
+
+  if (opts.clusters && opts.multiLevel && atlas.clusterFine) {
+    // Fine cluster labels from the second (finer) clustering.
+    const fc = atlas.clusterFine;
+    const fineNames = atlas.clusterFineNames;
+    if (fineNames.length === fc.k) {
+      const fineGroups = {
+        all: fc.codes,
+        anchors: fc.codesAnchors,
+        names: fineNames,
+      };
+      finePlaced =
+        atlas.projection === 'done' && atlas.allXY
+          ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names)
+          : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names);
+      const fineCounts = finePlaced.map((l) => l.count);
+      fineSizes = labelSizes(fineCounts, Math.max(6, opts.minSize - 2), opts.minSize + 4);
+      fineWeights = weightRange(fineCounts, opts.minFontWeight ?? 400, opts.fontWeight ?? 600);
+    }
+  } else if (!opts.clusters && opts.fineColumn !== null && opts.fineColumn !== undefined && atlas.fineLabelMeta && atlas.fineLabelCodes && atlas.fineLabelCodesAnchors) {
+    // Fine column labels.
+    const fineGroups = {
+      all: atlas.fineLabelCodes,
+      anchors: atlas.fineLabelCodesAnchors,
+      names: atlas.fineLabelMeta.categories,
     };
-  });
+    finePlaced =
+      atlas.projection === 'done' && atlas.allXY
+        ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names)
+        : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names);
+    const fineCounts = finePlaced.map((l) => l.count);
+    fineSizes = labelSizes(fineCounts, Math.max(6, opts.minSize - 2), opts.minSize + 4);
+    fineWeights = weightRange(fineCounts, opts.minFontWeight ?? 400, opts.fontWeight ?? 600);
+  }
+
+  // ---- Collision priorities with levels for multi-level (A8) ----
+  const allCounts = [...counts, ...finePlaced.map((l) => l.count)];
+  const allLevels = [...counts.map(() => 1), ...finePlaced.map(() => 0)]; // coarse = level 1 (wins), fine = level 0
+  const allPriorities = finePlaced.length > 0
+    ? collisionPriorities(allCounts, allLevels)
+    : collisionPriorities(counts);
+
+  // ---- Drag offsets (A3) ----
+  const dragOffsets = opts.dragOffsets ?? {};
+  const wpp = atlas.renderer.worldPerPixel();
+
+  // ---- Highlight groups (A9) ----
+  const highlightSet = new Set(opts.highlightGroups ?? []);
+
+  // ---- Apply text case (A2) ----
+  const applyCase = (text: string): string => opts.textCase === 'upper' ? text.toUpperCase() : text;
+
+  // ---- Build MapLabel array ----
+  const out: MapLabel[] = [];
+
+  for (let i = 0; i < placed.length; i++) {
+    const l = placed[i];
+    const rawText = l.text === '' ? '(empty)' : l.text;
+    const text = applyCase(rawText);
+    const ci = colorIndex?.get(l.text);
+    const baseColor = ci !== undefined ? labelTextColor(hexToRgb(atlas.categoryColor(ci)), plain) : plain;
+
+    // Apply drag offset in world coordinates.
+    const offset = dragOffsets[rawText] ?? dragOffsets[l.text];
+    const position: [number, number] = offset
+      ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
+      : [l.x, l.y];
+
+    const isHighlighted = highlightSet.has(rawText) || highlightSet.has(l.text);
+    const badge: [number, number, number, number] | undefined = isHighlighted && ci !== undefined
+      ? [...hexToRgb(atlas.categoryColor(ci)), 220] as [number, number, number, number]
+      : isHighlighted
+      ? [...plain.slice(0, 3), 220] as [number, number, number, number]
+      : undefined;
+
+    out.push({
+      text,
+      position,
+      size: sizes[i],
+      color: isHighlighted ? [255, 255, 255, 255] : baseColor,
+      priority: allPriorities[i],
+      weight: weights[i],
+      badge,
+      key: rawText,
+    });
+  }
+
+  // ---- Add fine labels (A8) ----
+  for (let i = 0; i < finePlaced.length; i++) {
+    const l = finePlaced[i];
+    const rawText = l.text === '' ? '(empty)' : l.text;
+    const text = applyCase(rawText);
+    const offset = dragOffsets[rawText];
+    const position: [number, number] = offset
+      ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
+      : [l.x, l.y];
+
+    const isHighlighted = highlightSet.has(rawText);
+    out.push({
+      text,
+      position,
+      size: fineSizes[i],
+      color: isHighlighted ? [255, 255, 255, 255] : plain,
+      priority: allPriorities[counts.length + i],
+      weight: fineWeights[i],
+      badge: isHighlighted ? ([...plain.slice(0, 3), 200] as [number, number, number, number]) : undefined,
+      key: rawText,
+    });
+  }
+
   atlas.labelCount = out.length;
-  atlas.renderer.setLabels(out, { outline: [...hexToRgb(toHex(background)), 220], fontFamily: fontFamily() });
-  const showOutlines = atlas.labels.clusters && atlas.labels.outlines && atlas.cluster && atlas.phase !== 'embedding';
+
+  // ---- Halo color (A2) ----
+  const haloColor = opts.haloColor && opts.haloColor !== ''
+    ? [...hexToRgb(opts.haloColor), 220] as [number, number, number, number]
+    : [...hexToRgb(toHex(background)), 220] as [number, number, number, number];
+
+  const labelStyle = {
+    outline: haloColor,
+    fontFamily: resolvedFontFamily(atlas),
+    fontWeight: opts.fontWeight ?? 600,
+    haloWidth: opts.haloWidth ?? 10,
+    lineHeight: opts.lineSpacing ?? 0.95,
+    maxWidth: opts.wrapWidth ?? 9,
+  };
+
+  // Font must be loaded before deck.gl rasterizes glyphs; ensureFont is async so we
+  // set labels immediately with whatever is loaded, then re-render after the font loads.
+  atlas.renderer.setLabels(out, labelStyle);
+
+  const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
   atlas.renderer.setOutlines(showOutlines ? atlas.cluster!.outlines.flat() : [], [plain[0], plain[1], plain[2]]);
+
+  // Async font load: re-render once the font is ready (A2).
+  void ensureLabelFont(atlas).then(() => {
+    if (atlas.renderer) {
+      atlas.renderer.setLabels(out, { ...labelStyle, fontFamily: resolvedFontFamily(atlas) });
+    }
+  });
 }

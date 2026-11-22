@@ -162,6 +162,40 @@ export interface LabelOptions {
   nameBy: 'number' | 'features' | number;
   /** Draw cluster outlines. */
   outlines: boolean;
+
+  // ---- A2 label typography ----
+  /** Font family name, or '' / undefined to use the editor font. */
+  fontFamily?: string;
+  /** Base font weight (100–900). Default 600. */
+  fontWeight?: number;
+  /** Font weight for the smallest-group label (variable-weight "light" end). */
+  minFontWeight?: number;
+  /** Font weight for the largest-group label (variable-weight "bold" end). */
+  maxFontWeight?: number;
+  /** Label wrap width in approximate characters (0 = no wrap). */
+  wrapWidth?: number;
+  /** Line height multiplier for multi-line labels. */
+  lineSpacing?: number;
+  /** Halo/outline width (0–20). */
+  haloWidth?: number;
+  /** Halo/outline color as a CSS color string; '' = auto (matches plot background). */
+  haloColor?: string;
+  /** Letter case: 'asis' keeps the original text, 'upper' applies UPPERCASE. */
+  textCase?: 'asis' | 'upper';
+
+  // ---- A3 draggable labels ----
+  /** Screen-pixel offsets from each label's automatic position, keyed by group name. */
+  dragOffsets?: Record<string, [number, number]>;
+
+  // ---- A8 multi-level labels ----
+  /** Second (finer) label column for column labels; enables two-level labels. */
+  fineColumn?: number | null;
+  /** Enable multi-level clustering (coarse + fine) for cluster labels. */
+  multiLevel?: boolean;
+
+  // ---- A9 highlighted label badges ----
+  /** Group names to show as filled badges (cluster color background, white bold text). */
+  highlightGroups?: string[];
 }
 
 /** Tooltip/hover settings (Explore → Tooltip section). */

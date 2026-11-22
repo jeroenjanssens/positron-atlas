@@ -17,6 +17,51 @@ export function refreshClusters(atlas: Atlas): void {
   }
 }
 
+/** Run the fine (secondary) clustering for multi-level labels (A8). */
+export async function runFineClustering(atlas: Atlas): Promise<void> {
+  if (!atlas.labels.clusters || !atlas.labels.multiLevel || !atlas.prepared || !atlas.anchorXY || !atlas.anchorPos) {
+    return;
+  }
+  const prepared = atlas.prepared;
+  const anchorPos = atlas.anchorPos;
+  const onAll = !!prepared.needsProjection && atlas.projection === 'done' && !!atlas.allXY;
+  const xy = onAll ? atlas.allXY! : atlas.anchorXY.slice();
+  const n = onAll ? atlas.nKept : prepared.nAnchors;
+  const grid = densityGrid(xy, n);
+  if (!grid) return;
+
+  // Fine level: detail + 2 (capped at 5)
+  const fineDetail = Math.min(5, Math.round(atlas.labels.detail) + 2);
+  let found;
+  try {
+    atlas.clusterFinder ??= new ClusterFinder();
+    found = await atlas.clusterFinder.find(grid, DETAIL_THRESHOLDS[fineDetail - 1]);
+  } catch {
+    return;
+  }
+
+  if (!atlas.labels.multiLevel || prepared !== atlas.prepared) return;
+
+  const a = assignToClusters(grid, found, xy, n);
+  let codes: Uint16Array;
+  if (onAll || !prepared.needsProjection) {
+    codes = a.codes;
+  } else {
+    codes = new Uint16Array(atlas.nKept).fill(a.k);
+    for (let i = 0; i < anchorPos.length; i++) codes[anchorPos[i]] = a.codes[i];
+  }
+  atlas.clusterFine = {
+    codes,
+    codesAnchors: prepared.needsProjection ? gatherU16(codes, anchorPos) : codes,
+    k: a.k,
+    counts: a.counts,
+    outlines: a.outlines,
+  };
+  // Name fine clusters by number.
+  atlas.clusterFineNames = a.counts.map((_, i) => `Cluster ${i + 1}`);
+  updateLabels(atlas);
+}
+
 export async function runClustering(atlas: Atlas): Promise<void> {
   if (!atlas.labels.clusters || !atlas.prepared || !atlas.anchorXY || !atlas.anchorPos) {
     return;
@@ -71,6 +116,13 @@ export async function runClustering(atlas: Atlas): Promise<void> {
   atlas.clustering = false;
   atlas.nameClusters();
   updateLabels(atlas);
+  // A8: also run fine clustering if multiLevel is enabled.
+  if (atlas.labels.multiLevel) {
+    void runFineClustering(atlas);
+  } else {
+    atlas.clusterFine = null;
+    atlas.clusterFineNames = [];
+  }
 }
 
 /** Cluster names: numbers, the most common value of a column, or distinguishing features (kernel). */

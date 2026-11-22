@@ -1,0 +1,71 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 5, 10000)\ncenters = rng.normal(0, 6, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (10000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = pd.Categorical(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'][v] for v in k)\ndf.shape",
+  "settings": { "maxAnchorsCpu": 3000 },
+  "screenshot": "label-fonts-0.png",
+  "theme": "dark",
+  "steps": [
+    {
+      "name": "open annotate tab and label by group",
+      "eval": "document.querySelector('#tab-annotate').click(); await new Promise(r => setTimeout(r, 300)); const col = a.describe.columns.find(c => c.name === 'group').index; const sel = document.querySelector('select[aria-label=\"Label by\"]'); sel.value = String(col); sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labelCount === 5",
+      "timeout": 30000,
+      "assert": [
+        "a.renderer.labels.length === 5",
+        "a.renderer.labels.every(l => typeof l.text === 'string' && l.text.length > 0)"
+      ],
+      "report": "a.renderer.labels.map(l => l.text)",
+      "screenshot": "label-fonts-default.png"
+    },
+    {
+      "name": "apply Cinzel font",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Label font\"]'); sel.value = 'Cinzel'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.fontFamily === 'Cinzel'",
+      "timeout": 5000,
+      "assert": [
+        "a.labels.fontFamily === 'Cinzel'"
+      ],
+      "report": "{ fontFamily: a.labels.fontFamily }",
+      "screenshot": "label-fonts-cinzel.png"
+    },
+    {
+      "name": "font is loaded (document.fonts.check)",
+      "eval": "await document.fonts.ready; window.__fontLoaded = document.fonts.check('16px Cinzel') || document.fonts.check('600 16px Cinzel') || [...document.fonts.values()].some(f => f.family === 'Cinzel')",
+      "until": "window.__fontLoaded !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__fontLoaded === true"
+      ],
+      "report": "{ fontLoaded: window.__fontLoaded, families: [...document.fonts.values()].map(f => f.family).filter((f,i,a) => a.indexOf(f) === i).slice(0,10) }"
+    },
+    {
+      "name": "labels render with Cinzel (pixels present)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__cinzelPixels = n",
+      "until": "window.__cinzelPixels !== undefined",
+      "assert": "window.__cinzelPixels > 500",
+      "report": "{ drawnPixels: window.__cinzelPixels }"
+    },
+    {
+      "name": "apply UPPERCASE case",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Letter case\"]'); sel.value = 'upper'; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.textCase === 'upper'",
+      "assert": [
+        "a.renderer.labels.every(l => l.text === l.text.toUpperCase())"
+      ],
+      "report": "a.renderer.labels.map(l => l.text)",
+      "screenshot": "label-fonts-uppercase.png"
+    },
+    {
+      "name": "revert to default font",
+      "eval": "const sel = document.querySelector('select[aria-label=\"Label font\"]'); sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labels.fontFamily === ''",
+      "assert": [
+        "a.labels.fontFamily === ''"
+      ]
+    },
+    {
+      "name": "light theme: labels render (pixels present)",
+      "screenshot": "label-fonts-light.png"
+    }
+  ]
+}

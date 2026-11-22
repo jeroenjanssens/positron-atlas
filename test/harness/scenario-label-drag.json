@@ -1,0 +1,82 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 4, 8000)\ncenters = rng.normal(0, 7, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (8000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['group'] = pd.Categorical(['North', 'South', 'East', 'West'][v] for v in k)\ndf.shape",
+  "settings": { "maxAnchorsCpu": 3000 },
+  "screenshot": "label-drag-0.png",
+  "theme": "dark",
+  "steps": [
+    {
+      "name": "open annotate tab and label by group",
+      "eval": "document.querySelector('#tab-annotate').click(); await new Promise(r => setTimeout(r, 300)); const col = a.describe.columns.find(c => c.name === 'group').index; const sel = document.querySelector('select[aria-label=\"Label by\"]'); sel.value = String(col); sel.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.labelCount === 4",
+      "timeout": 30000,
+      "assert": [
+        "a.renderer.labels.length === 4",
+        "Object.keys(a.labels.dragOffsets ?? {}).length === 0"
+      ],
+      "screenshot": "label-drag-before.png"
+    },
+    {
+      "name": "compute screen position of the first label (page coordinates)",
+      "eval": "const lbl = a.renderer.labels[0]; window.__labelName = lbl.key ?? lbl.text; const vs = a.renderer['viewState']; const zoom = vs.zoom; const target = vs.target; const scale = Math.pow(2, zoom); const canvas = document.querySelector('canvas'); const rect = canvas.getBoundingClientRect(); const cw = rect.width; const ch = rect.height; const wx = lbl.position[0]; const wy = lbl.position[1]; window.__labelSX = Math.round(rect.left + cw / 2 + (wx - target[0]) * scale); window.__labelSY = Math.round(rect.top + ch / 2 - (wy - target[1]) * scale)",
+      "until": "window.__labelSX !== undefined",
+      "report": "{ name: window.__labelName, sx: window.__labelSX, sy: window.__labelSY }"
+    },
+    {
+      "name": "drag the first label 80px to the right and 40px down",
+      "drag": "[...Array(5)].map((_, i) => [window.__labelSX + i * 20, window.__labelSY + i * 10])",
+      "until": "Object.keys(a.labels.dragOffsets ?? {}).length > 0",
+      "timeout": 5000,
+      "assert": [
+        "Object.keys(a.labels.dragOffsets ?? {}).length === 1",
+        "typeof Object.values(a.labels.dragOffsets ?? {})[0][0] === 'number'",
+        "typeof Object.values(a.labels.dragOffsets ?? {})[0][1] === 'number'"
+      ],
+      "report": "{ offsets: a.labels.dragOffsets, movedLabel: Object.keys(a.labels.dragOffsets ?? {})[0] }",
+      "screenshot": "label-drag-after.png"
+    },
+    {
+      "name": "dragged label is at the offset position",
+      "eval": "const name = window.__labelName; const offset = a.labels.dragOffsets[name]; const lbl = a.renderer.labels.find(l => (l.key ?? l.text) === name); window.__offsetMatch = lbl && offset && Math.abs(lbl.position[0] - (a.renderer.labels.find(l2 => (l2.key ?? l2.text) === name)?.position[0] ?? 0)) >= 0",
+      "until": "window.__offsetMatch !== undefined",
+      "assert": [
+        "a.renderer.labels.some(l => (l.key ?? l.text) === window.__labelName)"
+      ],
+      "report": "{ name: window.__labelName, offset: a.labels.dragOffsets[window.__labelName], renderedPos: a.renderer.labels.find(l => (l.key ?? l.text) === window.__labelName)?.position }"
+    },
+    {
+      "name": "dragged label still visible in export (pixels present)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__dragPixels = n",
+      "until": "window.__dragPixels !== undefined",
+      "assert": "window.__dragPixels > 500",
+      "report": "{ drawnPixels: window.__dragPixels }"
+    },
+    {
+      "name": "state persists: harness.state.labels.dragOffsets is serialized",
+      "until": "h.state && h.state.labels && typeof h.state.labels.dragOffsets === 'object' && Object.keys(h.state.labels.dragOffsets).length > 0",
+      "timeout": 3000,
+      "assert": [
+        "h.state && h.state.labels && typeof h.state.labels.dragOffsets === 'object'",
+        "Object.keys(h.state.labels.dragOffsets).length > 0"
+      ],
+      "report": "{ dragOffsetsKeys: Object.keys(h.state.labels.dragOffsets) }"
+    },
+    {
+      "name": "reset all label positions via UI",
+      "eval": "const btn = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Reset all label positions')); if (btn) btn.click()",
+      "until": "Object.keys(a.labels.dragOffsets ?? {}).length === 0",
+      "timeout": 3000,
+      "assert": [
+        "Object.keys(a.labels.dragOffsets ?? {}).length === 0"
+      ],
+      "report": "{ dragOffsets: a.labels.dragOffsets }",
+      "screenshot": "label-drag-reset.png"
+    },
+    {
+      "name": "hidden labels are not pickable (CollisionFilterExtension)",
+      "eval": "const hiddenLabels = a.renderer.labels.filter(l => l.priority !== undefined); window.__allHaveKeys = hiddenLabels.every(l => l.key !== undefined || l.text !== undefined)",
+      "until": "window.__allHaveKeys !== undefined",
+      "report": "{ labelCount: a.renderer.labels.length, withKey: a.renderer.labels.filter(l => l.key).length }"
+    }
+  ]
+}

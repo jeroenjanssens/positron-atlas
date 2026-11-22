@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collisionPriorities, labelSizes, placeGroupLabels } from '../src/webview/labels/place';
+import { weightRange, matchDragOffsets } from '../src/webview/atlas/labels';
 
 function rng(seed: number) {
   let s = seed;
@@ -88,5 +89,88 @@ describe('collisionPriorities', () => {
     expect(p[1]).toBeGreaterThan(p[0]);
     expect(p[0]).toBeGreaterThanOrEqual(-900);
     expect(p[1]).toBeLessThanOrEqual(900);
+  });
+});
+
+// ---- A2: weight range --------------------------------------------------------
+
+describe('weightRange', () => {
+  it('returns minWeight for empty counts', () => {
+    expect(weightRange([], 300, 700)).toEqual([]);
+  });
+
+  it('returns uniform weight when min === max', () => {
+    expect(weightRange([100, 1000, 500], 600, 600)).toEqual([600, 600, 600]);
+  });
+
+  it('assigns light weight to small groups, heavy weight to large groups', () => {
+    // Three groups: tiny, medium, huge.
+    const w = weightRange([10, 1000, 10000], 300, 700);
+    expect(w).toHaveLength(3);
+    expect(w[0]).toBeLessThanOrEqual(w[1]);
+    expect(w[1]).toBeLessThanOrEqual(w[2]);
+    // The largest group always gets the max weight.
+    expect(w[2]).toBe(700);
+    // The smallest group gets the min weight.
+    expect(w[0]).toBe(300);
+    // All returned weights are rounded to hundreds.
+    for (const v of w) expect(v % 100).toBe(0);
+  });
+
+  it('handles single-group case', () => {
+    expect(weightRange([500], 300, 700)).toEqual([700]);
+  });
+
+  it('handles all-zero counts', () => {
+    const w = weightRange([0, 0], 300, 700);
+    expect(w).toHaveLength(2);
+    for (const v of w) expect(v).toBe(300);
+  });
+});
+
+// ---- A3: matchDragOffsets after reclustering ---------------------------------
+
+describe('matchDragOffsets', () => {
+  it('returns empty object when no offsets provided', () => {
+    expect(matchDragOffsets(undefined, ['A', 'B'])).toEqual({});
+    expect(matchDragOffsets({}, ['A', 'B'])).toEqual({});
+  });
+
+  it('keeps offsets for names that still exist after reclustering', () => {
+    const offsets = { A: [10, -5] as [number, number], B: [0, 20] as [number, number], C: [-3, 7] as [number, number] };
+    // After reclustering, cluster C is gone but A and B remain.
+    const result = matchDragOffsets(offsets, ['A', 'B', 'D']);
+    expect(result).toEqual({ A: [10, -5], B: [0, 20] });
+    expect('C' in result).toBe(false);
+    expect('D' in result).toBe(false);
+  });
+
+  it('returns empty object when no names match', () => {
+    const offsets = { A: [1, 2] as [number, number] };
+    expect(matchDragOffsets(offsets, ['X', 'Y', 'Z'])).toEqual({});
+  });
+
+  it('handles all names matching', () => {
+    const offsets = { X: [3, 4] as [number, number], Y: [5, 6] as [number, number] };
+    expect(matchDragOffsets(offsets, ['X', 'Y'])).toEqual(offsets);
+  });
+});
+
+// ---- A8: collisionPriorities level selection (integration) -------------------
+
+describe('collisionPriorities with multi-level (A8)', () => {
+  it('gives coarse (level 1) higher priority than fine (level 0) regardless of count', () => {
+    // coarse has 3 labels (level 1), fine has 5 labels (level 0, smaller counts)
+    const counts = [2000, 1500, 500, 300, 200, 100, 50, 10];
+    const levels = [1, 1, 1, 0, 0, 0, 0, 0]; // first 3 are coarse, rest fine
+    const p = collisionPriorities(counts, levels);
+    // Every coarse label (level 1) should beat every fine label (level 0).
+    const coarsePriorities = [0, 1, 2].map((i) => p[i]);
+    const finePriorities = [3, 4, 5, 6, 7].map((i) => p[i]);
+    for (const cp of coarsePriorities) {
+      for (const fp of finePriorities) {
+        expect(cp).toBeGreaterThan(fp);
+      }
+    }
   });
 });
