@@ -145,13 +145,52 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-/** Load the kernel helper silently for a Python session (best-effort). */
+/** Load the kernel helper silently for a Python session (best-effort).
+ *
+ * If the session is not yet idle (e.g. still starting), waits for the
+ * `idle` or `ready` state via `onDidChangeRuntimeState` before loading.
+ */
 async function autoLoadHelper(ctx: AtlasContext, sessionId: string): Promise<void> {
+  const bridge = bridgeFor(ctx, sessionId);
+  const doLoad = async (): Promise<void> => {
+    try {
+      await bridge.ensureLoaded();
+      ctx.log.info(`Atlas helper loaded for session ${sessionId}`);
+    } catch (e) {
+      ctx.log.warn(`Atlas helper auto-load failed for session ${sessionId}: ${String(e)}`);
+    }
+  };
+
+  // Retrieve the session to inspect its state.
+  let session: Awaited<ReturnType<typeof ctx.positron.runtime.getSession>>;
   try {
-    await bridgeFor(ctx, sessionId).ensureLoaded();
-    ctx.log.info(`Atlas helper loaded for session ${sessionId}`);
-  } catch (e) {
-    ctx.log.warn(`Atlas helper auto-load failed for session ${sessionId}: ${String(e)}`);
+    session = await ctx.positron.runtime.getSession(sessionId);
+  } catch {
+    return;
+  }
+  if (!session) return;
+
+  const state = session.getRuntimeState?.() ?? 'unknown';
+  if (state === 'idle' || state === 'ready') {
+    // Session already running — load immediately.
+    await doLoad();
+  } else if (session.onDidChangeRuntimeState) {
+    // Session is still starting; wait for it to become idle.
+    await new Promise<void>((resolve) => {
+      const disposable = session!.onDidChangeRuntimeState!(async (s: string) => {
+        if (s === 'idle' || s === 'ready') {
+          disposable.dispose();
+          await doLoad();
+          resolve();
+        }
+      });
+      // Safety timeout: load anyway after 30 s even if we never see idle.
+      setTimeout(() => { disposable.dispose(); void doLoad().then(resolve); }, 30_000);
+    });
+  } else {
+    // No state listener available; fall back to a short delay then try.
+    await new Promise<void>((r) => setTimeout(r, 3000));
+    await doLoad();
   }
 }
 

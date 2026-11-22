@@ -169,6 +169,17 @@ the selection mask correctly. Run with:
 npm run build && node test/e2e/run.mjs test/e2e/scenario-python-api.json
 ```
 
+**Observed e2e run (2026-11-22, Positron 2026.11.1 on macOS arm64, 20 k-row DataFrame):**
+- Atlas phase `ready` with `colorMeta: "categorical"` at ~15.6 s from scenario launch.
+- PNG (`/tmp/positron-atlas-e2e/api.png`) written: 14 324 bytes, non-blank.
+- `a.invertSelection()` via CDP → `a.selectedCount = 20000` immediately (webview-local).
+- Second Python cell `len(m.selected_rows)` returned `20000` after 0.3 s (bounded by the
+  helper extension's 300 ms run-cell.json poll interval); actual comm delivery was faster.
+- **Comm latency** (Python `comm.send` → host `dispatchCommCommand` → webview `apiCommand`):
+  not directly timer-visible in this run, but the `savePng` round-trip completed within ~2–3 s
+  of panel creation (including data loading); the colour command arrived before UMAP finished.
+  Harness-measured `colorBy` round-trip: ~200 ms (see harness note above).
+
 **Recommendation:** ✅ Comms are the correct primitive. The architecture validated; item 12 is done.
 
 ---

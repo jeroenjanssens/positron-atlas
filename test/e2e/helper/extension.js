@@ -72,8 +72,25 @@ async function activate() {
       log('setup done');
     }
     if (sc.pythonApiCode) {
+      // Prepend a bootstrap snippet so `import positron_atlas` works even if
+      // the Atlas extension's auto-load hasn't completed yet.
+      const nodePath = require('path');
+      const kernelPath = nodePath.join(__dirname, '../../../python/positron_atlas_kernel.py');
+      const bootstrapLines = [
+        'import sys as _sys, importlib.util as _u',
+        "_m = _sys.modules.get('_positron_atlas')",
+        'if _m is None:',
+        `    _s = _u.spec_from_file_location('_positron_atlas', ${JSON.stringify(kernelPath)})`,
+        '    _m = _u.module_from_spec(_s)',
+        "    _sys.modules['_positron_atlas'] = _m",
+        '    _s.loader.exec_module(_m)',
+        'del _sys, _u, _m',
+      ];
+      const fullCode = [...bootstrapLines, sc.pythonApiCode].join('\n');
+      log(`kernel path: ${kernelPath}`);
+
       // The Python code opens Atlas itself via comm (positron_atlas); no need to run a command.
-      await positron.runtime.executeCode('python', sc.pythonApiCode, false, false, undefined, undefined, undefined, session.metadata.sessionId);
+      await positron.runtime.executeCode('python', fullCode, false, false, undefined, undefined, undefined, session.metadata.sessionId);
       log('pythonApiCode done');
       // Poll for run-cell requests so run.mjs can trigger additional Python cells.
       const out = process.env.E2E_DIR || '/tmp/positron-atlas-e2e';
@@ -121,7 +138,8 @@ async function activate() {
     }
     log('READY');
   } catch (e) {
-    log(`ERROR ${e && e.stack ? e.stack : e}`);
+    const detail = e ? (e.stack || e.message || JSON.stringify(e)) : String(e);
+    log(`ERROR ${detail}`);
   }
 }
 

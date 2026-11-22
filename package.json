@@ -36,7 +36,8 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onWebviewPanel:positronAtlas.view"
+    "onWebviewPanel:positronAtlas.view",
+    "onStartupFinished"
   ],
   "contributes": {
     "commands": [
