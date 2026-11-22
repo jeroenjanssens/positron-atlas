@@ -667,6 +667,15 @@
         post({ type: 'overlayRemoved', layerId: m.layerId });
         break;
       }
+      case 'overlayRows': {
+        if (!jobId) break;
+        const r = await call('overlay_rows', jobId, m.layerId, m.indices, m.columns ?? null).catch(() => null);
+        if (!r || !r.ok) break;
+        const values = {};
+        for (const [k, v] of Object.entries(r.values)) values[Number(k)] = v;
+        post({ type: 'overlayRows', seq: m.seq, layerId: m.layerId, values });
+        break;
+      }
     }
   }
 

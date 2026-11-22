@@ -11,6 +11,7 @@ import type { FileRef } from '../../shared/protocol';
 import { vscode, fetchTyped } from '../vscode';
 import { addOverlayLayer, removeLayer } from './layers';
 import { overlaySymbolCode } from './symbols';
+import { HitIndex } from '../render/hitIndex';
 
 /** Distinct overlay colors (RGBA). Assigned in rotation as overlays are added. */
 const OVERLAY_COLORS: [number, number, number, number][] = [
@@ -66,6 +67,7 @@ export function onOverlayPrepared(
 /**
  * Called when an overlay XY chunk arrives (xyChunk message with layerId).
  * Stores the chunk data in overlayXY and triggers a re-render.
+ * When all rows are filled, builds a spatial HitIndex for hover detection.
  */
 export async function onOverlayXYChunk(atlas: Atlas, layerId: string, file: FileRef): Promise<void> {
   const xy = (await fetchTyped(file.uri, 'f32')) as Float32Array;
@@ -79,7 +81,13 @@ export async function onOverlayXYChunk(atlas: Atlas, layerId: string, file: File
     atlas.overlayXY.set(layerId, buf);
   }
   buf.set(xy, offset * nd);
-  atlas.overlayFilled.set(layerId, (atlas.overlayFilled.get(layerId) ?? 0) + xy.length / nd);
+  const prevFilled = atlas.overlayFilled.get(layerId) ?? 0;
+  const newFilled = prevFilled + xy.length / nd;
+  atlas.overlayFilled.set(layerId, newFilled);
+  // Build spatial hit index when all rows have been received (2D only for now).
+  if (newFilled >= nKept && nd === 2) {
+    atlas.overlayHits.set(layerId, new HitIndex(buf, nKept));
+  }
   atlas.render();
 }
 
@@ -93,5 +101,37 @@ export function onOverlayRemoved(atlas: Atlas, layerId: string): void {
   atlas.overlayColors.delete(layerId);
   atlas.overlayNKept.delete(layerId);
   atlas.overlayFilled.delete(layerId);
+  atlas.overlayHits.delete(layerId);
+  // Clear cached row data for this layer.
+  for (const key of [...atlas.overlayRowCache.keys()]) {
+    if (key.startsWith(`${layerId}:`)) atlas.overlayRowCache.delete(key);
+  }
   atlas.render();
+}
+
+/**
+ * Called when overlay row values arrive (overlayRows message).
+ * Caches the values and updates the visible tooltip if seq matches.
+ */
+export function onOverlayRows(
+  atlas: Atlas,
+  seq: number,
+  layerId: string,
+  values: Record<number, [string, string][]>,
+): void {
+  for (const [k, vals] of Object.entries(values)) {
+    const posIdx = Number(k);
+    atlas.overlayRowCache.set(`${layerId}:${posIdx}`, vals);
+  }
+  if (seq !== atlas.overlayHoverSeq) return;
+  // Update the visible tooltip with the now-available values.
+  const tt = atlas.tooltip;
+  if (tt && tt.layerId === layerId) {
+    for (const [k, vals] of Object.entries(values)) {
+      if (Number(k) === tt.row) {
+        atlas.tooltip = { ...tt, values: vals };
+        break;
+      }
+    }
+  }
 }

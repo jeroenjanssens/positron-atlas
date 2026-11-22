@@ -71,6 +71,25 @@ export function onPointer(atlas: Atlas, p: { x: number; y: number; world: [numbe
     }
   }
   const radius = atlas.renderer!.worldPerPixel() * Math.max(6, atlas.view.pointSize);
+
+  // B3: check overlay layers first (they render on top of the base map).
+  for (const layer of [...atlas.layers].sort((a, b) => b.order - a.order)) {
+    if (layer.kind !== 'point-overlay' || !layer.visible) continue;
+    const ovHit = atlas.overlayHits.get(layer.id);
+    if (!ovHit) continue;
+    const ovIdx = ovHit.nearest(p.world[0], p.world[1], radius);
+    if (ovIdx < 0) continue;
+    // Found an overlay point.
+    atlas.renderer?.setHoverRing(-1, atlas.pinnedCard?.preparedIdx ?? -1);
+    atlas.pendingHover = { x: p.x, y: p.y, prepIdx: -1, overlayLayerId: layer.id, overlayPosIdx: ovIdx };
+    if (atlas.tooltip && atlas.tooltip.layerId === layer.id && atlas.tooltip.row === ovIdx) {
+      atlas.tooltip = { ...atlas.tooltip, x: p.x, y: p.y };
+      return;
+    }
+    showOverlayTooltip(atlas, p.x, p.y, layer.id, layer.name, ovIdx);
+    return;
+  }
+
   const idx = atlas.hit.index.nearest(p.world[0], p.world[1], radius);
   if (idx < 0) {
     atlas.tooltip = null;
@@ -208,17 +227,21 @@ export function onImageUri(atlas: Atlas, row: number, uri: string): void {
 // ---- click to pin (H7) -----------------------------------------------------------
 
 export function onClick(atlas: Atlas, e: MouseEvent): void {
-  if (!atlas.hit || !atlas.tooltip || atlas.phase !== 'ready') return;
-  const prepIdx = atlas.pendingHover?.prepIdx ?? -1;
-  if (prepIdx < 0) return;
+  if (!atlas.tooltip || atlas.phase !== 'ready') return;
+  // B3: overlay points do not use hit/prepIdx.
+  const ph = atlas.pendingHover;
+  const isOverlay = !!ph?.overlayLayerId;
+  if (!isOverlay && !atlas.hit) return;
+  const prepIdx = ph?.prepIdx ?? -1;
+  if (!isOverlay && prepIdx < 0) return;
   // Cmd/Ctrl-click: open link directly (H7).
   if ((e.metaKey || e.ctrlKey) && atlas.tooltip.linkValue) {
     vscode.post({ type: 'openLink', url: atlas.tooltip.linkValue });
     return;
   }
   // Plain click: pin the tooltip as a card.
-  atlas.pinnedCard = { ...atlas.tooltip, preparedIdx: prepIdx };
-  atlas.renderer?.setHoverRing(prepIdx, prepIdx);
+  atlas.pinnedCard = { ...atlas.tooltip, preparedIdx: isOverlay ? -1 : prepIdx };
+  if (!isOverlay) atlas.renderer?.setHoverRing(prepIdx, prepIdx);
 }
 
 export function closePinnedCard(atlas: Atlas): void {
@@ -392,4 +415,30 @@ function isHiddenPoint(atlas: Atlas, prepIdx: number): boolean {
   const idx = atlas.projection === 'done' && atlas.allXY ? prepIdx : (atlas.anchorPos?.[prepIdx] ?? prepIdx);
   if (idx >= atlas.colorValues.length) return false;
   return hidden.has((atlas.colorValues as Uint16Array)[idx]);
+}
+
+// ---- B3: overlay hover -----------------------------------------------------------
+
+/**
+ * Show an instant overlay tooltip (B3), then request full row values.
+ * Uses posIdx as the row identifier (overlay position index).
+ */
+function showOverlayTooltip(atlas: Atlas, x: number, y: number, layerId: string, layerName: string, posIdx: number): void {
+  // Show instant tooltip with what we have (layer name + row number).
+  const cached = atlas.overlayRowCache.get(`${layerId}:${posIdx}`);
+  atlas.tooltip = {
+    x, y,
+    row: posIdx,
+    values: cached ?? [],
+    title: `${layerName} · row ${posIdx}`,
+    layerId,
+  };
+  if (cached) return;
+  // Debounce 30 ms then request from kernel.
+  const seq = ++atlas.overlayHoverSeq;
+  clearTimeout(atlas.hoverTimer);
+  atlas.hoverTimer = setTimeout(() => {
+    if (seq !== atlas.overlayHoverSeq) return;
+    vscode.post({ type: 'overlayRows', layerId, seq, indices: [posIdx] });
+  }, 30);
 }

@@ -196,6 +196,7 @@ import {
   onOverlayPrepared as onOverlayPreparedImpl,
   onOverlayXYChunk as onOverlayXYChunkImpl,
   onOverlayRemoved as onOverlayRemovedImpl,
+  onOverlayRows as onOverlayRowsImpl,
 } from './atlas/overlay';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
@@ -419,6 +420,12 @@ export class Atlas {
   overlayNKept = new Map<string, number>();
   /** Number of rows filled so far per overlay layer. Non-reactive. */
   overlayFilled = new Map<string, number>();
+  /** Spatial hit indices for overlay layers (built after XY is complete). Non-reactive. */
+  overlayHits = new Map<string, HitIndex>();
+  /** Sequence counter for overlay row fetching (B3 hover). Non-reactive. */
+  overlayHoverSeq = 0;
+  /** Cached row values for overlay points, keyed by layerId+':'+posIdx. Non-reactive. */
+  overlayRowCache = new Map<string, [string, string][]>();
 
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
@@ -467,8 +474,9 @@ export class Atlas {
   _3dScreenXY: Float32Array | null = null;
   hoverTimer: ReturnType<typeof setTimeout> | undefined;
   hoverSeq = 0;
-  /** Extended: includes prepIdx for hover ring and cache lookups. */
-  pendingHover: { x: number; y: number; prepIdx?: number } | null = null;
+  /** Extended: includes prepIdx for hover ring and cache lookups.
+   * When overlayLayerId is set, the hovered point is in an overlay (B3). */
+  pendingHover: { x: number; y: number; prepIdx?: number; overlayLayerId?: string; overlayPosIdx?: number } | null = null;
   autoFit = true;
   /** Overview zoom set by the last fit() call; used for zoom-dependent fine-label visibility (A8). */
   fittedZoom: number = -Infinity;
@@ -749,6 +757,9 @@ export class Atlas {
         break;
       case 'overlayRemoved':
         onOverlayRemovedImpl(this, msg.layerId);
+        break;
+      case 'overlayRows':
+        onOverlayRowsImpl(this, msg.seq, msg.layerId, msg.values);
         break;
     }
   }

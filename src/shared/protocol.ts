@@ -512,6 +512,8 @@ export type ToWebview =
   | { type: 'overlayPrepared'; layerId: string; variable: string; nRows: number; nKept: number; dims: number }
   /** B3: overlay layer removed from the kernel job. */
   | { type: 'overlayRemoved'; layerId: string }
+  /** B3: row values fetched from an overlay layer for hover/pin cards. */
+  | { type: 'overlayRows'; seq: number; layerId: string; values: Record<number, [string, string][]> }
   | {
       type: 'exportHtmlAssembly';
       /**
@@ -669,4 +671,6 @@ export type ToHost =
   /** B3: place overlay rows via anchor index after prepareOverlay succeeds. */
   | { type: 'projectOverlay'; layerId: string; metric: 'euclidean' | 'cosine'; seed: number }
   /** B3: remove an overlay layer from the kernel job and the layer list. */
-  | { type: 'removeOverlay'; layerId: string };
+  | { type: 'removeOverlay'; layerId: string }
+  /** B3: fetch row values from an overlay layer for hover/pin cards. */
+  | { type: 'overlayRows'; layerId: string; seq: number; indices: number[]; columns?: number[] };

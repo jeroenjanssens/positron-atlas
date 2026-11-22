@@ -1993,6 +1993,40 @@ def remove_overlay(job_id: str, layer_id: str) -> str:
     return _json({"ok": True, "removed": removed})
 
 
+@_guard
+def overlay_rows(job_id: str, layer_id: str, indices: list[int], columns: list[int] | None = None) -> str:
+    """Fetch row values from an overlay DataFrame for the given overlay-position indices.
+
+    ``indices`` are positions in the overlay's projected XY array.
+    Maps them through ``kept_idx`` to original row positions, then fetches column
+    values from the overlay variable (re-resolved on each call, same as the base ``rows``).
+
+    Returns a mapping from overlay-position index (string key) to list of (name, value) pairs,
+    in the same format as ``rows``.
+    """
+    job = _get(job_id)
+    overlay = job.overlays.get(layer_id)
+    if overlay is None:
+        return _json({"ok": False, "error": f"Overlay layer '{layer_id}' not found."})
+    try:
+        ov_obj = _resolve(overlay.name)
+        ov_frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": f"Cannot load overlay variable '{overlay.name}': {type(e).__name__}: {e}"})
+
+    names = ov_frame.column_names()
+    col_indices = ([int(c) for c in columns] if columns else list(range(len(names))))
+    col_set = set(col_indices)
+    result: dict[str, list[tuple[str, str]]] = {}
+    for i in indices:
+        idx = int(i)
+        if 0 <= idx < len(overlay.kept_idx):
+            orig = int(overlay.kept_idx[idx])
+            all_vals = ov_frame.row(orig)
+            result[str(idx)] = [(k, v) for j, (k, v) in enumerate(all_vals) if j in col_set][:200]
+    return _json({"ok": True, "values": result})
+
+
 def _write_xy_chunks(job: _Job, xy: np.ndarray, chunk_rows: int = 1_000_000) -> int:
     ndim = int(xy.shape[1]) if xy.ndim == 2 else 2  # T2: carry actual dims to shape metadata
     n_files = 0

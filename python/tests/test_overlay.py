@@ -262,3 +262,75 @@ def test_prepare_overlay_result_fields(ns, tmp_path):
     assert res["nRows"] == 200
     assert res["nKept"] == 200
     assert res["dims"] == 6  # no PCA
+
+
+# ---------------------------------------------------------------------------
+# overlay_rows — hover row-value fetching
+# ---------------------------------------------------------------------------
+
+def _prepare_and_project_overlay(ns, tmp_path, x):
+    """Helper: prepare base + overlay and project overlay; returns jid, layer_id."""
+    jid, _ = _do_prepare(ns, tmp_path, x)
+    xy_path, _ = _write_anchor_xy(tmp_path, jid)
+    ns["ov"] = pandas_df(x[:100])
+    layer_id = "hover-lay"
+    r = J(pak.prepare_overlay(jid, "ov", layer_id))
+    assert r["ok"], r.get("error")
+    wait(jid)
+    rp = J(pak.project_overlay(jid, layer_id, xy_path, '{"metric":"euclidean","seed":0}'))
+    assert rp["ok"], rp.get("error")
+    wait(jid)
+    return jid, layer_id
+
+
+def test_overlay_rows_basic(ns, tmp_path):
+    """overlay_rows returns values for given position indices."""
+    x, _ = make_blobs(200, 6)
+    jid, layer_id = _prepare_and_project_overlay(ns, tmp_path, x)
+
+    r = J(pak.overlay_rows(jid, layer_id, [0, 1, 2]))
+    assert r["ok"], r.get("error")
+    assert "values" in r
+    # Three rows requested, three returned.
+    assert set(int(k) for k in r["values"].keys()) == {0, 1, 2}
+    # Each row is a list of (name, value) pairs.
+    for vals in r["values"].values():
+        assert isinstance(vals, list)
+        assert all(isinstance(pair, list) and len(pair) == 2 for pair in vals)
+
+
+def test_overlay_rows_column_names(ns, tmp_path):
+    """Returned column names match the overlay DataFrame column names."""
+    x, _ = make_blobs(200, 6)
+    jid, layer_id = _prepare_and_project_overlay(ns, tmp_path, x)
+
+    r = J(pak.overlay_rows(jid, layer_id, [0]))
+    assert r["ok"]
+    names = [pair[0] for pair in r["values"]["0"]]
+    df = ns["ov"]
+    assert names == list(df.columns), f"expected {list(df.columns)}, got {names}"
+
+
+def test_overlay_rows_unknown_layer(ns, tmp_path):
+    """overlay_rows returns ok=False for an unknown layer id."""
+    x, _ = make_blobs(100, 6)
+    jid, _ = _do_prepare(ns, tmp_path, x)
+
+    r = J(pak.overlay_rows(jid, "nonexistent-layer", [0]))
+    assert not r["ok"]
+    assert "error" in r
+
+
+def test_overlay_rows_out_of_bounds(ns, tmp_path):
+    """Out-of-bounds position indices are silently skipped."""
+    x, _ = make_blobs(200, 6)
+    jid, layer_id = _prepare_and_project_overlay(ns, tmp_path, x)
+
+    overlay = pak._JOBS[jid].overlays[layer_id]
+    n_kept = len(overlay.kept_idx)
+    # Indices: one valid, one out-of-bounds.
+    r = J(pak.overlay_rows(jid, layer_id, [0, n_kept + 999]))
+    assert r["ok"]
+    # Only the in-bounds index returns values.
+    assert "0" in r["values"]
+    assert str(n_kept + 999) not in r["values"]

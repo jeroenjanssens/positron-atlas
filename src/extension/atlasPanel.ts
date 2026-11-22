@@ -959,6 +959,16 @@ export class AtlasPanel {
         this.post({ type: 'overlayRemoved', layerId: m.layerId });
         break;
       }
+      case 'overlayRows': {
+        const job = this.jobId;
+        if (!job) break;
+        const r = await this.bridge.call('overlay_rows', job, m.layerId, m.indices, m.columns ?? null).catch(() => null) as any;
+        if (!r?.ok) break;
+        const values: Record<number, [string, string][]> = {};
+        for (const [k, v] of Object.entries(r.values as Record<string, [string, string][]>)) values[Number(k)] = v;
+        this.post({ type: 'overlayRows', seq: m.seq, layerId: m.layerId, values });
+        break;
+      }
     }
   }
 
