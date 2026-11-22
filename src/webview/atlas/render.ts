@@ -8,6 +8,7 @@ import { bounds } from '../render/hitIndex';
 import { lowerBound } from '../logic';
 import { themeBackground } from './utils';
 import { gatherU16 } from './utils';
+import { runSearch, searchColumn } from './search';
 
 export function setView(atlas: Atlas, v: Partial<import('./types').ViewOptions>): void {
   const cmapChanged = v.colormap !== undefined && v.colormap !== atlas.view.colormap;
@@ -68,6 +69,11 @@ export function render(atlas: Atlas): void {
     )];
   }
   atlas.renderer.setPointSets(sets, filters);
+  // Re-apply any active search highlight after the point sets change (A7).
+  if (atlas.searchMask && atlas.searchQuery) {
+    const col = searchColumn(atlas);
+    if (col !== null) runSearch(atlas, atlas.searchQuery, col);
+  }
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth());

@@ -51,6 +51,18 @@ export function copyDataMapPlot(atlas: Atlas): void {
   vscode.post({ type: 'copyText', text: dataMapPlotSnippet(atlas.dataVariable || atlas.variable, d.frameKind, label) });
 }
 
+/** Export the map as an interactive DataMapPlot HTML file (D3/D12). */
+export function exportDataMapPlot(atlas: Atlas): void {
+  if (!atlas.prepared || !atlas.describe) return;
+  const labelColumn = !atlas.labels.clusters && atlas.labels.column !== null ? atlas.labels.column : null;
+  const titleColumn = typeof atlas.tooltipOpts.titleColumn === 'number' ? atlas.tooltipOpts.titleColumn : null;
+  // Include the placed XY coordinates so the kernel can use them even when the
+  // browser UMAP ran (job.xy is only set by the kernel-side UMAP paths).
+  const rawXY = atlas.allXY ?? atlas.anchorXY;
+  const anchorXY = rawXY ? float32ToBytes(rawXY) : undefined;
+  vscode.post({ type: 'exportDataMapPlot', labelColumn, titleColumn, anchorXY });
+}
+
 export function reload(atlas: Atlas): void {
   atlas.error = null;
   atlas.phase = 'loading';

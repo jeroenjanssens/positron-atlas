@@ -8,6 +8,7 @@
   import PixelImage from './components/PixelImage.svelte';
   import HoverCard from './components/HoverCard.svelte';
   import { formatCount, formatSeconds, placeTooltip } from './logic';
+  import SearchBox from './components/SearchBox.svelte';
 
   const atlas = new Atlas();
   // Exposed for end-to-end tests (test/e2e).
@@ -99,6 +100,7 @@
   <main bind:clientWidth={mainW} bind:clientHeight={mainH}>
     <button class="collapse" title={collapsed ? 'Show controls' : 'Hide controls'} onclick={() => (collapsed = !collapsed)}>{collapsed ? '›' : '‹'}</button>
     <PlotToolbar {atlas} />
+    {#if atlas.phase === 'ready'}<SearchBox {atlas} />{/if}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="plot" class:lasso={atlas.tool === 'lasso'} bind:this={plot} style:background={atlas.view.background || null}
       role="application" aria-label="Map plot"

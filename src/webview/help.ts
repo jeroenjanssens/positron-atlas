@@ -726,6 +726,31 @@ export const HELP: Record<string, HelpEntry> = {
     dataMapPlot: 'datamapplot.create_interactive_plot()',
   },
 
+  'export.exportDataMapPlot': {
+    title: 'Export with DataMapPlot',
+    what: 'Saves the map as a self-contained interactive HTML file using DataMapPlot.',
+    intuition:
+      'Opens a save dialog, then calls datamapplot.create_interactive_plot() with the current coordinates, ' +
+      'the active label column and the hover-text column. ' +
+      'The resulting HTML file contains everything needed to explore the map in any browser.',
+    when: 'To share the map as a standalone file without requiring Atlas or Python.',
+    cost: 'none',
+    dataMapPlot: 'datamapplot.create_interactive_plot()',
+  },
+
+  // ---- Search ------------------------------------------------------------------
+
+  'search.query': {
+    title: 'Search',
+    what: 'Filter the map to highlight rows whose title text matches a query.',
+    intuition:
+      'Type a word or phrase; matching points are shown at full brightness while non-matching points fade. ' +
+      'Press Enter to zoom the view to the matching points; press Escape to clear. ' +
+      'The search runs locally when titles are preloaded, or via the kernel otherwise.',
+    when: 'To find a specific item or group by name.',
+    cost: 'none',
+  },
+
   // ---- Plot toolbar ------------------------------------------------------------
 
   'toolbar.pan': {

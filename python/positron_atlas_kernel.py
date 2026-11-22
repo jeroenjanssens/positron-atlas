@@ -537,7 +537,15 @@ def _sanitize(obj: Any) -> Any:
 def _optional_deps() -> dict[str, bool]:
     import importlib.util
 
-    return {m: importlib.util.find_spec(m) is not None for m in ("pynndescent", "faiss", "sklearn", "umap", "polars_umap")}
+    def _has(m: str) -> bool:
+        # find_spec raises ValueError when the module is already in sys.modules
+        # but its __spec__ is None (e.g. a manually installed test stub).
+        try:
+            return importlib.util.find_spec(m) is not None
+        except (ValueError, AttributeError):
+            return m in sys.modules
+
+    return {m: _has(m) for m in ("pynndescent", "faiss", "sklearn", "umap", "polars_umap", "datamapplot")}
 
 
 # --------------------------------------------------------------------------------------
@@ -1848,6 +1856,161 @@ def texts(job_id: str, column: int, max_chars: int = 120) -> str:
     os.replace(tmp_utf8, utf8_path)
     _write(job, offsets_name, offsets)
     return _json({"ok": True, "utf8File": utf8_name, "offsetsFile": offsets_name, "count": n, "bytes": int(total_bytes)})
+
+
+@_guard
+def search(job_id: str, column: int, query: str, limit: int = 100_000, opts_json: str = "{}") -> str:
+    """Search a text column of the prepared rows for a substring or regex (A7).
+
+    Returns kept-row indices (u32) of matching rows.  The result is a binary
+    file of little-endian uint32 values written into the job directory.
+
+    Vectorized per frame type:
+      pandas  → Series.str.contains(case=False, na=False)
+      polars  → Series.str.contains(re.IGNORECASE pattern)
+      narwhals/other → numpy generic fallback
+
+    Parameters
+    ----------
+    job_id  : str
+    column  : int   – column index in the prepared frame
+    query   : str   – search string (substring or regex)
+    limit   : int   – cap on the number of returned indices (default 100 000)
+    opts_json : str – ``{"regex": false}``
+    """
+    if not query:
+        return _json({"ok": True, "file": None, "count": 0})
+    opts = json.loads(opts_json)
+    regex = bool(opts.get("regex", False))
+    limit = int(limit)
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+    frame = job.frame
+    col = int(column)
+
+    # Try native vectorized search per frame kind.
+    if frame.kind == "pandas":
+        import pandas as pd
+
+        col_name = frame.column_names()[col]
+        series = frame.obj[col_name].iloc[job.kept_idx]
+        mask = series.str.contains(query, case=False, regex=regex, na=False).to_numpy(dtype=bool, na_value=False)
+    elif frame.kind == "polars":
+        import polars as pl
+        import re as _re
+
+        col_name = frame.column_names()[col]
+        series = frame.obj[col_name].gather(job.kept_idx)
+        # Polars str.contains is always regex; build a case-insensitive pattern.
+        pat = query if regex else _re.escape(query)
+        pat_ci = f"(?i){pat}"
+        try:
+            mask = series.str.contains(pat_ci).to_numpy(dtype=bool)
+        except Exception:  # noqa: BLE001
+            # Fallback: numpy generic
+            vals = series.to_numpy(allow_copy=True)
+            mask = _search_numpy(vals, query, regex)
+    else:
+        # narwhals / generic: fetch column values and search with numpy
+        vals = frame.column(col, job.kept_idx)
+        mask = _search_numpy(vals, query, regex)
+
+    # Collect matched kept-row indices (position in the prepared rows array).
+    matched = np.where(mask)[0].astype(np.uint32)
+    if len(matched) > limit:
+        matched = matched[:limit]
+    if len(matched) == 0:
+        return _json({"ok": True, "file": None, "count": 0})
+    uid = uuid.uuid4().hex[:6]
+    fname = f"search_{col}_{uid}.u32"
+    _write(job, fname, matched)
+    return _json({"ok": True, "file": fname, "count": int(len(matched))})
+
+
+def _search_numpy(vals: np.ndarray, query: str, regex: bool) -> np.ndarray:
+    """Case-insensitive substring/regex search on a numpy object array."""
+    import re as _re
+
+    if regex:
+        try:
+            pat = _re.compile(query, _re.IGNORECASE)
+        except _re.error:
+            pat = _re.compile(_re.escape(query), _re.IGNORECASE)
+        mask = np.array([bool(pat.search(str(v))) if not _is_null(v) else False for v in vals], dtype=bool)
+    else:
+        q_lower = query.lower()
+        mask = np.array([q_lower in str(v).lower() if not _is_null(v) else False for v in vals], dtype=bool)
+    return mask
+
+
+@_guard
+def export_datamapplot(job_id: str, output_path: str, opts_json: str = "{}", xy_path: str | None = None) -> str:
+    """Export the map as an interactive DataMapPlot HTML file (D3/D12).
+
+    Calls ``datamapplot.create_interactive_plot()`` with the placed coordinates
+    and optional label/hover-text layers, then saves the result to output_path.
+
+    opts_json keys:
+      labelColumn   : int | null  – column index for map labels (or null)
+      titleColumn   : int | null  – column index for hover text (or null)
+      title         : str         – map title (or omitted)
+
+    xy_path: optional path to a little-endian float32 file of shape (nKept, 2).
+      Used when the browser ran UMAP locally (job.xy is None in the kernel).
+    """
+    import importlib.util
+
+    # find_spec raises ValueError when the module is in sys.modules but has __spec__ = None
+    # (e.g. a manually installed stub used in tests).  Fall back to checking sys.modules.
+    try:
+        _dmp_available = importlib.util.find_spec("datamapplot") is not None
+    except (ValueError, AttributeError):
+        _dmp_available = "datamapplot" in sys.modules
+
+    if not _dmp_available:
+        raise RuntimeError("datamapplot is not installed; install it with 'pip install datamapplot'.")
+    import datamapplot
+
+    opts = json.loads(opts_json)
+    job = _get(job_id)
+    if job.kept_idx is None:
+        raise RuntimeError("Run prepare first.")
+
+    # Get coordinates: prefer the caller-supplied file (browser UMAP), then in-memory job.xy.
+    if xy_path:
+        xy = np.fromfile(xy_path, dtype="<f4").reshape(-1, 2)
+    elif job.xy is not None:
+        xy = job.xy  # (nKept, 2) float32
+    else:
+        raise RuntimeError("No coordinates available; run UMAP first.")
+
+    label_col = opts.get("labelColumn")
+    title_col = opts.get("titleColumn")
+    title = opts.get("title") or None
+
+    frame = job.frame
+    kwargs: dict[str, Any] = {}
+    if title:
+        kwargs["title"] = str(title)
+
+    label_layers: list[Any] = []
+    if label_col is not None:
+        raw = frame.column(int(label_col), job.kept_idx)
+        labels = np.array([str(v) if not _is_null(v) else "Unlabelled" for v in raw], dtype=object)
+        label_layers.append(labels)
+        kwargs["noise_label"] = "Unlabelled"
+
+    if title_col is not None:
+        raw = frame.column(int(title_col), job.kept_idx)
+        hover_texts = np.array([str(v) if not _is_null(v) else "" for v in raw], dtype=object)
+        kwargs["hover_text"] = hover_texts
+
+    plot = datamapplot.create_interactive_plot(xy, *label_layers, **kwargs)
+    # Ensure the output directory exists.
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    plot.save(output_path)
+    return _json({"ok": True, "path": output_path})
 
 
 @_guard

@@ -1,0 +1,63 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['label'] = [f'item_{i:04d}' for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "search for item_0001 (kernel path, texts not yet loaded)",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'label'); a.tooltipOpts = { ...a.tooltipOpts, titleColumn: col.index }; a.search('item_0001')",
+      "until": "a.searchMatchCount > 0 || (!a.searchPending && a.searchQuery === 'item_0001')",
+      "timeout": 10000,
+      "screenshot": "search-match.png",
+      "assert": [
+        "a.searchQuery === 'item_0001'",
+        "a.searchMatchCount >= 1"
+      ],
+      "report": "{ query: a.searchQuery, count: a.searchMatchCount }"
+    },
+    {
+      "name": "matches are drawn (pixels brighter than faded)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let bright = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 150) bright++; window.__brightPixels = bright;",
+      "until": "window.__brightPixels !== undefined",
+      "assert": "window.__brightPixels > 0",
+      "report": "{ brightPixels: window.__brightPixels }"
+    },
+    {
+      "name": "search for 'item_' matches all rows (local path, texts loaded)",
+      "eval": "a.search('item_')",
+      "until": "a.searchMatchCount === a.nKept || (!a.searchPending && a.searchQuery === 'item_')",
+      "timeout": 15000,
+      "assert": [
+        "a.searchMatchCount === a.nKept"
+      ],
+      "report": "{ count: a.searchMatchCount, nKept: a.nKept }"
+    },
+    {
+      "name": "zoom to matches via Enter key",
+      "eval": "a.zoomToSearchMatches()",
+      "until": "true",
+      "timeout": 3000,
+      "screenshot": "search-zoom.png"
+    },
+    {
+      "name": "Escape clears search",
+      "eval": "a.clearSearch()",
+      "until": "!a.searchQuery",
+      "timeout": 3000,
+      "assert": [
+        "a.searchQuery === ''",
+        "a.searchMatchCount === 0",
+        "a.searchMask === null"
+      ],
+      "screenshot": "search-cleared.png"
+    }
+  ]
+}

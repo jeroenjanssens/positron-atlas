@@ -105,12 +105,21 @@ import {
   copyPython as copyPythonImpl,
   copyPolarsUmap as copyPolarsUmapImpl,
   copyDataMapPlot as copyDataMapPlotImpl,
+  exportDataMapPlot as exportDataMapPlotImpl,
   reload as reloadImpl,
   persist as persistImpl,
   setSession as setSessionImpl,
   showError as showErrorImpl,
   flash as flashImpl,
 } from './atlas/actions.svelte';
+import {
+  runSearch as runSearchImpl,
+  clearSearch as clearSearchImpl,
+  zoomToSearchMatches as zoomToSearchMatchesImpl,
+  onSearchResults as onSearchResultsImpl,
+  onSearchEmpty as onSearchEmptyImpl,
+  searchColumn as searchColumnImpl,
+} from './atlas/search';
 import { probeWebGpu } from './atlas/utils';
 import type { SelectMode } from './select/lasso';
 
@@ -218,6 +227,14 @@ export class Atlas {
   /** Whether to load images from URLs: 'always', 'never', or 'ask' (H8). */
   loadImagesFromUrls = $state<'always' | 'never' | 'ask'>('ask');
 
+  // ---- search state (A7) -------------------------------------------------------
+  /** Current search query string (empty = no search). */
+  searchQuery = $state('');
+  /** Number of matching rows for the current search. */
+  searchMatchCount = $state(0);
+  /** True while waiting for the kernel search response. */
+  searchPending = $state(false);
+
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
   // Treat as internal: do not use directly outside this module tree.
@@ -254,6 +271,12 @@ export class Atlas {
   liveRun = false;
   inbox: Promise<void> = Promise.resolve();
   gpuProbe: Promise<boolean> = probeWebGpu();
+
+  // ---- search non-reactive state (A7) -----------------------------------------
+  /** Per-prepared-row search mask (1 = match, 0 = no match).  Null = no search. */
+  searchMask: Uint8Array | null = null;
+  /** Cache of search masks by "column:query" key. */
+  searchCache = new Map<string, Uint8Array>();
 
   // ---- hover non-reactive state (H2–H8) ----------------------------------------
   /** LRU cache of fetched row values, keyed by prepared-row index (H2). */
@@ -417,6 +440,15 @@ export class Atlas {
         this.dataVariable = msg.variable;
         this.flash(`Added ${msg.columns.join(', ')} to ${msg.variable}`);
         break;
+      case 'searchResults':
+        await onSearchResultsImpl(this, msg);
+        break;
+      case 'searchEmpty':
+        onSearchEmptyImpl(this, msg);
+        break;
+      case 'datamapplotSaved':
+        this.flash(`Saved to ${msg.path}`);
+        break;
     }
   }
 
@@ -524,11 +556,27 @@ export class Atlas {
   copyPython(): void { copyPythonImpl(this); }
   copyPolarsUmap(): void { copyPolarsUmapImpl(this); }
   copyDataMapPlot(): void { copyDataMapPlotImpl(this); }
+  exportDataMapPlot(): void { exportDataMapPlotImpl(this); }
   reload(): void { reloadImpl(this); }
   persist(): void { persistImpl(this); }
   setSession(sessionId: string, languageId: string, variable: string): void { setSessionImpl(this, sessionId, languageId, variable); }
   showError(message: string): void { showErrorImpl(this, message); }
   flash(message: string): void { flashImpl(this, message); }
+
+  // ---- search (A7) -------------------------------------------------------------
+  /** The column to search (title column, or first text column). */
+  get searchColumnIndex(): number | null { return searchColumnImpl(this); }
+  /** Run a search for `query`. Pass empty string to clear. */
+  search(query: string, regex = false): void {
+    const col = this.searchColumnIndex;
+    if (!query.trim()) { clearSearchImpl(this); return; }
+    if (col === null) return;
+    runSearchImpl(this, query, col, regex);
+  }
+  /** Clear the search and restore normal rendering. */
+  clearSearch(): void { clearSearchImpl(this); }
+  /** Zoom the view to the matching points (called on Enter). */
+  zoomToSearchMatches(): void { zoomToSearchMatchesImpl(this); }
 
   /** Request full-screen mode (N5 / F1).  In Positron, posts a ToHost message so the host
    *  runs workbench.action.maximizeEditorHideSidebar.  In a plain browser the caller uses

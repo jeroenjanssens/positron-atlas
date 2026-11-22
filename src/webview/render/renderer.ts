@@ -82,6 +82,8 @@ export class ScatterRenderer {
 
   /** Per-point-set filter attributes (category codes + hidden set). */
   private filters: (FilterAttribute | null)[] = [];
+  /** Per-point-set search match mask (1 = match, 0 = non-match).  Null per set means no search active. */
+  private searchFilters: (Float32Array | null)[] = [];
 
   constructor(private readonly container: HTMLElement) {
     this.deck = new Deck({
@@ -143,7 +145,18 @@ export class ScatterRenderer {
   setPointSets(sets: PointSet[], filters?: (FilterAttribute | null)[]): void {
     this.sets = sets;
     this.filters = filters ?? sets.map(() => null);
+    // Reset search filters to match new set count (clear stale entries).
+    this.searchFilters = sets.map((_, i) => this.searchFilters[i] ?? null);
     this.version++;
+    this.render();
+  }
+
+  /**
+   * Set per-point-set search match masks (1.0 = match, 0.0 = non-match).
+   * Pass null to clear the search highlight.
+   */
+  setSearch(sf: (Float32Array | null)[] | null): void {
+    this.searchFilters = sf ?? [];
     this.render();
   }
 
@@ -201,23 +214,78 @@ export class ScatterRenderer {
   private render(): void {
     const { pointSize, opacity, mode } = this.style;
     const density = mode === 'density';
-    const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = this.sets
-      .filter((s) => s.length > 0)
-      .map((s, si) => {
-        const filter = this.filters[si] ?? null;
-        const hasFilter = filter !== null && filter.hidden.size > 0;
-        // Always attach the DataFilterExtension and a filter value per point (1 = visible,
-        // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
-        // the layer exists does not rebuild its shaders, which hid every point.
-        const filterValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
-        return new ScatterplotLayer({
+    const searchActive = this.searchFilters.some((sf) => sf !== null);
+    const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = [];
+    for (let si = 0; si < this.sets.length; si++) {
+      const s = this.sets[si];
+      if (s.length === 0) continue;
+      const filter = this.filters[si] ?? null;
+      const hasFilter = filter !== null && filter.hidden.size > 0;
+      // Always attach the DataFilterExtension and a filter value per point (1 = visible,
+      // 0 = hidden; all ones without a filter). Adding or removing a layer extension after
+      // the layer exists does not rebuild its shaders, which hid every point.
+      const legendValues = hasFilter ? buildFilterValues(filter) : this.allVisible(s.length);
+      const sf = this.searchFilters[si] ?? null;
+      if (searchActive && sf !== null) {
+        // Two-pass: faded base layer for all legend-visible points, bright highlight for matches.
+        // Base pass: all legend-visible points at reduced opacity.
+        layers.push(new ScatterplotLayer({
+          id: `points-${s.id}-base`,
+          data: {
+            length: s.length,
+            attributes: {
+              getPosition: { value: s.positions, size: 2 },
+              getFillColor: { value: s.colors, size: 4, normalized: true },
+              getFilterValue: { value: legendValues, size: 1 },
+            },
+          } as any,
+          radiusUnits: 'pixels',
+          getRadius: pointSize / 2,
+          radiusMinPixels: 0.5,
+          stroked: false,
+          filled: true,
+          antialiasing: !density,
+          opacity: density ? Math.max(0.02, opacity * 0.03) : opacity * 0.18,
+          pickable: false,
+          parameters: (density ? ADDITIVE : NORMAL) as any,
+          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+          extensions: [this.dataFilter],
+          filterRange: [0.5, 1.5] as [number, number],
+        }));
+        // Highlight pass: only matching points at full opacity.
+        layers.push(new ScatterplotLayer({
+          id: `points-${s.id}-highlight`,
+          data: {
+            length: s.length,
+            attributes: {
+              getPosition: { value: s.positions, size: 2 },
+              getFillColor: { value: s.colors, size: 4, normalized: true },
+              getFilterValue: { value: sf, size: 1 },
+            },
+          } as any,
+          radiusUnits: 'pixels',
+          getRadius: pointSize / 2,
+          radiusMinPixels: 0.5,
+          stroked: false,
+          filled: true,
+          antialiasing: !density,
+          opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
+          pickable: false,
+          parameters: (density ? ADDITIVE : NORMAL) as any,
+          updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
+          extensions: [this.dataFilter],
+          filterRange: [0.5, 1.5] as [number, number],
+        }));
+      } else {
+        // No search: single layer with legend filter.
+        layers.push(new ScatterplotLayer({
           id: `points-${s.id}`,
           data: {
             length: s.length,
             attributes: {
               getPosition: { value: s.positions, size: 2 },
               getFillColor: { value: s.colors, size: 4, normalized: true },
-              getFilterValue: { value: filterValues, size: 1 },
+              getFilterValue: { value: legendValues, size: 1 },
             },
           } as any,
           radiusUnits: 'pixels',
@@ -233,8 +301,9 @@ export class ScatterRenderer {
           // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
-        });
-      });
+        }));
+      }
+    }
     if (this.outlines.length) {
       const [r, g, b] = this.outlineColor;
       layers.push(

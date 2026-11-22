@@ -56,3 +56,18 @@
     {#if atlas.labels.clusters}Labels come from atlas_cluster (Annotate → Labels → Add clusters to DataFrame).{/if}
   </div>
 </Section>
+
+{#if atlas.describe?.deps?.datamapplot}
+<Section {atlas} id="export-datamapplot" title="Interactive HTML">
+  <div class="btn-row">
+    <button disabled={!atlas.prepared} onclick={() => atlas.exportDataMapPlot()}
+      title="Export the map as a self-contained interactive DataMapPlot HTML file (requires datamapplot)">
+      Export with DataMapPlot…
+    </button>
+    <Info id="export.exportDataMapPlot" />
+  </div>
+  <div class="hint muted">
+    Saves a self-contained HTML file using the current label column and hover text.
+  </div>
+</Section>
+{/if}

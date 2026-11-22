@@ -1,0 +1,48 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 3000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['title'] = [f'item_{i:04d}' for i in range(n)]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "datamapplot dep is detected",
+      "assert": [
+        "a.describe.deps.datamapplot === true"
+      ],
+      "report": "{ deps: a.describe.deps }"
+    },
+    {
+      "name": "set label column to cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setLabelColumn(col.index)",
+      "until": "a.labels.column !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "export with DataMapPlot",
+      "eval": "a.exportDataMapPlot()",
+      "until": "h.datamapplotExport !== undefined",
+      "timeout": 30000,
+      "screenshot": "export-datamapplot.png",
+      "assert": [
+        "h.datamapplotExport !== undefined",
+        "h.datamapplotExport.ok === true"
+      ],
+      "report": "{ export: h.datamapplotExport }"
+    },
+    {
+      "name": "verify stub recorded the call via exec",
+      "eval": "const res = await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: 'assert len(_dmp_calls) > 0, f\"expected at least one call, got {_dmp_calls}\"' }) }); window.__dmpCheck = (await res.json()).ok;",
+      "until": "window.__dmpCheck !== undefined",
+      "timeout": 5000,
+      "assert": "window.__dmpCheck === true",
+      "report": "{ check: window.__dmpCheck }"
+    }
+  ]
+}

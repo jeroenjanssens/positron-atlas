@@ -69,8 +69,16 @@ def install_datamapplot_stub(namespace: dict) -> None:
             labels = np.asarray(labels)
             if labels.shape != (coords.shape[0],) or any(not isinstance(v, str) for v in labels):
                 raise ValueError("labels must be one string per point")
-        calls.append({"n": int(coords.shape[0]), "layers": [sorted(set(map(str, la))) for la in label_layers], "kwargs": sorted(kwargs)})
-        return types.SimpleNamespace(save=lambda path: None)
+        call_record = {"n": int(coords.shape[0]), "layers": [sorted(set(map(str, la))) for la in label_layers], "kwargs": sorted(kwargs)}
+        calls.append(call_record)
+
+        def _save(path):
+            import os
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(f"<!-- datamapplot stub: n={call_record['n']} -->\n<html><body>stub</body></html>\n")
+
+        return types.SimpleNamespace(save=_save)
 
     module = types.ModuleType("datamapplot")
     module.create_interactive_plot = create_interactive_plot

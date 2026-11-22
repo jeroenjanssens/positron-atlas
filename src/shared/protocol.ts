@@ -235,7 +235,13 @@ export type ToWebview =
       type: 'fontCatalog';
       /** All known font families: bundled ones first, then Google Fonts. */
       families: FontCatalogEntry[];
-    };
+    }
+  /** Search results: kept-row indices that match the query (A7). */
+  | { type: 'searchResults'; column: number; query: string; file: FileRef; count: number }
+  /** Search returned no matches (A7). */
+  | { type: 'searchEmpty'; column: number; query: string }
+  /** DataMapPlot export saved to a file (D3/D12). */
+  | { type: 'datamapplotSaved'; path: string };
 
 /** Entry in the font catalogue sent to the webview. */
 export interface FontCatalogEntry {
@@ -285,4 +291,8 @@ export type ToHost =
   | { type: 'fontRequest'; seq: number; family: string; weights?: number[]; scripts?: string[] }
   | { type: 'fontCatalog' }
   /** Full-screen toggle (N5 / F1). */
-  | { type: 'fullscreen'; on: boolean };
+  | { type: 'fullscreen'; on: boolean }
+  /** Search the title/chosen column for a substring (A7). */
+  | { type: 'search'; column: number; query: string; limit: number; regex?: boolean }
+  /** Export the map as an interactive DataMapPlot HTML file (D3/D12). */
+  | { type: 'exportDataMapPlot'; labelColumn: number | null; titleColumn: number | null; title?: string; anchorXY?: Uint8Array };

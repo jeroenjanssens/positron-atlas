@@ -332,6 +332,39 @@
       case 'copyText':
         harness.clipboard = m.text;
         break;
+      case 'search': {
+        // A7: kernel search — call helper and return matching kept-row indices as a u32 file.
+        const r = await call('search', jobId, m.column, m.query, m.limit ?? 100000, JSON.stringify({ regex: m.regex ?? false }));
+        if (r.ok && r.file && r.count > 0) {
+          post({ type: 'searchResults', column: m.column, query: m.query,
+            file: fileRef({ file: r.file, dtype: 'u32', shape: [r.count] }), count: r.count });
+        } else {
+          post({ type: 'searchEmpty', column: m.column, query: m.query });
+        }
+        break;
+      }
+      case 'exportDataMapPlot': {
+        // D3/D12: export with DataMapPlot — write to a temp file in the job dir.
+        const outName = `datamapplot_${Date.now()}.html`;
+        const outPath = `${info.jobRoot}/${jobDir}/${outName}`;
+        const opts = JSON.stringify({ labelColumn: m.labelColumn, titleColumn: m.titleColumn, title: m.title });
+        // The browser UMAP runs entirely in-browser; pass XY coords as a temp file
+        // so the kernel can use them even when job.xy was never set server-side.
+        let xyPath = null;
+        let xyName = null;
+        if (m.anchorXY && m.anchorXY.length > 0) {
+          xyName = `dmp_xy_${Date.now()}.f32`;
+          xyPath = await writeJobFile(xyName, m.anchorXY);
+        }
+        const r = await call('export_datamapplot', jobId, outPath, opts, xyPath);
+        if (xyName) await rmJobFile(xyName);
+        if (r.ok) {
+          harness.log.push(`datamapplotExported: path=${r.path}`);
+          harness.datamapplotExport = r;
+          post({ type: 'datamapplotSaved', path: r.path });
+        }
+        break;
+      }
       case 'state':
         harness.state = m.state;
         break;

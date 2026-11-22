@@ -108,6 +108,13 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   atlas.hoverInflight = 0;
   atlas.pinnedCard = null;
   atlas.textsStore.clear();
+  // Reset search state.
+  atlas.searchQuery = '';
+  atlas.searchMask = null;
+  atlas.searchMatchCount = 0;
+  atlas.searchPending = false;
+  atlas.searchCache.clear();
+  atlas.renderer?.setSearch(null);
 
   if (atlas.prepare.features.length === 0) {
     atlas.phase = 'error';
