@@ -2,6 +2,7 @@ import { webviewCsp } from '../shared/csp';
 import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
 import * as fssync from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { KernelBridge, KernelError } from './kernelBridge';
@@ -876,6 +877,60 @@ export class AtlasPanel {
       case 'hintSeen':
         await this.ctx.extension.globalState.update('atlasHintShownV1', true);
         break;
+      // --- C2: Time slider (item 10) -------------------------------------------
+      case 'timeValues': {
+        const job = this.requireJob();
+        const r = await this.bridge.call<{
+          ok: boolean; file?: string; min?: number; max?: number; length?: number; error?: string;
+        }>('time_values', job, m.column);
+        if (r.ok && r.file !== undefined) {
+          this.post({
+            type: 'timeValues',
+            column: m.column,
+            file: this.fileRef({ file: r.file, dtype: 'f32', shape: [r.length!] }),
+            min: r.min!,
+            max: r.max!,
+            length: r.length!,
+          });
+        }
+        break;
+      }
+      // --- C2: Tracks (item 11) ------------------------------------------------
+      case 'tracks': {
+        const job = this.requireJob();
+        const r = await this.bridge.call<{
+          ok: boolean;
+          xy_file?: string; starts_file?: string; lengths_file?: string;
+          time_file?: string; id_file?: string;
+          id_colors?: number[]; n_tracks?: number; n_points?: number; error?: string;
+        }>('tracks', job, m.idColumn, m.timeColumn, m.nd);
+        if (r.ok && r.xy_file !== undefined) {
+          const nd2 = m.nd as 2 | 3;
+          this.post({
+            type: 'tracks',
+            result: {
+              xyFile: this.fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points! * nd2] }),
+              startsFile: this.fileRef({ file: r.starts_file!, dtype: 'u32', shape: [r.n_tracks!] }),
+              lengthsFile: this.fileRef({ file: r.lengths_file!, dtype: 'u32', shape: [r.n_tracks!] }),
+              timeFile: this.fileRef({ file: r.time_file!, dtype: 'f32', shape: [r.n_points!] }),
+              idFile: this.fileRef({ file: r.id_file!, dtype: 'u32', shape: [r.n_points!] }),
+              idColors: r.id_colors!,
+              nTracks: r.n_tracks!,
+              nPoints: r.n_points!,
+              nd: nd2,
+            },
+          });
+        }
+        break;
+      }
+      // --- C2: Save video (item 10) --------------------------------------------
+      case 'saveVideo': {
+        const buf = Buffer.from(m.bytes, 'base64');
+        const savePath = path.join(os.tmpdir(), m.filename);
+        fssync.writeFileSync(savePath, buf);
+        this.post({ type: 'videoSaved', path: savePath });
+        break;
+      }
       // --- C3: Python API comm replies -------------------------------------------
       case 'apiReply': {
         const pending = this.pendingCommCmds.get(m.commandId);

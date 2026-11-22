@@ -41,7 +41,8 @@ export type ActionId =
   | 'brush.sizeUp'
   | 'brush.sizeDown'
   | 'shapes.order.front'
-  | 'shapes.order.back';
+  | 'shapes.order.back'
+  | 'animate.playPause';
 
 /**
  * Which contexts a binding applies in.
@@ -378,6 +379,14 @@ export const BINDINGS: BindingEntry[] = [
     section: 'view',
     context: '3d',
     preset: ['cad'],
+  },
+  // ---- Animate -------------------------------------------------------------------
+  {
+    actionId: 'animate.playPause',
+    label: 'Play / pause animation',
+    key: ' ',
+    section: 'misc',
+    context: 'both',
   },
   // ---- Preset-specific: Design fit key ----------------------------------------
   {

@@ -178,6 +178,8 @@ export class InputDispatcher {
         break;
       case 'shapes.order.back':
         a.sendToBack(a.shapesSelectedId ?? '');
+      case 'animate.playPause':
+        a.togglePlay?.();
         break;
     }
   }
@@ -191,6 +193,13 @@ export class InputDispatcher {
     const ctrl = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
     const alt = e.altKey;
+
+    // Space key — play/pause animation (must check raw e.key, space doesn't lowercase).
+    if (e.key === ' ' && !ctrl && !alt && !shift) {
+      this.dispatch('animate.playPause');
+      e.preventDefault();
+      return;
+    }
 
     // undo/redo need modifiers; skip if no modifier or non-matching combo.
     if (ctrl && key === 'z' && !shift) {

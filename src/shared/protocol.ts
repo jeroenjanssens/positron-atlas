@@ -433,6 +433,10 @@ export interface PanelState {
   shapes?: unknown;
   /** Brush tool class names (item 7, B4). */
   brushClasses?: string[];
+  /** Time-slider animation options (C2, item 10). */
+  animate?: AnimateOptions;
+  /** Tracks options (C2, item 11). */
+  tracks?: TracksOptions;
 }
 
 /** A user-overridden keybinding from keybindings.json (item 2 cheat sheet). */
@@ -546,7 +550,14 @@ export type ToWebview =
       textUtf8: Uint8Array | null;
       /** u32[(nPoints+1)*nCols] offsets into textUtf8 (or null). */
       textOffsets: Uint32Array | null;
-    };
+    }
+  // ---- C2: Animate responses (host → webview) ------------------------------------
+  /** Normalised float32 values for the animate filter column, plus min/max. */
+  | { type: 'timeValues'; column: number; file: FileRef; min: number; max: number; length: number }
+  /** Tracks binary files result (C2, item 11). */
+  | { type: 'tracks'; result: TracksResult }
+  /** Video file was saved (C2, item 10). */
+  | { type: 'videoSaved'; path: string };
 
 /** Reply sent by the webview after applying a Python API command (C3). */
 export interface ApiReplyMsg {
@@ -556,6 +567,67 @@ export interface ApiReplyMsg {
   error?: string;
   /** PNG bytes for savePng commands. */
   bytes?: Uint8Array;
+}
+
+// ---- C2: Animate by column (item 10) -------------------------------------------
+
+/** Options for the "Animate by" time slider (C2, item 10). */
+export interface AnimateOptions {
+  /** Column index to animate by, or null when not set. */
+  column: number | null;
+  /** Normalised [0, 1] position of the leading edge of the animation window. */
+  windowPos: number;
+  /** Normalised [0, 1] width of the animation window. */
+  windowSize: number;
+  /** Playback speed (window lengths per second). */
+  speed: number;
+  /** Loop when the window reaches the end. */
+  loop: boolean;
+}
+
+// ---- C2: Tracks and vectors (item 11) ------------------------------------------
+
+/** Options for the "Connect rows by" (tracks) feature (C2, item 11). */
+export interface TracksOptions {
+  /** Column index used as the track ID, or null when not set. */
+  idColumn: number | null;
+  /** Column index used to order points within each track, or null. */
+  timeColumn: number | null;
+  /** How to colour track lines. */
+  colorBy: 'id' | 'time';
+  /** Fade the track from dim (early) to bright (late). */
+  fadingTail: boolean;
+}
+
+/** Binary files produced by the kernel `tracks` task (C2, item 11). */
+export interface TracksResult {
+  /** f32 file: interleaved x,y (2D) or x,y,z (3D) per point. */
+  xyFile: FileRef;
+  /** u32 file: start index per track (into the flat xy/time/id arrays). */
+  startsFile: FileRef;
+  /** u32 file: point count per track. */
+  lengthsFile: FileRef;
+  /** f32 file: normalised time value per point (0–1). */
+  timeFile: FileRef;
+  /** u16 file: numeric track-id index per point (index into idCategories). */
+  idFile: FileRef;
+  /** Flat RGBA color per track (nTracks * 4 bytes), from a qualitative palette. */
+  idColors: number[];
+  /** Number of distinct tracks. */
+  nTracks: number;
+  /** Total number of points across all tracks. */
+  nPoints: number;
+  /** Position dimensionality: 2 (2D layout) or 3 (3D layout). */
+  nd: 2 | 3;
+}
+
+/** Options for video export (C2, item 10). */
+export interface VideoExportOptions {
+  /** Export mode: time animation, 3D turntable, or UMAP converging. */
+  mode: 'time' | 'turntable' | 'umap';
+  widthPx: number;
+  heightPx: number;
+  fps: number;
 }
 
 /** Entry in the font catalogue sent to the webview. */
@@ -658,6 +730,13 @@ export type ToHost =
       total: number;
       sampled: number;
     }
+  // ---- C2: Time slider (item 10) -----------------------------------------------
+  /** Request normalised float32 column values for the animate filter (C2). */
+  | { type: 'timeValues'; column: number }
+  /** Request tracks (group-by-ID, sort-by-time, 5 binary files) (C2, item 11). */
+  | { type: 'tracks'; idColumn: number; timeColumn: number; nd: 2 | 3 }
+  /** Save a video clip to a .webm file (C2, item 10). */
+  | { type: 'saveVideo'; bytes: string /* base64 WebM */; filename: string }
   /**
    * Sent by the webview once the HTML bytes are assembled (X2).
    * The host writes these bytes to the file chosen in the save dialog.

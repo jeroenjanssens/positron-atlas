@@ -1,0 +1,43 @@
+{
+  "variable": "df",
+  "theme": "hc",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\ndf = pd.DataFrame({'x': rng.normal(0,1,n), 'y': rng.normal(0,1,n), 'time': rng.uniform(0,1,n)})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "set animate column",
+      "eval": "const timeCol = a.describe.columns.find(c => c.name === 'time'); a.requestTimeValues(timeCol.index)",
+      "until": "a.animateValues !== null",
+      "timeout": 15000,
+      "assert": ["a.animateValues !== null"]
+    },
+    {
+      "name": "wide then narrow window — high contrast theme",
+      "eval": "a.setAnimateWindow(0.3, 0.4)",
+      "until": "a.animateFilter !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wide window bright pixels (hc)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) w++; window.__hcWide=w",
+      "until": "window.__hcWide !== undefined",
+      "assert": "window.__hcWide > 50"
+    },
+    {
+      "name": "narrow window",
+      "eval": "a.setAnimateWindow(0.3, 0.05)",
+      "until": "a.animate.windowSize === 0.05",
+      "timeout": 3000
+    },
+    {
+      "name": "narrow fewer bright pixels (hc)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__hcNarrow=n",
+      "until": "window.__hcNarrow !== undefined",
+      "assert": "window.__hcNarrow < window.__hcWide",
+      "report": "{ hcWide: window.__hcWide, hcNarrow: window.__hcNarrow }",
+      "screenshot": "animate-hc.png"
+    }
+  ]
+}

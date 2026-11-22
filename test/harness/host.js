@@ -575,6 +575,40 @@
       case 'hintSeen':
         harness.log.push('hintSeen');
         break;
+      // --- C2: Time slider (item 10) ---
+      case 'timeValues': {
+        const r = await call('time_values', jobId, m.column);
+        if (r.ok && r.file !== undefined) {
+          post({ type: 'timeValues', column: m.column, file: fileRef({ file: r.file, dtype: 'f32', shape: [r.length] }), min: r.min, max: r.max, length: r.length });
+        }
+        break;
+      }
+      // --- C2: Tracks (item 11) ---
+      case 'tracks': {
+        const r = await call('tracks', jobId, m.idColumn, m.timeColumn, m.nd);
+        if (r.ok && r.xy_file !== undefined) {
+          const nd2 = m.nd;
+          post({ type: 'tracks', result: {
+            xyFile: fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points * nd2] }),
+            startsFile: fileRef({ file: r.starts_file, dtype: 'u32', shape: [r.n_tracks] }),
+            lengthsFile: fileRef({ file: r.lengths_file, dtype: 'u32', shape: [r.n_tracks] }),
+            timeFile: fileRef({ file: r.time_file, dtype: 'f32', shape: [r.n_points] }),
+            idFile: fileRef({ file: r.id_file, dtype: 'u32', shape: [r.n_points] }),
+            idColors: r.id_colors,
+            nTracks: r.n_tracks,
+            nPoints: r.n_points,
+            nd: nd2,
+          } });
+        }
+        break;
+      }
+      // --- C2: Save video (item 10) ---
+      case 'saveVideo': {
+        harness.video = m.bytes;
+        harness.log.push('saveVideo');
+        post({ type: 'videoSaved', path: '/tmp/' + m.filename });
+        break;
+      }
       // --- C3: Python API comm replies ---
       case 'apiReply': {
         // Write a status file to api_dir/<cmdId>.json so Python can poll for it.

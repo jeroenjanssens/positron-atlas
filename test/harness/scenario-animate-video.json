@@ -1,0 +1,23 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 500\ndf = pd.DataFrame({'x': rng.normal(0,1,n), 'y': rng.normal(0,1,n), 'time': rng.uniform(0,1,n)})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "set animate column",
+      "eval": "const timeCol = a.describe.columns.find(c => c.name === 'time'); a.requestTimeValues(timeCol.index)",
+      "until": "a.animateValues !== null",
+      "timeout": 15000,
+      "assert": ["a.animateValues !== null"]
+    },
+    {
+      "name": "check MediaRecorder is available for WebM/VP8",
+      "eval": "window.__videoSupported = typeof MediaRecorder !== 'undefined' && (MediaRecorder.isTypeSupported('video/webm;codecs=vp8') || MediaRecorder.isTypeSupported('video/webm'))",
+      "until": "window.__videoSupported !== undefined",
+      "assert": "window.__videoSupported === true",
+      "report": "{ videoSupported: window.__videoSupported }"
+    }
+  ]
+}

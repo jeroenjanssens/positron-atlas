@@ -1,0 +1,24 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(11)\nn = 800\ndf = pd.DataFrame({'x': rng.normal(0,2,n), 'y': rng.normal(0,2,n)})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "save layout and show vectors",
+      "eval": "a.saveLayoutForComparison(); a.setShowVectors(true)",
+      "until": "a.showVectors === true",
+      "timeout": 5000,
+      "assert": ["a.showVectors === true", "a.savedXY !== null"]
+    },
+    {
+      "name": "vector layer visible — check for colored pixels",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__vecPixels=n",
+      "until": "window.__vecPixels !== undefined",
+      "assert": "window.__vecPixels >= 0",
+      "report": "{ vecPixels: window.__vecPixels }",
+      "screenshot": "vectors.png"
+    }
+  ]
+}

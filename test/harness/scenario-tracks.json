@@ -1,0 +1,24 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 600\ntrack_ids = np.repeat(np.arange(30), 20)\ntimes = np.tile(np.arange(20), 30).astype(float)\ndf = pd.DataFrame({'x': rng.normal(track_ids * 0.5, 0.3, n), 'y': rng.normal(0, 1, n), 'track_id': track_ids, 'time': times})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "request tracks",
+      "eval": "const idCol = a.describe.columns.find(c => c.name === 'track_id'); const tCol = a.describe.columns.find(c => c.name === 'time'); a.requestTracks(idCol.index, tCol.index)",
+      "until": "a.trackData !== null",
+      "timeout": 20000,
+      "assert": ["a.trackData !== null", "a.trackData.nTracks > 0"]
+    },
+    {
+      "name": "tracks rendered — check for colored pixels",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]>60) n++; window.__trackPixels=n",
+      "until": "window.__trackPixels !== undefined",
+      "assert": "window.__trackPixels > 500",
+      "report": "{ trackPixels: window.__trackPixels, nTracks: a.trackData.nTracks }",
+      "screenshot": "tracks.png"
+    }
+  ]
+}

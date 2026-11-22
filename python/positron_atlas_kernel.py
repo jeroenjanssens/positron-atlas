@@ -3197,6 +3197,99 @@ def ping() -> str:
 
 
 # ---------------------------------------------------------------------------
+# C2 — Time slider + tracks (items 10 and 11)
+# ---------------------------------------------------------------------------
+
+
+@_guard
+def time_values(job_id: str, col: int) -> str:
+    """Return normalised float32 column values for the animate time-slider (C2, item 10).
+
+    Reads the column at index col from the kept rows, normalises to [0,1], and writes
+    a little-endian float32 binary file to the job directory.
+    Returns {"ok": True, "file": path, "min": float, "max": float, "length": int}.
+    """
+    job = _get(job_id)
+    col = int(col)
+    rows = job.kept_idx if job.kept_idx is not None else np.arange(job.frame.n_rows)
+    vals = job.frame.column(col, rows)
+    _, kind = job.frame.column_kind(col)
+    fv = _to_float(vals, kind)
+    lo = float(np.nanmin(fv)) if fv.size else 0.0
+    hi = float(np.nanmax(fv)) if fv.size else 1.0
+    if hi == lo:
+        hi = lo + 1.0
+    normed = ((fv - lo) / (hi - lo)).astype(np.float32)
+    normed = np.clip(normed, 0.0, 1.0)
+    fname = _write(job, "time_values.f32", normed)
+    return _json({"ok": True, "file": fname, "min": lo, "max": hi, "length": int(len(normed))})
+
+
+@_guard
+def tracks(job_id: str, id_col: int, time_col: int, nd: int = 2) -> str:
+    """Build track paths sorted by ID then time (C2, item 11).
+
+    Groups kept rows by id_col, sorts within each group by time_col, and writes 5 binary
+    files: xy coords, starts (u32), lengths (u32), time values (f32), id index (u32).
+    Returns {"ok": True, "xy_file": ..., "starts_file": ..., "lengths_file": ...,
+             "time_file": ..., "id_file": ..., "id_colors": [...], "n_tracks": int, "n_points": int}.
+    """
+    import matplotlib.cm as cm  # noqa: PLC0415
+
+    job = _get(job_id)
+    id_col, time_col, nd = int(id_col), int(time_col), int(nd)
+    rows = job.kept_idx if job.kept_idx is not None else np.arange(job.frame.n_rows)
+    n = len(rows)
+
+    ids_raw = job.frame.column(id_col, rows)
+    times_raw = job.frame.column(time_col, rows)
+    _, time_kind = job.frame.column_kind(time_col)
+    times_f64 = _to_float(np.asarray(times_raw), time_kind)
+
+    # Lexsort: primary key = ids, secondary = times (stable sort within each id).
+    ids_arr = np.asarray(ids_raw, dtype=object)
+    unique_ids, inv = np.unique(ids_arr, return_inverse=True)
+    order = np.lexsort((times_f64, inv.astype(np.int64)))
+
+    ids_s = inv[order].astype(np.uint32)
+    times_s = times_f64[order].astype(np.float32)
+    unique_ids_int, starts_arr, lengths_arr = np.unique(ids_s, return_index=True, return_counts=True)
+    n_tracks = int(len(unique_ids_int))
+    n_points = int(n)
+
+    # XY layout from job.xy (shape (n_kept, nd)).
+    if job.xy is None:
+        return _json({"ok": False, "error": "Layout not ready — run UMAP first"})
+    xy_s = job.xy[order, :nd].astype(np.float32)
+    xy_flat = xy_s.ravel()
+
+    # Per-track colours from tab20 colormap.
+    cmap = cm.get_cmap("tab20", n_tracks)
+    id_colors: list[int] = []
+    for i in range(n_tracks):
+        r, g, b, a = cmap(i)
+        id_colors.extend([int(r * 255), int(g * 255), int(b * 255), 255])
+
+    xy_file = _write(job, "tracks_xy.f32", xy_flat)
+    starts_file = _write(job, "tracks_starts.u32", starts_arr.astype(np.uint32))
+    lengths_file = _write(job, "tracks_lengths.u32", lengths_arr.astype(np.uint32))
+    time_file = _write(job, "tracks_time.f32", times_s)
+    id_file = _write(job, "tracks_ids.u32", ids_s)
+
+    return _json({
+        "ok": True,
+        "xy_file": xy_file,
+        "starts_file": starts_file,
+        "lengths_file": lengths_file,
+        "time_file": time_file,
+        "id_file": id_file,
+        "id_colors": id_colors,
+        "n_tracks": n_tracks,
+        "n_points": n_points,
+    })
+
+
+# ---------------------------------------------------------------------------
 # C3 — Python API for programmatic Atlas control
 #
 # Transport: Positron comms (target_name='positron.atlas').

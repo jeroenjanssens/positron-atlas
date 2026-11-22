@@ -7,6 +7,7 @@
 
 import type {
   AnnotationData,
+  AnimateOptions,
   CategoricalColorMeta,
   ColorMeta,
   ExactEngine,
@@ -20,10 +21,15 @@ import type {
   TitleOptions,
   ToWebview,
   TooltipOptions,
+  TracksOptions,
+  TracksResult,
   UmapParams,
   DescribeResult,
   JobStatus,
 } from '../shared/protocol';
+import { computeTimeFilter, stepWindow, DEFAULT_ANIMATE_SPEED, DEFAULT_WINDOW_SIZE } from './atlas/animate';
+import { buildTrackPaths, thinIndices, createPathLayer } from './atlas/tracks';
+import { buildVectors, thinVectors, createVectorLayer } from './atlas/vectors';
 import { vscode, isVsCodeWebview } from './vscode';
 import { initFonts } from './fonts';
 import { ScatterRenderer } from './render/renderer';
@@ -331,6 +337,21 @@ export class Atlas {
   histFilter = $state.raw<{ column: number; range: [number, number] } | null>(null);
   /** Pre-computed histogram bins for the histFilter column (A13). */
   histData = $state.raw<import('../shared/protocol').HistogramData | null>(null);
+  // ---- C2: Animate ----------------------------------------------------------------
+  animate = $state<AnimateOptions>({ column: null, windowPos: 0, windowSize: DEFAULT_WINDOW_SIZE, speed: DEFAULT_ANIMATE_SPEED, loop: true });
+  animatePlaying = $state(false);
+  animateValues: Float32Array | null = $state.raw(null);
+  animateMin = $state(0);
+  animateMax = $state(1);
+  animateFilter: Float32Array | null = $state.raw(null);
+  // ---- C2: Tracks + Vectors -------------------------------------------------------
+  tracks = $state<TracksOptions>({ idColumn: null, timeColumn: null, colorBy: 'id', fadingTail: false });
+  trackData: TracksResult | null = $state.raw(null);
+  showVectors = $state(false);
+  savedXY: Float32Array | null = $state.raw(null);
+  private animateRafId: number | null = null;
+  private animateLastTs: number | null = null;
+  private _onVisibilityChange = (): void => { if (document.hidden) this.stopAnimation(); };
   prepared = $state.raw<PrepareResult | null>(null);
   kernelStatus = $state.raw<{ task: string; stage: string; progress: number; message: string } | null>(null);
   umapProgress = $state.raw<{ stage: string; progress: number; epoch: number; total: number } | null>(null);
@@ -856,6 +877,42 @@ export class Atlas {
       case 'histValuesOverlay':
         await onHistValuesOverlayImpl(this, msg);
         break;
+      // --- C2: animate ---
+      case 'timeValues': {
+        const m = msg as Extract<ToWebview, { type: 'timeValues' }>;
+        this.animateMin = m.min;
+        this.animateMax = m.max;
+        fetch(m.file.uri)
+          .then((r) => r.arrayBuffer())
+          .then((buf) => {
+            this.animateValues = new Float32Array(buf);
+            this.animateFilter = computeTimeFilter(this.animateValues, this.animate.windowPos, this.animate.windowSize);
+            this.post({ type: 'animatingChanged', animating: true });
+            this.render();
+          })
+          .catch((e: unknown) => console.error('[atlas] timeValues fetch error', e));
+        break;
+      }
+      // --- C2: tracks ---
+      case 'tracks': {
+        const m = msg as Extract<ToWebview, { type: 'tracks' }>;
+        this.trackData = m.result;
+        Promise.all([
+          fetch(m.result.xyFile.uri).then((r) => r.arrayBuffer()),
+          fetch(m.result.startsFile.uri).then((r) => r.arrayBuffer()),
+          fetch(m.result.lengthsFile.uri).then((r) => r.arrayBuffer()),
+        ]).then(([xyBuf, startsBuf, lengthsBuf]) => {
+          (this as any)._trackXY = new Float32Array(xyBuf);
+          (this as any)._trackStarts = new Uint32Array(startsBuf);
+          (this as any)._trackLengths = new Uint32Array(lengthsBuf);
+          this._updateTracksLayer();
+        }).catch((e: unknown) => console.error('[atlas] tracks fetch error', e));
+        break;
+      }
+      // --- C2: video saved confirmation ---
+      case 'videoSaved':
+        this.flash(`Video saved to ${(msg as Extract<ToWebview, { type: 'videoSaved' }>).path}`);
+        break;
     }
   }
 
@@ -1006,6 +1063,101 @@ export class Atlas {
   openPinnedLink(): void { openPinnedLinkImpl(this); }
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
   post(msg: import('../shared/protocol').ToHost): void { vscode.post(msg); }
+
+  // ---- C2: Animate methods -------------------------------------------------------
+
+  requestTimeValues(column: number): void {
+    this.animate = { ...this.animate, column };
+    this.post({ type: 'timeValues', column });
+  }
+
+  setAnimateWindow(windowPos: number, windowSize: number): void {
+    this.animate = { ...this.animate, windowPos, windowSize };
+    if (this.animateValues !== null) {
+      this.animateFilter = computeTimeFilter(this.animateValues, windowPos, windowSize);
+      this.render();
+    }
+  }
+
+  togglePlay(): void {
+    if (this.animatePlaying) { this.stopAnimation(); } else { this.startAnimation(); }
+  }
+
+  startAnimation(): void {
+    if (this.animateValues === null) return;
+    this.animatePlaying = true;
+    this.animateLastTs = null;
+    const step = (ts: number) => {
+      if (!this.animatePlaying) return;
+      if (this.animateLastTs !== null) {
+        const dt = (ts - this.animateLastTs) / 1000;
+        const nextPos = stepWindow(this.animate.windowPos, this.animate.speed * dt, this.animate.loop);
+        if (nextPos >= 1 - 0.0002 && !this.animate.loop) {
+          this.stopAnimation();
+          return;
+        }
+        this.setAnimateWindow(nextPos, this.animate.windowSize);
+      }
+      this.animateLastTs = ts;
+      this.animateRafId = requestAnimationFrame(step);
+    };
+    this.animateRafId = requestAnimationFrame(step);
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+  }
+
+  stopAnimation(): void {
+    this.animatePlaying = false;
+    if (this.animateRafId !== null) { cancelAnimationFrame(this.animateRafId); this.animateRafId = null; }
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
+  }
+
+  // ---- C2: Tracks + Vectors methods ---------------------------------------------
+
+  requestTracks(idColumn: number, timeColumn: number): void {
+    this.tracks = { ...this.tracks, idColumn, timeColumn };
+    const nd = this.dims as 2 | 3;
+    this.post({ type: 'tracks', idColumn, timeColumn, nd });
+  }
+
+  setTracksOptions(opts: Partial<TracksOptions>): void {
+    this.tracks = { ...this.tracks, ...opts };
+    this._updateTracksLayer();
+  }
+
+  saveLayoutForComparison(): void {
+    if (this.anchorXY) { this.savedXY = this.anchorXY.slice(); }
+  }
+
+  setShowVectors(show: boolean): void {
+    this.showVectors = show;
+    this._updateVectorsLayer();
+  }
+
+  private _updateTracksLayer(): void {
+    if (!this.trackData || !this.renderer) return;
+    const { idColors, nTracks, nd } = this.trackData;
+    const xy = (this as any)._trackXY as Float32Array | undefined;
+    const starts = (this as any)._trackStarts as Uint32Array | undefined;
+    const lengths = (this as any)._trackLengths as Uint32Array | undefined;
+    if (!xy || !starts || !lengths) return;
+    const idx = thinIndices(nTracks);
+    const paths = buildTrackPaths(xy, starts, lengths, idColors, nd, idx);
+    const layer = createPathLayer(paths, 1.0);
+    this.renderer.setExtraLayers([layer]);
+  }
+
+  private _updateVectorsLayer(): void {
+    if (!this.showVectors || !this.savedXY || !this.anchorXY || !this.renderer) {
+      if (this.renderer && !this.trackData) this.renderer.setExtraLayers([]);
+      return;
+    }
+    const nd = this.dims as 2 | 3;
+    const n = Math.min(this.savedXY.length, this.anchorXY.length) / nd;
+    const idx = thinVectors(n);
+    const pairs = buildVectors(this.savedXY, this.anchorXY, nd, idx, null);
+    const layer = createVectorLayer(pairs, 1.0);
+    this.renderer.setExtraLayers([layer]);
+  }
 
   /** Auto-activate the lasso tool when switching to Design, restore pan when leaving. */
   applyPresetDefaults(preset: string): void {

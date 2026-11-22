@@ -1,0 +1,17 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(13)\nn = 300\ntrack_ids = np.repeat(np.arange(15), 20)\ntimes = np.tile(np.arange(20), 15).astype(float)\ndf = pd.DataFrame({'x': rng.normal(track_ids * 0.5, 0.3, n), 'y': rng.normal(0,1,n), 'z': rng.normal(0,1,n), 'track_id': track_ids, 'time': times})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    { "name": "switch to 3D", "eval": "a.setDims(3)", "until": "a.dims === 3", "timeout": 10000 },
+    {
+      "name": "request 3D tracks",
+      "eval": "const idCol = a.describe.columns.find(c => c.name === 'track_id'); const tCol = a.describe.columns.find(c => c.name === 'time'); a.requestTracks(idCol.index, tCol.index)",
+      "until": "a.trackData !== null",
+      "timeout": 20000,
+      "assert": ["a.trackData !== null", "a.trackData.nd === 3"]
+    }
+  ]
+}

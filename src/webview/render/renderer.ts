@@ -226,6 +226,8 @@ export class ScatterRenderer {
   private annotations: Map<string, AnnotationData> = new Map();
   private readonly collision = new CollisionFilterExtension();
   private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
+  /** Extra deck.gl layers (C2: tracks, vectors). */
+  private extraLayers: unknown[] = [];
   /** Prepared-row index of the hovered point (for the ring), or -1. */
   private hoveredIdx = -1;
   /** Prepared-row index of the pinned point (for the ring), or -1. */
@@ -515,6 +517,17 @@ export class ScatterRenderer {
   setStyle(style: Partial<RenderStyle>): void {
     this.style = { ...this.style, ...style };
     this.render();
+  }
+
+  /** Set extra deck.gl layers (C2: tracks overlay, vectors overlay). */
+  setExtraLayers(layers: unknown[]): void {
+    this.extraLayers = layers;
+    this.render();
+  }
+
+  /** Return the deck.gl canvas element (for MediaRecorder). */
+  getCanvas(): HTMLCanvasElement | null {
+    return (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
   }
 
   setPointSets(sets: PointSet[], filters?: (FilterAttribute | null)[]): void {
@@ -1186,6 +1199,9 @@ export class ScatterRenderer {
       }
       // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
+
+    // --- C2 extra layers (tracks, vectors) — before the hover ring ---
+    for (const el of this.extraLayers) layers.push(el as any);
 
     // --- hover / pin ring (system layer, always last) ---
     const ringIndices: { idx: number; pinned: boolean }[] = [];

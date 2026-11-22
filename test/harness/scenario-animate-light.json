@@ -1,0 +1,43 @@
+{
+  "variable": "df",
+  "theme": "light",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\ndf = pd.DataFrame({'x': rng.normal(0,1,n), 'y': rng.normal(0,1,n), 'time': rng.uniform(0,1,n)})\n",
+  "settings": { "pcaEnabled": false },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
+    {
+      "name": "set animate column",
+      "eval": "const timeCol = a.describe.columns.find(c => c.name === 'time'); a.requestTimeValues(timeCol.index)",
+      "until": "a.animateValues !== null",
+      "timeout": 15000,
+      "assert": ["a.animateValues !== null"]
+    },
+    {
+      "name": "wide window",
+      "eval": "a.setAnimateWindow(0.2, 0.4)",
+      "until": "a.animateFilter !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wide window pixel count on light background",
+      "eval": "const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let w=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) w++; window.__lightWide=w",
+      "until": "window.__lightWide !== undefined",
+      "assert": "window.__lightWide > 50"
+    },
+    {
+      "name": "narrow window",
+      "eval": "a.setAnimateWindow(0.2, 0.05)",
+      "until": "a.animate.windowSize === 0.05",
+      "timeout": 3000
+    },
+    {
+      "name": "narrow window fewer dark pixels than wide",
+      "eval": "const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r=>{img.onload=r;img.src=url}); const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height; const g=cv.getContext('2d'); g.drawImage(img,0,0); const d=g.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let k=0;k<d.length;k+=4) if(d[k]+d[k+1]+d[k+2]<600) n++; window.__lightNarrow=n",
+      "until": "window.__lightNarrow !== undefined",
+      "assert": "window.__lightNarrow < window.__lightWide",
+      "report": "{ lightWide: window.__lightWide, lightNarrow: window.__lightNarrow }",
+      "screenshot": "animate-light.png"
+    }
+  ]
+}

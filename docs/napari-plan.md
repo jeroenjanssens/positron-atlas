@@ -446,10 +446,10 @@ Details are in the research notes of 2026-11-22.
   - Explore → **Animate by** a date or number column. A slider with a window (for example 1 year), play/pause, speed and loop. Rows outside the window fade or hide (`DataFilterExtension`, combined with the other filters). Labels update when the window settles.
   - **Export video:** WebM of the time animation, a 3D turntable, or UMAP converging (from the worker's frames), via `MediaRecorder` (Q7), with resolution and fps options.
 - **To-do:**
-  - [ ] Time filter attribute (f32), window logic, playback loop on `requestAnimationFrame`.
-  - [ ] UI with the shared controls; help texts; keyboard (Space play/pause while focused, rebindable).
-  - [ ] Recorder (canvas stream plus the overlays composited per frame, reusing the PNG compositing), and a save dialog in the host.
-  - [ ] Harness: step the slider and assert drawn pixels change; record 1 s and check the file is a valid WebM (size, header).
+  - [x] Time filter attribute (f32), window logic, playback loop on `requestAnimationFrame`.
+  - [x] UI with the shared controls; help texts; keyboard (Space play/pause while focused, rebindable).
+  - [x] Recorder (canvas stream plus the overlays composited per frame, reusing the PNG compositing), and a save dialog in the host.
+  - [x] Harness: step the slider and assert drawn pixels change; record 1 s and check the file is a valid WebM (size, header).
 
 ---
 
@@ -460,9 +460,9 @@ Details are in the research notes of 2026-11-22.
   - arrows from each row's position to its position in a second layout (an earlier run or another condition), or to an overlay layer's matching rows (item 5);
   - arrows can be thinned for large frames.
 - **To-do:**
-  - [ ] Group-by-ID ordering in the kernel (codes plus order), file output.
-  - [ ] Path and arrow layers, thinning, colours; legend.
-  - [ ] Harness: tracks drawn (pixels); vectors between two layouts.
+  - [x] Group-by-ID ordering in the kernel (codes plus order), file output.
+  - [x] Path and arrow layers, thinning, colours; legend.
+  - [x] Harness: tracks drawn (pixels); vectors between two layouts.
 
 ---
 

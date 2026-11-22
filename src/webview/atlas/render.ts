@@ -80,6 +80,8 @@ export function render(atlas: Atlas): void {
   let sets: import('../render/renderer').PointSet[];
   let filters: (FilterAttribute | null)[];
 
+  const animateVals = atlas.animateFilter ?? null;
+
   const filterForCodes = (
     codes: Uint16Array | null,
     histVals: Float32Array | null,
@@ -93,8 +95,8 @@ export function render(atlas: Atlas): void {
       ? (codes ?? atlas.cluster.codes)
       : null;
     const activeCodes = clusterCodes ?? (hidden && hidden.size > 0 ? codes : null);
-    if (!activeCodes && !histVals) return null;
-    const length = activeCodes ? activeCodes.length : (histVals ? histVals.length : 0);
+    if (!activeCodes && !histVals && !animateVals) return null;
+    const length = activeCodes ? activeCodes.length : (histVals ? histVals.length : (animateVals ? animateVals.length - histOffset : 0));
     // Combined filter: 1 if visible in BOTH legend and histogram brush.
     const out = new Float32Array(length).fill(1);
     if (activeCodes && hidden && hidden.size > 0 && !atlas.colorByCluster) {
@@ -105,6 +107,13 @@ export function render(atlas: Atlas): void {
     if (histVals) {
       for (let i = 0; i < Math.min(out.length, histVals.length); i++) {
         if (histVals[i] < 0.5) out[i] = 0;
+      }
+    }
+    // C2 animate filter: AND with time-window gate (offset accounts for split all/anchor sets).
+    if (animateVals !== null) {
+      for (let i = 0; i < out.length; i++) {
+        const ai = i + histOffset;
+        if (ai < animateVals.length && animateVals[ai] < 0.5) out[i] = 0;
       }
     }
     // Wrap in a FilterAttribute with an always-empty hidden set (we pre-computed the filter).
