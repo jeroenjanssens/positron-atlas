@@ -244,7 +244,7 @@ export function unpackBlob(raw: Uint8Array): UnpackedBlob {
   }
 
   /** Create a typed view, copying if the offset is not properly aligned. */
-  function alignedView<T extends Float32Array | Uint16Array>(
+  function alignedView<T extends Float32Array | Uint16Array | Uint32Array>(
     bytes: Uint8Array,
     Ctor: new (buffer: ArrayBufferLike, byteOffset: number, length: number) => T,
     elemSize: number,
@@ -274,7 +274,7 @@ export function unpackBlob(raw: Uint8Array): UnpackedBlob {
   if (header.sections.textUtf8 && header.sections.textOffsets) {
     textUtf8 = section(header.sections.textUtf8);
     const offBytes = section(header.sections.textOffsets);
-    textOffsets = alignedView(offBytes, Uint32Array as unknown as new (b: ArrayBufferLike, o: number, l: number) => Uint32Array, 4);
+    textOffsets = alignedView(offBytes, Uint32Array, 4);
   }
 
   const decoder = new TextDecoder('utf-8', { fatal: false });
