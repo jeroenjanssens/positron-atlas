@@ -1,7 +1,9 @@
 {
   "variable": "df",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(2)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 6, (5, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'cluster_{v}' for v in k]\ndf['title'] = [f'Point {i}' for i in range(n)]\n",
-  "settings": { "maxAnchorsCpu": 3000 },
+  "settings": {
+    "maxAnchorsCpu": 3000
+  },
   "screenshot": "annotations-initial.png",
   "steps": [
     {
@@ -111,15 +113,17 @@
     },
     {
       "name": "annotate from pinned hover card",
-      "eval": "const xy = a.anchorXY; a['onPointer']({ x: 350, y: 250, world: [xy[2], xy[3]] })",
-      "until": "a.pendingHover !== null",
-      "timeout": 5000
+      "eval": "for (let i = 0; i < 30 && !(a.pendingHover !== null && a.tooltip !== null); i++) { const xy = a.anchorXY; a['onPointer']({ x: 350, y: 250, world: [xy[2], xy[3]] }); await new Promise((r) => setTimeout(r, 100)); }",
+      "until": "a.pendingHover !== null && a.tooltip !== null",
+      "timeout": 5000,
+      "note": "Clicking pins the tooltip, so wait until its rows have loaded (a user clicks after seeing the card). The event repeats like a moving mouse: hover drops events while a row request is in flight."
     },
     {
       "name": "click pins the card",
-      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "eval": "for (let i = 0; i < 30 && !(a.pendingHover !== null && a.tooltip !== null); i++) { const xy = a.anchorXY; a['onPointer']({ x: 350, y: 250, world: [xy[2], xy[3]] }); await new Promise((r) => setTimeout(r, 100)); }; a['onClick']({ metaKey: false, ctrlKey: false });",
       "until": "a.pinnedCard !== null",
-      "timeout": 5000
+      "timeout": 5000,
+      "note": "Hover and click in one step: a late re-render can clear the hover between steps (a user would hover again before clicking)."
     },
     {
       "name": "annotate button on card adds annotation",
