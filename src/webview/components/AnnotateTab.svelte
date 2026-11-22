@@ -229,7 +229,7 @@
     <div class="hint muted">Enable labels above to pick groups to highlight.</div>
   {:else}
     <div class="highlight-group-list">
-      {#each availableGroups as g (g)}
+      {#each availableGroups as g, i (i)}
         <Checkbox
           checked={(atlas.labels.highlightGroups ?? []).includes(g)}
           onchange={(v) => toggleHighlight(g, v)}>
