@@ -294,6 +294,8 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       boxes: buildBoxes(atlas).length ? buildBoxes(atlas) : undefined,
       // B3: overlay descriptors (viewer uses these for the legend and future filtering).
       overlays: overlayDescs.length > 0 ? overlayDescs : undefined,
+      // B4: embed shapes so the HTML viewer can render them.
+      shapes: atlas.shapes.length ? (atlas.shapes as unknown as import('../../shared/viewerBlob').BlobShape[]) : undefined,
     },
     variable: atlas.variable,
   };

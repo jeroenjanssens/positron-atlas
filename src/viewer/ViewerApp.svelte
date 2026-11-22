@@ -363,6 +363,10 @@
       if (header.rotation2D) {
         renderer?.setRotation2D(header.rotation2D);
       }
+      // B4: render shapes embedded in the blob.
+      if (header.shapes?.length) {
+        renderer?.setShapes(header.shapes as unknown as import('../webview/atlas/shapes').Shape[]);
+      }
     });
 
     // Start annotation position tracking

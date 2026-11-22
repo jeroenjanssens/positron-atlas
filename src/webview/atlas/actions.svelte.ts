@@ -76,6 +76,7 @@ export function savePng(atlas: Atlas): void {
   // Annotations layer: include callouts in export only when layer is visible.
   const annotationsLayerVisible = getLayer(atlas.layers, 'annotations')?.visible ?? true;
 
+  const shapesLayerVisible = getLayer(atlas.layers, 'shapes')?.visible ?? true;
   const overlay: OverlayState = {
     titleOverlay: atlas.titleOverlay,
     annotations: annotationsLayerVisible ? atlas.annotations : new Map(),
@@ -85,6 +86,7 @@ export function savePng(atlas: Atlas): void {
     leaderWidth: atlas.labels.leaderWidth,
     labelFontFamily: atlas.labels.fontFamily || undefined,
     glowCanvas,
+    shapes: shapesLayerVisible ? atlas.shapes : [],
   };
 
   renderer.toPngBytesWithOverlay(plotBackground(atlas), overlay).then((bytes) => {

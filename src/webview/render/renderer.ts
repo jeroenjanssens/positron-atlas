@@ -34,6 +34,8 @@ export interface OverlayState {
   labelFontFamily?: string;
   /** A12 glow canvas for export (pre-rendered, optional). */
   glowCanvas?: HTMLCanvasElement | null;
+  /** B4 shapes for PNG export. */
+  shapes?: import('../atlas/shapes').Shape[];
 }
 
 export interface PointSet {
@@ -1570,6 +1572,8 @@ export class ScatterRenderer {
       leaderColor: overlay.leaderColor,
       leaderWidth: overlay.leaderWidth,
       labelFontFamily: overlay.labelFontFamily,
+      shapes: overlay.shapes,
+      projectWorld: (wx, wy) => this.projectWorld(wx, wy),
     });
 
     return new Promise<Uint8Array>((resolve, reject) => {

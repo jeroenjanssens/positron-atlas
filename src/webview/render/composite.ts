@@ -9,6 +9,8 @@
 import type { TitleOptions, AnnotationData } from '../../shared/protocol';
 import type { AroundLabel } from '../labels/around';
 import { imageToRgba } from '../logic';
+import type { Shape } from '../atlas/shapes';
+import { shapeToPolygon } from '../atlas/shapes';
 
 export interface CompositeOptions {
   /** CSS-pixel dimensions of the visible area. */
@@ -18,6 +20,10 @@ export interface CompositeOptions {
   dpr?: number;
   /** Title overlay settings. */
   title?: TitleOptions;
+  /** B4 shapes to composite onto the PNG. */
+  shapes?: Shape[];
+  /** B4 projectWorld function to convert map → screen coords. */
+  projectWorld?: (wx: number, wy: number) => [number, number] | null;
   /** Annotations with their anchor and box screen positions (B5: box position pre-projected). */
   annotations?: Array<{ ann: AnnotationData; screenX: number; screenY: number; boxX: number; boxY: number }>;
   /** A11 around-the-map labels with screen positions (computed by computeAroundLabels). */
@@ -41,6 +47,11 @@ export interface CompositeOptions {
 export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeOptions): Promise<void> {
   const dpr = opts.dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio : 1);
   const invertImages = resolveInvertOption(opts.imageInvert);
+
+  // ---- B4 Shapes ---------------------------------------------------------------
+  if (opts.shapes?.length && opts.projectWorld) {
+    drawShapesOnCanvas(ctx, opts.shapes, opts.projectWorld, dpr);
+  }
 
   // ---- Title / subtitle --------------------------------------------------------
   const t = opts.title;
@@ -335,6 +346,87 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
       ctx.fillText(al.text, lx, ly);
       ctx.restore();
     }
+  }
+}
+
+/** Draw B4 shapes onto the export canvas using 2D canvas operations. */
+function drawShapesOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  shapes: Shape[],
+  projectWorld: (wx: number, wy: number) => [number, number] | null,
+  dpr: number,
+): void {
+  for (const shape of shapes) {
+    ctx.save();
+    const sc = shape.style.strokeColor;
+    const fc = shape.style.fillColor;
+    ctx.strokeStyle = `rgba(${sc[0]},${sc[1]},${sc[2]},${sc[3] / 255})`;
+    ctx.fillStyle = `rgba(${fc[0]},${fc[1]},${fc[2]},${fc[3] / 255})`;
+    ctx.lineWidth = shape.style.strokeWidth * dpr;
+    ctx.globalAlpha = shape.style.opacity;
+    if (shape.style.dash?.length) ctx.setLineDash(shape.style.dash.map((d) => d * dpr));
+
+    if (shape.kind === 'text') {
+      const t = shape as any;
+      const s = projectWorld(t.x, t.y);
+      if (s) {
+        ctx.font = `${(t.fontSize ?? 14) * dpr}px ${t.fontFamily ?? 'sans-serif'}`;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fillText(t.text, s[0] * dpr, s[1] * dpr);
+      }
+    } else if (shape.kind === 'line' || shape.kind === 'arrow') {
+      const pts = (shape as any).points as [number, number][];
+      if (pts.length >= 2) {
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i++) {
+          const s = projectWorld(pts[i][0], pts[i][1]);
+          if (!s) continue;
+          if (i === 0) ctx.moveTo(s[0] * dpr, s[1] * dpr);
+          else ctx.lineTo(s[0] * dpr, s[1] * dpr);
+        }
+        ctx.stroke();
+        // Draw arrowhead for 'arrow'.
+        if (shape.kind === 'arrow' && pts.length >= 2) {
+          const last = pts[pts.length - 1];
+          const prev = pts[pts.length - 2];
+          const s1 = projectWorld(last[0], last[1]);
+          const s2 = projectWorld(prev[0], prev[1]);
+          if (s1 && s2) {
+            const angle = Math.atan2(s1[1] - s2[1], s1[0] - s2[0]);
+            const len = 10 * dpr;
+            ctx.beginPath();
+            ctx.moveTo(s1[0] * dpr, s1[1] * dpr);
+            ctx.lineTo(
+              (s1[0] - len * Math.cos(angle - Math.PI / 6)) * dpr,
+              (s1[1] - len * Math.sin(angle - Math.PI / 6)) * dpr,
+            );
+            ctx.lineTo(
+              (s1[0] - len * Math.cos(angle + Math.PI / 6)) * dpr,
+              (s1[1] - len * Math.sin(angle + Math.PI / 6)) * dpr,
+            );
+            ctx.closePath();
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+          }
+        }
+      }
+    } else {
+      // Closed shapes: use shapeToPolygon to get vertices.
+      const poly = shapeToPolygon(shape as any);
+      if (poly && poly.length >= 3) {
+        ctx.beginPath();
+        for (let i = 0; i < poly.length; i++) {
+          const s = projectWorld(poly[i][0], poly[i][1]);
+          if (!s) continue;
+          if (i === 0) ctx.moveTo(s[0] * dpr, s[1] * dpr);
+          else ctx.lineTo(s[0] * dpr, s[1] * dpr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 }
 

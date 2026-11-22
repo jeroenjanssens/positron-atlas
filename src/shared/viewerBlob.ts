@@ -88,6 +88,14 @@ export interface BlobTitle {
   logoWidth: number;
 }
 
+/** Shape embedded in the blob for the HTML viewer. */
+export interface BlobShape {
+  kind: string;
+  id: string;
+  style: { strokeColor: [number,number,number,number]; fillColor: [number,number,number,number]; strokeWidth: number; opacity: number; dash: number[]; arrowHead: string };
+  [key: string]: unknown;
+}
+
 /** JSON header embedded in the blob (before the binary sections). */
 export interface BlobHeader {
   v: number;
@@ -124,6 +132,8 @@ export interface BlobHeader {
   labels: BlobLabel[];
   annotations: BlobAnnotation[];
   title: BlobTitle;
+  /** B4 shapes drawn on the map. */
+  shapes?: BlobShape[];
   /** @font-face CSS strings with embedded data-URL sources. */
   fontCss: string[];
   /** Sampling info (informational, not rendered). */
