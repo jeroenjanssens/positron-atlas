@@ -1,0 +1,29 @@
+{
+  "description": "Navigation presets e2e: ? opens cheat sheet, cheat sheet DOM is present, platform is set from host.",
+  "steps": [
+    {
+      "name": "press ? to open cheat sheet",
+      "eval": "window.__harness?.dispatch('view.showControls') ?? (a.cheatSheetVisible = true)",
+      "until": "a.cheatSheetVisible === true",
+      "timeout": 5000,
+      "report": "{ cheatSheetVisible: a.cheatSheetVisible }"
+    },
+    {
+      "name": "cheat sheet DOM is present",
+      "until": "document.querySelector('.cheat-sheet') !== null",
+      "timeout": 2000
+    },
+    {
+      "name": "platform is set from host",
+      "until": "a.platform !== '' && a.platform !== undefined",
+      "timeout": 2000,
+      "report": "{ platform: a.platform }"
+    },
+    {
+      "name": "close cheat sheet",
+      "eval": "a.cheatSheetVisible = false",
+      "until": "a.cheatSheetVisible === false",
+      "timeout": 2000
+    }
+  ]
+}

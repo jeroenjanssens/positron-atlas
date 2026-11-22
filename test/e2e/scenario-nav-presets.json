@@ -1,0 +1,12 @@
+{
+  "description": "Navigation presets e2e: view.reset dispatches correctly.",
+  "steps": [
+    {
+      "name": "view.reset via dispatch",
+      "eval": "window.__harness?.dispatch('view.reset') ?? a.fitView();",
+      "until": "a.phase === 'ready'",
+      "timeout": 5000,
+      "report": "{ zoom: a.renderer?.viewState?.zoom }"
+    }
+  ]
+}
