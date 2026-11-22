@@ -18,18 +18,23 @@
       "timeout": 120000
     },
     {
-      "name": "switch to 3D and run exact polars-umap in kernel",
-      "eval": "a.setDims(3); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'polars-umap'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')).click()",
-      "until": "a.dims === 3 && a.phase === 'ready' && a.computeMode === 'polars-umap' && a.timings.umap > 0",
+      "name": "switch to 3D (browser layout first)",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 300000
+    },
+    {
+      "name": "run exact polars-umap in the kernel in 3D",
+      "eval": "const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'polars-umap'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 300)); const b = [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel')); if (!b || b.disabled) throw new Error('Run in kernel button missing or disabled: ' + (b ? 'disabled' : 'missing')); b.click()",
+      "until": "a.layoutEngine === 'polars-umap' && a.phase === 'ready'",
       "timeout": 300000,
+      "report": "{ layoutEngine: a.layoutEngine, exactEngine: a.exactEngine, projection: a.projection, dims: a.dims, len: a.anchorXY && a.anchorXY.length, nAnchors: a.prepared.nAnchors }",
       "assert": [
         "a.dims === 3",
-        "a.anchorXY !== null",
+        "a.exactEngine === 'polars-umap'",
         "a.anchorXY.length === a.prepared.nAnchors * 3",
-        "a.anchorXY.every(Number.isFinite)",
-        "a.projection === 'done'"
-      ],
-      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, anchorXYLen: a.anchorXY.length, umap: a.timings.umap }"
+        "a.anchorXY.every(Number.isFinite)"
+      ]
     },
     {
       "name": "wait for hit index to be built after camera settles",
