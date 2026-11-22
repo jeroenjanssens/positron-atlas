@@ -97,12 +97,96 @@
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
      Checked against commit <span class="mono">b630ec0</span> (2026-11-22).</p>
   <nav>
-    <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
+    <a href="#glance">At a glance</a><a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
   </nav>
 </header>
 
 <!-- ================================================================================== -->
+<h2 id="glance">At a glance</h2>
+<p class="lead">Positron Atlas turns the rows of a DataFrame into a map: every point is a row, and rows that are similar end up close together.
+Three parts work together. The <b>Python kernel</b> (your Positron session) holds the data and does the heavy work. The <b>webview</b> (the Atlas tab)
+computes the UMAP layout and draws the map. The <b>extension host</b> (Positron's Node.js process) connects the two.</p>
+
+<div class="figure">
+<svg viewBox="0 0 1200 270" role="img" aria-label="How a map is made, in five steps">
+  <defs>
+    <marker id="g-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--faint)"/></marker>
+  </defs>
+  <!-- the five steps, coloured by where they run -->
+  <g>
+    <rect class="lane-py" x="20" y="30" width="190" height="96" rx="10" stroke-width="1.5"/>
+    <text class="t" x="36" y="56">1 · Prepare</text>
+    <text class="s" x="36" y="76">sample, clean, scale,</text><text class="s" x="36" y="93">pick anchors</text>
+    <text class="m" x="36" y="114" style="fill:var(--py)">Python kernel</text>
+
+    <rect class="lane-web" x="262" y="30" width="190" height="96" rx="10" stroke-width="1.5"/>
+    <text class="t" x="278" y="56">2 · UMAP</text>
+    <text class="s" x="278" y="76">on the anchors only,</text><text class="s" x="278" y="93">WebGPU or CPU</text>
+    <text class="m" x="278" y="114" style="fill:var(--web)">webview (Atlas tab)</text>
+
+    <rect class="lane-py" x="504" y="30" width="190" height="96" rx="10" stroke-width="1.5"/>
+    <text class="t" x="520" y="56">3 · Place all rows</text>
+    <text class="s" x="520" y="76">10 nearest anchors,</text><text class="s" x="520" y="93">weighted mean</text>
+    <text class="m" x="520" y="114" style="fill:var(--py)">Python kernel</text>
+
+    <rect class="lane-web" x="746" y="30" width="190" height="96" rx="10" stroke-width="1.5"/>
+    <text class="t" x="762" y="56">4 · Draw</text>
+    <text class="s" x="762" y="76">deck.gl, 2D or 3D,</text><text class="s" x="762" y="93">colours, labels</text>
+    <text class="m" x="762" y="114" style="fill:var(--web)">webview (Atlas tab)</text>
+
+    <rect class="lane-disk" x="988" y="30" width="192" height="96" rx="10" stroke-width="1.5"/>
+    <text class="t" x="1004" y="56">5 · Explore</text>
+    <text class="s" x="1004" y="76">hover, select, annotate,</text><text class="s" x="1004" y="93">write back, export</text>
+    <text class="m" x="1004" y="114" style="fill:var(--disk)">all three</text>
+  </g>
+  <!-- what travels between steps -->
+  <g>
+    <path class="arrow" style="stroke:var(--faint)" d="M212,78 H260" marker-end="url(#g-arrow)"/>
+    <path class="arrow" style="stroke:var(--faint)" d="M454,78 H502" marker-end="url(#g-arrow)"/>
+    <path class="arrow" style="stroke:var(--faint)" d="M696,78 H744" marker-end="url(#g-arrow)"/>
+    <path class="arrow" style="stroke:var(--faint)" d="M938,78 H986" marker-end="url(#g-arrow)"/>
+    <text class="s" x="236" y="150" text-anchor="middle">anchors</text>
+    <text class="s" x="478" y="150" text-anchor="middle">anchor layout</text>
+    <text class="s" x="720" y="150" text-anchor="middle">every row's position</text>
+    <text class="s" x="962" y="150" text-anchor="middle">rows on demand</text>
+  </g>
+  <!-- every hand-off goes through the extension host -->
+  <g>
+    <path class="arrow thin dash" style="stroke:var(--host)" d="M236,132 V196"/>
+    <path class="arrow thin dash" style="stroke:var(--host)" d="M478,158 V196"/>
+    <path class="arrow thin dash" style="stroke:var(--host)" d="M720,158 V196"/>
+    <path class="arrow thin dash" style="stroke:var(--host)" d="M962,158 V196"/>
+    <rect class="lane-host" x="20" y="196" width="1160" height="58" rx="10" stroke-width="1.5"/>
+    <text class="t" x="36" y="220" style="fill:var(--host)">Extension host</text>
+    <text class="s" x="160" y="220">every hand-off passes through it: messages as JSON, arrays as files in the job directory or as raw bytes, never as JSON text</text>
+    <text class="s" x="160" y="240">it also shows dialogs, writes exports, downloads images and fonts, and opens links</text>
+  </g>
+</svg>
+</div>
+
+<div class="legend">
+  <div><strong>1 · Prepare (kernel).</strong> The selected numeric columns are read as float32, sampled, cleaned and standardized (optionally reduced with PCA). A random subset of rows becomes the <em>anchors</em>. A background thread already finds each row's nearest anchors.</div>
+  <div><strong>2 · UMAP (webview).</strong> UMAP runs in a web worker on the anchors only (up to 100,000), on the GPU when available, and you watch it converge. Alternatives: UMAP in the kernel (polars-umap, umap-learn), or existing coordinate columns (Layout → From columns).</div>
+  <div><strong>3 · Place all rows (kernel).</strong> Every other row is placed at the weighted mean of its 10 nearest anchors' positions. This is what makes 10 million rows fast; re-placing after a live change reuses the cached neighbours.</div>
+  <div><strong>4 · Draw (webview).</strong> deck.gl draws the points (2D or 3D) with colours, sizes, filters, labels, outlines and annotations. Colours, titles and other per-row values are fetched from the kernel as binary files.</div>
+  <div><strong>5 · Explore (all three).</strong> Hover asks the kernel for rows; the lasso, tags and clusters can be written back to the DataFrame after a confirmation; maps export as PNG, HTML or DataMapPlot.</div>
+</div>
+
+<h3>Where to start reading the code</h3>
+<table>
+  <thead><tr><th>To understand…</th><th>Read</th></tr></thead>
+  <tbody>
+    <tr><td>Every message between the parts</td><td><code>src/shared/protocol.ts</code></td></tr>
+    <tr><td>How the host connects webview and kernel</td><td><code>src/extension/atlasPanel.ts</code>, <code>kernelBridge.ts</code></td></tr>
+    <tr><td>The kernel side (prepare, placement, colours, rows, write-back)</td><td><code>python/positron_atlas_kernel.py</code></td></tr>
+    <tr><td>The webview's state and logic</td><td><code>src/webview/atlas.svelte.ts</code> (state) and <code>src/webview/atlas/*.ts</code> (one module per area)</td></tr>
+    <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
+    <tr><td>Testing without Positron</td><td><code>test/harness/</code> (<code>just harness</code>)</td></tr>
+    <tr><td>Conventions and checks</td><td><code>CONTRIBUTING.md</code></td></tr>
+  </tbody>
+</table>
+
 <h2 id="overview"><span class="n">1</span>Overview</h2>
 <p class="lead">Atlas runs in three processes that never share memory: the <b>webview</b> (a Chromium page inside Positron), the
 <b>extension host</b> (Node.js), and your <b>Python kernel</b>. Small messages travel as JSON; bulk arrays travel as raw binary files in
