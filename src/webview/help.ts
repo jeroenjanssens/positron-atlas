@@ -132,6 +132,17 @@ export const HELP: Record<string, HelpEntry> = {
 
   // ---- UMAP tab ----------------------------------------------------------------
 
+  'umap.dims': {
+    title: 'Dimensions',
+    what: 'Whether UMAP embeds points into 2D or 3D space.',
+    intuition:
+      '2D is the default: points are placed in a flat plane that you pan and zoom. ' +
+      '3D adds a depth axis — drag to rotate the cloud, Shift-drag to pan, scroll to zoom. ' +
+      'The 3D view is interactive but some features (auto clusters, glow, label dragging, annotations) are only available in 2D.',
+    when: 'Use 3D when you want to rotate and inspect the cloud from multiple angles or when a third dimension separates groups that overlap in 2D.',
+    cost: 'rebuild',
+  },
+
   'umap.computeMode': {
     title: 'Compute',
     what: 'Whether UMAP runs live in the browser or exactly in the Python kernel.',

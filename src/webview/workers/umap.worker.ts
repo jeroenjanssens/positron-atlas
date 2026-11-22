@@ -4,7 +4,7 @@ import { sgdRate } from './schedule';
 import type { UmapParams } from '../../shared/protocol';
 
 export type WorkerIn =
-  | { type: 'start'; runId: number; data: Float32Array; n: number; d: number; params: UmapParams; gpu?: boolean; paused?: boolean }
+  | { type: 'start'; runId: number; data: Float32Array; n: number; d: number; params: UmapParams; gpu?: boolean; paused?: boolean; outputDim?: 2 | 3 }
   | { type: 'live'; runId: number; params: Partial<UmapParams>; epochs: number }
   /** Pause the running schedule (keeps its position). */
   | { type: 'pause'; runId: number }
@@ -115,7 +115,7 @@ ctx.onmessage = async (ev: MessageEvent<WorkerIn>) => {
       const t0 = performance.now();
       const p = msg.params;
       alpha0 = p.learningRate;
-      const instance = await createUMAP(msg.n, msg.d, 2, msg.data, {
+      const instance = await createUMAP(msg.n, msg.d, msg.outputDim ?? 2, msg.data, {
         nNeighbors: Math.max(2, Math.min(p.nNeighbors, msg.n - 1)),
         minDist: p.minDist,
         spread: p.spread,

@@ -18,6 +18,18 @@ export function applyLasso(atlas: Atlas, screen: [number, number][], mode: Selec
   if (!atlas.renderer || !atlas.prepared || !atlas.anchorXY || !atlas.anchorPos || screen.length < 3) {
     return;
   }
+  // T4: In 3D mode, lasso operates in screen space; use the projected screen XY.
+  if (atlas.dims === 3 && atlas._3dScreenXY) {
+    const poly = new Float64Array(screen.length * 2);
+    screen.forEach(([x, y], i) => { poly[2 * i] = x; poly[2 * i + 1] = y; });
+    const n = atlas.nKept;
+    // _3dScreenXY has [sx0, sy0, sx1, sy1, ...] for all nKept points.
+    const hits = pointsInPolygon(atlas._3dScreenXY, n, poly);
+    const next = combineSelection(atlas.selection, hits, n, mode);
+    atlas.selectionOnAnchors = false;
+    setSelection(atlas, next);
+    return;
+  }
   const poly = new Float64Array(screen.length * 2);
   screen.forEach(([x, y], i) => {
     const [wx, wy] = atlas.renderer!.unproject(x, y);

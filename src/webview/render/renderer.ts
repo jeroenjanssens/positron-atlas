@@ -1,4 +1,4 @@
-import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/core';
+import { Deck, OrthographicView, OrbitView, type OrthographicViewState, type OrbitViewState } from '@deck.gl/core';
 import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 import { compositeOverlay } from './composite';
@@ -22,11 +22,13 @@ export interface OverlayState {
 
 export interface PointSet {
   id: string;
-  /** Interleaved x,y. */
+  /** Interleaved x,y (2D) or x,y,z (3D). */
   positions: Float32Array;
   /** RGBA per point. */
   colors: Uint8Array;
   length: number;
+  /** Number of values per point: 2 (default) or 3 for 3D (T2). */
+  positionStride?: 2 | 3;
   /** Per-point radius in pixels (A10). When omitted the uniform pointSize is used. */
   radii?: Float32Array;
 }
@@ -96,12 +98,14 @@ const NORMAL = { depthWriteEnabled: false, depthCompare: 'always' } as const;
 /** Height of the plot toolbar plus the search box, kept free when fitting the view. */
 const FIT_TOP_PX = 76;
 
-/** deck.gl scatter renderer with binary attributes and a controlled orthographic view. */
+/** deck.gl scatter renderer with binary attributes and a controlled orthographic or orbit view. */
 export class ScatterRenderer {
-  private deck: Deck<OrthographicView>;
+  private deck: Deck<OrthographicView | OrbitView>;
   private sets: PointSet[] = [];
   private style: RenderStyle = { pointSize: 3, opacity: 0.8, mode: 'points' };
-  private viewState: OrthographicViewState = { target: [0, 0, 0], zoom: 0 };
+  private viewState: OrthographicViewState | OrbitViewState = { target: [0, 0, 0], zoom: 0 };
+  /** Current output dimensionality: 2 = OrthographicView, 3 = OrbitView (T2/T3). */
+  private dims: 2 | 3 = 2;
   private version = 0;
   private pointerListeners: ((p: { x: number; y: number; world: [number, number] } | null) => void)[] = [];
   private userMoved = false;
@@ -171,7 +175,11 @@ export class ScatterRenderer {
           this.pointerListeners.forEach((l) => l(null));
           return;
         }
-        const world: [number, number] = [info.coordinate[0], info.coordinate[1]];
+        // In 3D mode, world is a 3D coord from OrbitView; use the screen (x, y) for picking.
+        // The pointer listener receives a 2-element world tuple (x, y) for compatibility.
+        const world: [number, number] = this.dims === 3
+          ? [info.coordinate[0] ?? 0, info.coordinate[1] ?? 0]
+          : [info.coordinate[0], info.coordinate[1]];
         this.pointerListeners.forEach((l) => l({ x: info.x, y: info.y, world }));
       },
       // Deck-level drag: intercept label drags before the controller pans.
@@ -401,12 +409,17 @@ export class ScatterRenderer {
 
   private render(): void {
     const { pointSize, opacity, mode } = this.style;
-    const density = mode === 'density';
+    const density = mode === 'density' && this.dims === 2; // density not supported in 3D
+    const is3D = this.dims === 3;
+    // In 3D mode use depth testing so closer points occlude farther ones.
+    const NORMAL_3D = { depthWriteEnabled: true, depthCompare: 'less-or-equal' } as const;
+    const baseParams = is3D ? NORMAL_3D : (density ? ADDITIVE : NORMAL);
     const searchActive = this.searchFilters.some((sf) => sf !== null);
     const layers: (ScatterplotLayer | PolygonLayer<[number, number][]> | TextLayer<MapLabel>)[] = [];
     for (let si = 0; si < this.sets.length; si++) {
       const s = this.sets[si];
       if (s.length === 0) continue;
+      const nd = s.positionStride ?? 2;
       const filter = this.filters[si] ?? null;
       // A precomputed histogram filter must also be applied even when hidden.size === 0.
       const hasFilter = filter !== null && (filter.hidden.size > 0 || !!filter.precomputed);
@@ -419,7 +432,7 @@ export class ScatterRenderer {
       // Build a data attributes object to support optional per-point radii (A10).
       const makeAttrs = (filterValue: Float32Array): Record<string, any> => {
         const attrs: Record<string, any> = {
-          getPosition: { value: s.positions, size: 2 },
+          getPosition: { value: s.positions, size: nd },
           getFillColor: { value: s.colors, size: 4, normalized: true },
           getFilterValue: { value: filterValue, size: 1 },
         };
@@ -446,7 +459,7 @@ export class ScatterRenderer {
           antialiasing: !density,
           opacity: density ? Math.max(0.02, opacity * 0.03) : opacity * 0.18,
           pickable: false,
-          parameters: (density ? ADDITIVE : NORMAL) as any,
+          parameters: baseParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
@@ -463,7 +476,7 @@ export class ScatterRenderer {
           antialiasing: !density,
           opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
           pickable: false,
-          parameters: (density ? ADDITIVE : NORMAL) as any,
+          parameters: baseParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           extensions: [this.dataFilter],
           filterRange: [0.5, 1.5] as [number, number],
@@ -481,7 +494,7 @@ export class ScatterRenderer {
           antialiasing: !density,
           opacity: density ? Math.max(0.02, opacity * 0.15) : opacity,
           pickable: false,
-          parameters: (density ? ADDITIVE : NORMAL) as any,
+          parameters: baseParams as any,
           updateTriggers: { getPosition: this.version, getFillColor: this.version, getFilterValue: this.version },
           // filterRange [0.5, 1.5] shows values == 1 (visible) and hides values == 0 (hidden).
           extensions: [this.dataFilter],
@@ -562,12 +575,14 @@ export class ScatterRenderer {
         wordBreak: 'break-word',
         getTextAnchor: 'middle',
         getAlignmentBaseline: 'center',
-        pickable: true,  // needed for drag (A3) and context menu
+        pickable: !is3D,  // disable drag/context menu in 3D (T5); billboard labels don't support drag
         extensions: [this.collision],
         collisionEnabled: true,
         getCollisionPriority: (d: MapLabel) => d.priority,
         collisionTestProps: { sizeScale: 1.4 },
         parameters: NORMAL as any,
+        // T3: billboard=true makes labels face the camera in 3D; collision still works in screen space.
+        ...(is3D ? { billboard: true } : {}),
       } as const;
 
       // Normal labels – one TextLayer per distinct weight bucket.
@@ -613,13 +628,132 @@ export class ScatterRenderer {
     this.deck.setProps({ layers });
   }
 
+  /**
+   * Switch between 2D (OrthographicView) and 3D (OrbitView) rendering (T2/T3).
+   * Resets the view state and rebuilds the Deck instance properties.
+   */
+  setDims(dims: 2 | 3): void {
+    if (this.dims === dims) return;
+    this.dims = dims;
+    this.userMoved = false;
+    if (dims === 3) {
+      const orbitState: OrbitViewState = {
+        target: [0, 0, 0],
+        zoom: 0,
+        rotationX: 20,
+        rotationOrbit: 0,
+      };
+      this.viewState = orbitState;
+      this.deck.setProps({
+        views: new OrbitView({ id: 'orbit', orbitAxis: 'Z' }),
+        viewState: orbitState as any,
+        // Drag rotates; Shift-drag pans; scroll zooms.
+        controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: false, dragRotate: true } as any,
+      });
+    } else {
+      const orthoState: OrthographicViewState = { target: [0, 0, 0], zoom: 0 };
+      this.viewState = orthoState;
+      this.deck.setProps({
+        views: new OrthographicView({ id: 'ortho', flipY: false }),
+        viewState: orthoState as any,
+        controller: { scrollZoom: { speed: 0.01, smooth: false }, doubleClickZoom: true, dragRotate: false } as any,
+      });
+    }
+    this.version++;
+    this.render();
+  }
+
+  /**
+   * Fit the 3D view to [minX, minY, minZ, maxX, maxY, maxZ] bounds.
+   * Sets the target to the centroid and zoom to show all points.
+   */
+  fit3D(b: [number, number, number, number, number, number], force = false): void {
+    if (this.userMoved && !force) return;
+    if (force) this.userMoved = false;
+    const cx = (b[0] + b[3]) / 2;
+    const cy = (b[1] + b[4]) / 2;
+    const cz = (b[2] + b[5]) / 2;
+    const dx = Math.max(b[3] - b[0], 1e-6);
+    const dy = Math.max(b[4] - b[1], 1e-6);
+    const dz = Math.max(b[5] - b[2], 1e-6);
+    const size = Math.max(dx, dy, dz);
+    const w = this.container.clientWidth || 800;
+    const h = this.container.clientHeight || 600;
+    const zoom = Math.log2(Math.min(w, h) * 0.75 / size);
+    const orbitState: OrbitViewState = {
+      target: [cx, cy, cz],
+      zoom,
+      rotationX: 20,
+      rotationOrbit: 0,
+    };
+    this.viewState = orbitState;
+    this.deck.setProps({ viewState: orbitState as any });
+  }
+
+  /**
+   * Project all 3D points to screen space via the current OrbitViewport.
+   * Returns a flat Float32Array of [sx0, sy0, sx1, sy1, ...], or null when the viewport is not ready.
+   */
+  projectAll3D(xyz: Float32Array, n: number): Float32Array | null {
+    const vp = (this.deck as any).getViewports?.()[0];
+    if (!vp) return null;
+    const out = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const proj = vp.project([xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]]);
+      out[2 * i] = proj[0];
+      out[2 * i + 1] = proj[1];
+    }
+    return out;
+  }
+
+  /**
+   * Rotate the orbit view by `degrees` around the orbit axis (Z).
+   * Used by auto-rotate animation (T3).
+   */
+  rotateOrbit(degrees: number): void {
+    if (this.dims !== 3) return;
+    const vs = this.viewState as OrbitViewState;
+    const next: OrbitViewState = {
+      ...vs,
+      rotationOrbit: ((vs.rotationOrbit ?? 0) + degrees) % 360,
+    };
+    this.viewState = next;
+    this.deck.setProps({ viewState: next as any });
+  }
+
+  /**
+   * Reset the 3D camera to the initial position (T3).
+   */
+  resetCamera3D(): void {
+    if (this.dims !== 3) return;
+    this.userMoved = false;
+    const vs = this.viewState as OrbitViewState;
+    const next: OrbitViewState = { ...vs, rotationX: 20, rotationOrbit: 0 };
+    this.viewState = next;
+    this.deck.setProps({ viewState: next as any });
+  }
+
+  /**
+   * Set a camera preset: top (looking down Z), front (facing Y), or side (facing X).
+   */
+  setCameraPreset(preset: 'top' | 'front' | 'side'): void {
+    if (this.dims !== 3) return;
+    const vs = this.viewState as OrbitViewState;
+    const angles = { top: { rotationX: 90, rotationOrbit: 0 }, front: { rotationX: 0, rotationOrbit: 0 }, side: { rotationX: 0, rotationOrbit: 90 } };
+    const next: OrbitViewState = { ...vs, ...angles[preset] };
+    this.viewState = next;
+    this.userMoved = true;
+    this.deck.setProps({ viewState: next as any });
+  }
+
   /** Find the world position of a point by its index in the latest point set. */
   private findPointPosition(idx: number): [number, number] | null {
     // Search the sets in reverse (last set is drawn on top).
     for (let si = this.sets.length - 1; si >= 0; si--) {
       const s = this.sets[si];
+      const nd = s.positionStride ?? 2;
       if (idx < s.length) {
-        return [s.positions[2 * idx], s.positions[2 * idx + 1]];
+        return [s.positions[nd * idx], s.positions[nd * idx + 1]];
       }
     }
     return null;

@@ -34,7 +34,7 @@
 <div class="plot-toolbar" role="toolbar" aria-label="Plot tools">
   <!-- Pan tool: codicon-move -->
   <button class="tool" class:active={atlas.tool === 'pan'} aria-pressed={atlas.tool === 'pan'} aria-label="Pan and zoom"
-    title="Pan and zoom: drag to pan, scroll to zoom, hover for details. Hold Shift (add) or Alt (remove) and drag to select."
+    title={atlas.dims === 3 ? 'Rotate: drag to rotate, Shift-drag to pan, scroll to zoom' : 'Pan and zoom: drag to pan, scroll to zoom, hover for details. Hold Shift (add) or Alt (remove) and drag to select.'}
     onclick={() => (atlas.tool = 'pan')}>
     <span class="codicon codicon-move" aria-hidden="true"></span>
   </button>
@@ -56,12 +56,56 @@
     <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
   </button>
 
-  <!-- Annotate tool (A4): codicon-pin -->
-  <button class="tool" class:active={atlas.tool === 'annotate'} aria-pressed={atlas.tool === 'annotate'} aria-label="Annotate"
-    title="Annotate: click a point to add a callout annotation. Drag the callout to move it; double-click to edit text."
-    disabled={!atlas.prepared} onclick={() => (atlas.tool = atlas.tool === 'annotate' ? 'pan' : 'annotate')}>
-    <span class="codicon codicon-pin" aria-hidden="true"></span>
-  </button>
+  <!-- T3: 3D camera controls (shown only in 3D mode) -->
+  {#if atlas.dims === 3}
+    <span class="sep" aria-hidden="true"></span>
+
+    <!-- Auto-rotate toggle -->
+    <button class="tool" class:active={atlas.autoRotate} aria-pressed={atlas.autoRotate} aria-label="Auto-rotate"
+      title="Auto-rotate: continuously spin the 3D view" disabled={!atlas.prepared}
+      onclick={() => atlas.toggleAutoRotate()}>
+      <span class="codicon codicon-sync" aria-hidden="true"></span>
+    </button>
+
+    <span class="sep" aria-hidden="true"></span>
+
+    <!-- Camera presets -->
+    <button class="tool" aria-label="Top view" title="Top view: look straight down" disabled={!atlas.prepared}
+      onclick={() => atlas.setCameraPreset('top')}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+        <rect x="3" y="3" width="10" height="10" rx="1"/>
+        <line x1="8" y1="1" x2="8" y2="3"/>
+        <line x1="8" y1="13" x2="8" y2="15"/>
+      </svg>
+    </button>
+    <button class="tool" aria-label="Front view" title="Front view: look along the Y axis" disabled={!atlas.prepared}
+      onclick={() => atlas.setCameraPreset('front')}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+        <rect x="3" y="3" width="10" height="10" rx="1"/>
+        <line x1="1" y1="8" x2="3" y2="8"/>
+        <line x1="13" y1="8" x2="15" y2="8"/>
+      </svg>
+    </button>
+    <button class="tool" aria-label="Side view" title="Side view: look along the X axis" disabled={!atlas.prepared}
+      onclick={() => atlas.setCameraPreset('side')}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+        <rect x="3" y="3" width="10" height="10" rx="1"/>
+        <line x1="13" y1="8" x2="15" y2="8"/>
+        <line x1="1" y1="8" x2="3" y2="8"/>
+        <line x1="10" y1="5" x2="13" y2="8"/>
+        <line x1="10" y1="11" x2="13" y2="8"/>
+      </svg>
+    </button>
+  {/if}
+
+  <!-- Annotate tool (A4): codicon-pin; hidden in 3D (T5) -->
+  {#if atlas.dims !== 3}
+    <button class="tool" class:active={atlas.tool === 'annotate'} aria-pressed={atlas.tool === 'annotate'} aria-label="Annotate"
+      title="Annotate: click a point to add a callout annotation. Drag the callout to move it; double-click to edit text."
+      disabled={!atlas.prepared} onclick={() => (atlas.tool = atlas.tool === 'annotate' ? 'pan' : 'annotate')}>
+      <span class="codicon codicon-pin" aria-hidden="true"></span>
+    </button>
+  {/if}
 
   <span class="sep" aria-hidden="true"></span>
 

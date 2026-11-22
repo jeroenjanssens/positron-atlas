@@ -139,3 +139,38 @@ export function bounds(xy: Float32Array, n: number): [number, number, number, nu
   if (!isFinite(minX)) return [-1, -1, 1, 1];
   return [minX, minY, maxX, maxY];
 }
+
+/** XYZ bounds for 3D point sets. Returns [minX, minY, minZ, maxX, maxY, maxZ]. */
+export function bounds3D(xyz: Float32Array, n: number): [number, number, number, number, number, number] {
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = xyz[3 * i], y = xyz[3 * i + 1], z = xyz[3 * i + 2];
+    if (x !== x || y !== y || z !== z) continue;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  if (!isFinite(minX)) return [-1, -1, -1, 1, 1, 1];
+  return [minX, minY, minZ, maxX, maxY, maxZ];
+}
+
+/**
+ * Build a 2D HitIndex over screen-space projections of 3D points.
+ * `screenXY` is a flat Float32Array of [sx0, sy0, sx1, sy1, ...] from viewport.project().
+ */
+export class ScreenHitIndex {
+  private readonly index: HitIndex;
+
+  constructor(screenXY: Float32Array, n: number) {
+    this.index = new HitIndex(screenXY, n);
+  }
+
+  nearest(sx: number, sy: number, maxDist: number): number {
+    return this.index.nearest(sx, sy, maxDist);
+  }
+
+  nearestK(sx: number, sy: number, k: number): number[] {
+    return this.index.nearestK(sx, sy, k);
+  }
+}

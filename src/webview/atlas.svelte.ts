@@ -158,6 +158,14 @@ import {
 } from './atlas/search';
 import { probeWebGpu } from './atlas/utils';
 import type { SelectMode } from './select/lasso';
+import {
+  startAutoRotate as startAutoRotateImpl,
+  stopAutoRotate as stopAutoRotateImpl,
+  on3DViewChange as on3DViewChangeImpl,
+  setCameraPreset as setCameraPresetImpl,
+  rebuild3DHitIndex as rebuild3DHitIndexImpl,
+  type CameraPreset,
+} from './atlas/view3d';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
@@ -259,6 +267,10 @@ export class Atlas {
   gpuAvailable = $state(false);
   computeMode = $state<'browser' | ExactEngine | 'kernel-anchors'>('browser');
   layoutEngine = $state<string>('');
+  /** Output dimensionality of the UMAP layout: 2 (default, full features) or 3 (T2). */
+  dims = $state<2 | 3>(2);
+  /** True when 3D auto-rotate is active (T3). */
+  autoRotate = $state(false);
   /** True when running inside VS Code / Positron (acquireVsCodeApi was available). */
   readonly isPositron = isVsCodeWebview;
 
@@ -349,6 +361,11 @@ export class Atlas {
   nameSource: { column: number; codes: Uint16Array; meta: CategoricalColorMeta } | null = null;
   labelAt = 0;
   hit: { index: HitIndex; map: (i: number) => number } | null = null;
+  /**
+   * Screen-space XY coordinates of all points in 3D mode (n*2 flat Float32Array),
+   * populated by view3d.ts when the camera stops. Null in 2D mode.
+   */
+  _3dScreenXY: Float32Array | null = null;
   hoverTimer: ReturnType<typeof setTimeout> | undefined;
   hoverSeq = 0;
   /** Extended: includes prepIdx for hover ring and cache lookups. */
@@ -407,7 +424,8 @@ export class Atlas {
     // A8: re-schedule labels when zoom changes.  A12: also invalidate glow.
     this.renderer.onViewChange((_zoom) => {
       scheduleLabelsImpl(this);
-      if (this.view.glow) this.glowVersion++;
+      if (this.view.glow && this.dims === 2) this.glowVersion++;
+      if (this.dims === 3) on3DViewChangeImpl(this);
     });
     createWorkerImpl(this);
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
@@ -607,6 +625,17 @@ export class Atlas {
   // ---- UMAP --------------------------------------------------------------------
   startUmap(paused = false): void { startUmapImpl(this, paused); }
   umapChanged(): void { umapChangedImpl(this); }
+  /** Set the output dimensionality (2D/3D) and rebuild the layout (T2). */
+  setDims(d: 2 | 3): void {
+    if (this.dims === d) return;
+    this.dims = d;
+    this.renderer?.setDims(d);
+    // Clear 3D-specific state when switching to 2D.
+    if (d === 2) this._3dScreenXY = null;
+    if (this.phase === 'ready' || this.phase === 'embedding') {
+      this.startUmap();
+    }
+  }
   stopUmap(): void { stopUmapImpl(this); }
   pauseUmap(): void { pauseUmapImpl(this); }
   resumeUmap(): void { resumeUmapImpl(this); }
@@ -702,6 +731,18 @@ export class Atlas {
   fitView(): void { fitViewImpl(this); }
   legendWidth(): number { return legendWidthImpl(this); }
   plotBackground(): string { return plotBackgroundImpl(this); }
+
+  // ---- 3D camera (T3) ----------------------------------------------------------
+  /** Toggle auto-rotation in 3D mode. */
+  toggleAutoRotate(): void {
+    this.autoRotate = !this.autoRotate;
+    if (this.autoRotate) startAutoRotateImpl(this);
+    else stopAutoRotateImpl();
+  }
+  /** Set a camera preset (top/front/side) in 3D mode. */
+  setCameraPreset(preset: CameraPreset): void { setCameraPresetImpl(this, preset); }
+  /** Rebuild the screen-space hit index for 3D hover (T4). */
+  rebuild3DHitIndex(): void { rebuild3DHitIndexImpl(this); }
 
   // ---- sidebar -----------------------------------------------------------------
   setTab(tab: SidebarTab): void { this.ui.tab = tab; }

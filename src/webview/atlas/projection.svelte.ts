@@ -16,7 +16,7 @@ export function project(atlas: Atlas): void {
   atlas.projection = 'running';
   atlas.projectProgress = 0;
   atlas.placedRows = 0;
-  vscode.post({ type: 'project', anchorXY: float32ToBytes(atlas.anchorXY), metric: atlas.umap.metric, seed: atlas.umap.seed });
+  vscode.post({ type: 'project', anchorXY: float32ToBytes(atlas.anchorXY), metric: atlas.umap.metric, seed: atlas.umap.seed, dims: atlas.dims });
 }
 
 /** Exact UMAP of all prepared rows in the kernel, with the chosen engine. */
@@ -27,7 +27,7 @@ export function runExact(atlas: Atlas): void {
   }
   atlas.exactEngine = engine as import('../../shared/protocol').ExactEngine;
   stopWorker(atlas);
-  atlas.allXY = new Float32Array(atlas.prepared.nKept * 2);
+  atlas.allXY = new Float32Array(atlas.prepared.nKept * atlas.dims);
   atlas.placedRows = 0;
   atlas.projection = 'running';
   atlas.projectProgress = 0;
@@ -35,17 +35,20 @@ export function runExact(atlas: Atlas): void {
   atlas.umapProgress = { stage: `${engine} (kernel)`, progress: 0, epoch: 0, total: 0 };
   atlas.hit = null;
   atlas.tooltip = null;
-  vscode.post({ type: 'exact', params: $state.snapshot(atlas.umap) as import('../../shared/protocol').UmapParams, engine: engine as import('../../shared/protocol').ExactEngine });
+  vscode.post({ type: 'exact', params: $state.snapshot(atlas.umap) as import('../../shared/protocol').UmapParams, engine: engine as import('../../shared/protocol').ExactEngine, dims: atlas.dims });
 }
 
 export function onProjected(atlas: Atlas, seconds: number, exact: boolean): void {
   atlas.projectProgress = 1;
   atlas.hit = null;
+  atlas._3dScreenXY = null;
   if (exact && atlas.prepared && atlas.allXY && atlas.anchorPos) {
-    const a = new Float32Array(atlas.prepared.nAnchors * 2);
+    const nd = atlas.dims;
+    const a = new Float32Array(atlas.prepared.nAnchors * nd);
     for (let i = 0; i < atlas.anchorPos.length; i++) {
-      a[2 * i] = atlas.allXY[2 * atlas.anchorPos[i]];
-      a[2 * i + 1] = atlas.allXY[2 * atlas.anchorPos[i] + 1];
+      for (let j = 0; j < nd; j++) {
+        a[nd * i + j] = atlas.allXY[nd * atlas.anchorPos[i] + j];
+      }
     }
     atlas.anchorXY = a;
     atlas.placedRows = atlas.prepared.nKept;
@@ -84,7 +87,7 @@ export function runKernelAnchors(atlas: Atlas): void {
   atlas.estimate = null;
   atlas.hit = null;
   atlas.tooltip = null;
-  vscode.post({ type: 'anchorUmap', params: $state.snapshot(atlas.umap) as import('../../shared/protocol').UmapParams });
+  vscode.post({ type: 'anchorUmap', params: $state.snapshot(atlas.umap) as import('../../shared/protocol').UmapParams, dims: atlas.dims });
 }
 
 /**
@@ -92,7 +95,11 @@ export function runKernelAnchors(atlas: Atlas): void {
  */
 export async function onAnchorXY(atlas: Atlas, file: FileRef, seconds: number): Promise<void> {
   const xy = (await fetchTyped(file.uri, 'f32')) as Float32Array;
-  if (xy.length !== atlas.prepared!.nAnchors * 2) return; // wrong shape
+  // Shape may be [nAnchors * 2] (2D) or [nAnchors * 3] (3D); accept either.
+  const nd = xy.length / atlas.prepared!.nAnchors;
+  if (nd !== 2 && nd !== 3) return; // wrong shape
+  if (nd === 3) atlas.dims = 3;
+  if (xy.length !== atlas.prepared!.nAnchors * atlas.dims) return; // wrong shape after update
   atlas.anchorXY = xy;
   atlas.phase = 'ready';
   atlas.umapProgress = null;
@@ -114,7 +121,15 @@ export async function onXYChunk(atlas: Atlas, file: FileRef): Promise<void> {
   }
   const xy = (await fetchTyped(file.uri, 'f32')) as Float32Array;
   const offset = file.offset ?? 0;
-  atlas.allXY.set(xy, offset * 2);
-  atlas.placedRows = Math.max(atlas.placedRows, offset + xy.length / 2);
+  // Detect dims from the chunk shape (shape[1] = 2 or 3).
+  const nd = file.shape.length >= 2 ? file.shape[1] : 2;
+  if (nd !== atlas.dims && (nd === 2 || nd === 3)) {
+    // Dims changed mid-flight (kernel reported different dims); update.
+    atlas.dims = nd as 2 | 3;
+    atlas.allXY = new Float32Array(atlas.prepared!.nKept * nd);
+    atlas.renderer?.setDims(nd as 2 | 3);
+  }
+  atlas.allXY.set(xy, offset * atlas.dims);
+  atlas.placedRows = Math.max(atlas.placedRows, offset + xy.length / atlas.dims);
   atlas.render();
 }

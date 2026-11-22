@@ -186,6 +186,14 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   if (state?.colorByCluster === true) {
     atlas.colorByCluster = true;
   }
+  // Restore 3D mode (T2).
+  if (state?.dims === 3) {
+    atlas.dims = 3;
+    atlas.renderer?.setDims(3);
+  } else {
+    atlas.dims = 2;
+    atlas.renderer?.setDims(2);
+  }
   // Reset hover state from prior session.
   atlas.rowCache.clear();
   atlas.hoverInflight = 0;

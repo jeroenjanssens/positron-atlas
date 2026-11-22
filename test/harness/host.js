@@ -185,14 +185,16 @@
         const name = `anchor_xy_${Date.now()}.f32`;
         const xyPath = await writeJobFile(name, m.anchorXY);
         try {
-          await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore })), false);
+          // T2: pass dims so the kernel places into 2D or 3D output space.
+          await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore, dims: m.dims ?? 2 })), false);
         } finally {
           await rmJobFile(name);
         }
         break;
       }
       case 'exact':
-        await runXYTask('exact', () => call('exact_umap', jobId, JSON.stringify({ ...m.params, engine: m.engine })), true);
+        // T2: pass dims so the kernel uses n_components=3 for 3D UMAP.
+        await runXYTask('exact', () => call('exact_umap', jobId, JSON.stringify({ ...m.params, engine: m.engine, dims: m.dims ?? 2 })), true);
         break;
       case 'colors': {
         const r = await call('colors', jobId, m.column, !!m.forceCategorical);
@@ -221,9 +223,12 @@
       }
       case 'anchorUmap': {
         const gen = ++generation;
-        const r = await call('anchor_umap', jobId, JSON.stringify(m.params));
+        // T2: pass dims so anchor UMAP uses n_components=3 for 3D.
+        const r = await call('anchor_umap', jobId, JSON.stringify({ ...m.params, dims: m.dims ?? 2 }));
         if (gen !== generation) break;
-        post({ type: 'anchorXY', file: fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }), seconds: r.seconds });
+        // Use r.shape if available (supports 3D [n, 3] shapes).
+        const anchorShape = r.shape ?? [r.length];
+        post({ type: 'anchorXY', file: fileRef({ file: r.file, dtype: r.dtype, shape: anchorShape }), seconds: r.seconds });
         break;
       }
       case 'writeLabels': {
@@ -330,7 +335,9 @@
         if (jobId) await call('cancel', jobId).catch(() => undefined);
         break;
       case 'addCoordinates': {
-        if (!confirmModal('Add columns umap_x and umap_y')) return;
+        // T6: in 3D mode also confirm umap_z.
+        const coordCols = m.dims === 3 ? 'umap_x, umap_y, and umap_z' : 'umap_x and umap_y';
+        if (!confirmModal(`Add columns ${coordCols}`)) return;
         let xyPath = '';
         let name = '';
         if (m.anchorXY && !m.useProjection) {

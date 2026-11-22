@@ -1340,6 +1340,7 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     metric = str(opts.get("metric", "euclidean"))
     cosine = metric == "cosine"
     seed = int(opts.get("seed", 0))
+    ndim = int(opts.get("dims", 2))  # T2: 2D or 3D output
     # P6: reuse anchors from prepare; fall back to recomputing if not stored.
     anchors = job.anchors if job.anchors is not None else np.ascontiguousarray(x[job.anchor_pos], dtype=np.float32)
     core = _native_core() if opts.get("native", True) else None
@@ -1362,7 +1363,8 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     if (job.nbr_idx is not None and job.nbr_sqd is not None and job.nbr_key == cache_key and job.nbr_non_anchor_pos is not None):
         return _project_from_cache(job, anchor_xy, k, cosine, core, waited_for_nbr)
 
-    if core is not None:
+    # T2: Rust core handles 2D only; fall through to numpy for 3D output.
+    if core is not None and ndim == 2:
         return _project_native(job, core, anchors, anchor_xy, k, cosine, seed)
     if cosine:  # numpy path
         anchors = anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12)
@@ -1370,8 +1372,8 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
     index = AnchorIndex(anchors, seed=seed)
     is_anchor = np.zeros(n, dtype=bool)
     is_anchor[job.anchor_pos] = True
-    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
-    xy_all = np.empty((n, 2), dtype=np.float32)
+    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, ndim)
+    xy_all = np.empty((n, ndim), dtype=np.float32)
     xy_all[job.anchor_pos] = anchor_xy
     q_step = max(1, (1 << 22) // max(x.shape[1], 1) * 4)
     offset = 0
@@ -1395,7 +1397,7 @@ def _project_impl(job: _Job, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dic
             job.set("projecting", done, f"Placed {e:,}/{n:,} rows (≈{eta:.0f}s left)")
         fname = f"xy_{n_files:04d}.f32"
         _write(job, fname, xy_all[fstart:fstop])
-        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, ndim], offset=fstart)
         n_files += 1
         offset += chunk_size
     job.set("finishing", 1.0)  # raises if this task was superseded
@@ -1407,8 +1409,12 @@ def _project_from_cache(job: _Job, anchor_xy: np.ndarray, k: int, cosine: bool, 
     """Fast re-placement using cached nearest-anchor indices (P1)."""
     x = job.features
     n = len(x)
-    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
-    xy_all = np.empty((n, 2), dtype=np.float32)
+    # T2: detect output dims from anchor_xy length / nAnchors; default to 2.
+    ndim = int(anchor_xy.size // max(len(job.anchor_pos), 1)) if job.anchor_pos is not None and len(anchor_xy) > 0 else 2
+    if ndim not in (2, 3):
+        ndim = 2
+    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, ndim)
+    xy_all = np.empty((n, ndim), dtype=np.float32)
     xy_all[job.anchor_pos] = anchor_xy
     t0 = time.time()
     nbr_idx = job.nbr_idx  # u32 (n_non_anchors, k)
@@ -1434,7 +1440,7 @@ def _project_from_cache(job: _Job, anchor_xy: np.ndarray, k: int, cosine: bool, 
         fstop = offset + chunk_size
         fname = f"xy_{n_files:04d}.f32"
         _write(job, fname, xy_all[fstart:fstop])
-        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, ndim], offset=fstart)
         n_files += 1
         offset += chunk_size
 
@@ -1451,8 +1457,12 @@ def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.nda
         x = np.ascontiguousarray(x, dtype=np.float32)
     job.set("indexing", 0.0, f"Indexing {len(anchors):,} anchors")
     index = core.Index(anchors, seed=seed, cosine=cosine)
-    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, 2)
-    xy_all = np.empty((n, 2), dtype=np.float32)
+    # T2: detect output dims from anchor_xy; Rust core supports 2D only (falls back to numpy for 3D).
+    ndim = int(anchor_xy.size // max(len(job.anchor_pos), 1)) if job.anchor_pos is not None and len(anchor_xy) > 0 else 2
+    if ndim not in (2, 3):
+        ndim = 2
+    anchor_xy = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, ndim)
+    xy_all = np.empty((n, ndim), dtype=np.float32)
     xy_all[job.anchor_pos] = anchor_xy
     is_anchor = np.zeros(n, dtype=bool)
     is_anchor[job.anchor_pos] = True
@@ -1477,7 +1487,7 @@ def _project_native(job: _Job, core: Any, anchors: np.ndarray, anchor_xy: np.nda
                 raise _Cancelled()
         fname = f"xy_{n_files:04d}.f32"
         _write(job, fname, xy_all[fstart:fstop])
-        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, 2], offset=fstart)
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[fstop - fstart, ndim], offset=fstart)
         n_files += 1
         offset += chunk_size
     job.set("finishing", 1.0)
@@ -1495,12 +1505,13 @@ def project(job_id: str, anchor_xy_path: str, opts_json: str = "{}") -> str:
 
 
 def _write_xy_chunks(job: _Job, xy: np.ndarray, chunk_rows: int = 1_000_000) -> int:
+    ndim = int(xy.shape[1]) if xy.ndim == 2 else 2  # T2: carry actual dims to shape metadata
     n_files = 0
     for start in range(0, len(xy), chunk_rows):
         stop = min(len(xy), start + chunk_rows)
         fname = f"xy_{n_files:04d}.f32"
         _write(job, fname, xy[start:stop])
-        job.add_output(kind="xy", file=fname, dtype="f32", shape=[stop - start, 2], offset=start)
+        job.add_output(kind="xy", file=fname, dtype="f32", shape=[stop - start, ndim], offset=start)
         n_files += 1
     return n_files
 
@@ -1518,6 +1529,7 @@ def _exact_impl(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
     job.set("umap-learn", 0.05, f"Running umap-learn on {len(job.features):,} rows (no progress available)")
     t0 = time.time()
     reducer = umap.UMAP(
+        n_components=int(params.get("dims", 2)),  # T2: 2D or 3D output
         n_neighbors=int(params.get("nNeighbors", 15)),
         min_dist=float(params.get("minDist", 0.1)),
         spread=float(params.get("spread", 1.0)),
@@ -1538,7 +1550,7 @@ def _exact_impl(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
 def _polars_umap_args(params: dict[str, Any]) -> dict[str, Any]:
     """Atlas's UMAP parameters as polars_umap.umap keyword arguments (umap-learn's names)."""
     return {
-        "n_components": 2,
+        "n_components": int(params.get("dims", 2)),  # T2: 2D or 3D output
         "n_neighbors": int(params.get("nNeighbors", 15)),
         "min_dist": float(params.get("minDist", 0.1)),
         "spread": float(params.get("spread", 1.0)),
@@ -1563,8 +1575,9 @@ def _exact_polars_umap(job: _Job, params: dict[str, Any]) -> dict[str, Any]:
     t0 = time.time()
     # One Array(Float32, d) column holding the prepared (possibly PCA'd) features.
     vectors = pl.Series("features", np.ascontiguousarray(job.features, dtype=np.float32))
+    ndim = int(params.get("dims", 2))  # T2: 2D or 3D
     out = pl.DataFrame([vectors]).select(xy=pu.umap("features", **_polars_umap_args(params)))
-    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, 2)
+    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, ndim)
     job.set("writing", 0.95, "Writing coordinates")
     job.xy = xy
     files = _write_xy_chunks(job, xy)
@@ -1877,14 +1890,15 @@ def anchor_umap(job_id: str, params_json: str = "{}") -> str:
     except ImportError as e:
         raise RuntimeError("polars-umap is not installed in this Python environment.") from e
     params = json.loads(params_json)
+    ndim = int(params.get("dims", 2))  # T2: 2D or 3D output
     n = len(job.anchors)
     t0 = time.time()
     vectors = pl.Series("features", np.ascontiguousarray(job.anchors, dtype=np.float32))
     out = pl.DataFrame([vectors]).select(xy=pu.umap("features", **_polars_umap_args(params)))
-    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, 2)
+    xy = np.ascontiguousarray(out["xy"].to_numpy(), dtype=np.float32).reshape(n, ndim)
     fname = f"anchor_xy_{uuid.uuid4().hex[:6]}.f32"
     _write(job, fname, xy)
-    return _json({"ok": True, "file": fname, "dtype": "f32", "shape": [n, 2], "length": n * 2, "seconds": time.time() - t0})
+    return _json({"ok": True, "file": fname, "dtype": "f32", "shape": [n, ndim], "length": n * ndim, "seconds": time.time() - t0})
 
 
 @_guard
@@ -2151,34 +2165,48 @@ def export_datamapplot(job_id: str, output_path: str, opts_json: str = "{}", xy_
 
 
 @_guard
-def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: str = "umap_y") -> str:
-    """Write coordinates back into the user's DataFrame (NaN for rows not shown)."""
+def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: str = "umap_y", z_name: str = "umap_z") -> str:
+    """Write coordinates back into the user's DataFrame (NaN for rows not shown).
+
+    T6: When the UMAP result has 3 columns, also writes a umap_z column.
+    """
     job = _get(job_id)
     if job.kept_idx is None:
         raise RuntimeError("Run prepare first.")
     _require_unchanged(job)
     if xy_path:
-        xy = np.fromfile(xy_path, dtype="<f4").reshape(-1, 2)
+        raw = np.fromfile(xy_path, dtype="<f4")
+        ndim = int(raw.size // max(len(job.kept_idx), 1))
+        if ndim not in (2, 3):
+            ndim = 2
+        xy = raw.reshape(-1, ndim)
     elif job.xy is not None:
         xy = job.xy
+        ndim = int(xy.shape[1]) if xy.ndim == 2 else 2
     else:
         raise RuntimeError("No projected coordinates available; pass a coordinate file.")
     if len(xy) != len(job.kept_idx):
         raise ValueError("Coordinate count does not match the prepared rows.")
     n = job.frame.n_rows
-    full = np.full((n, 2), np.nan, dtype=np.float32)
+    full = np.full((n, ndim), np.nan, dtype=np.float32)
     full[job.kept_idx] = xy
     ns = _user_ns()
+    col_names = [x_name, y_name] + ([z_name] if ndim == 3 else [])
     if job.frame.kind == "pandas":
         job.frame.obj[x_name] = full[:, 0]
         job.frame.obj[y_name] = full[:, 1]
+        if ndim == 3:
+            job.frame.obj[z_name] = full[:, 2]
         target = job.name
         # Our own change (new columns), not the user's: keep the job current.
         job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
     elif job.frame.kind == "polars":
         import polars as pl
 
-        new = job.frame.obj.with_columns(pl.Series(x_name, full[:, 0]), pl.Series(y_name, full[:, 1]))
+        series = [pl.Series(x_name, full[:, 0]), pl.Series(y_name, full[:, 1])]
+        if ndim == 3:
+            series.append(pl.Series(z_name, full[:, 2]))
+        new = job.frame.obj.with_columns(*series)
         target = job.name if job.name.isidentifier() else "atlas_result"
         ns[target] = new
         job.frame = _Frame(new)
@@ -2186,12 +2214,14 @@ def add_coordinates(job_id: str, xy_path: str, x_name: str = "umap_x", y_name: s
     else:
         # narwhals generic path
         assert isinstance(job.frame, _NarwhalsFrame)
-        native_x = job.frame.add_column_writeback(x_name, full[:, 0])
+        job.frame.add_column_writeback(x_name, full[:, 0])
         job.frame.add_column_writeback(y_name, full[:, 1])
+        if ndim == 3:
+            job.frame.add_column_writeback(z_name, full[:, 2])
         target = job.name if job.name.isidentifier() else "atlas_result"
         ns[target] = job.frame._native
         job.shape_at_start = (job.frame.n_rows, job.frame.n_cols)
-    return _json({"ok": True, "variable": target, "columns": [x_name, y_name]})
+    return _json({"ok": True, "variable": target, "columns": col_names})
 
 
 # --------------------------------------------------------------------------------------

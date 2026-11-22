@@ -298,6 +298,8 @@ export interface PanelState {
   languageId: string;
   prepare?: PrepareOptions;
   umap?: UmapParams;
+  /** Output dimensionality of the UMAP layout: 2 (default) or 3 (T2). */
+  dims?: 2 | 3;
   colorColumn?: number | null;
   view?: {
     pointSize: number;
@@ -412,8 +414,8 @@ export type ToHost =
   | { type: 'ready' }
   | { type: 'prepare'; options: PrepareOptions }
   | { type: 'estimate' }
-  | { type: 'project'; anchorXY: Uint8Array /* little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number }
-  | { type: 'exact'; params: UmapParams; engine: ExactEngine }
+  | { type: 'project'; anchorXY: Uint8Array /* little-endian float32 */; metric: 'euclidean' | 'cosine'; seed: number; dims?: 2 | 3 }
+  | { type: 'exact'; params: UmapParams; engine: ExactEngine; dims?: 2 | 3 }
   | { type: 'colors'; column: number; forceCategorical?: boolean }
   | { type: 'labelCodes'; column: number; maxCategories: number; purpose?: 'labels' | 'names' }
   /** Request float32 size values for a column (A10). */
@@ -423,7 +425,7 @@ export type ToHost =
   /** Request a histogram for a numeric/date column (A13). */
   | { type: 'histogram'; column: number; nBins?: number }
   /** Request anchor-only UMAP via polars-umap in the kernel (P3). */
-  | { type: 'anchorUmap'; params: UmapParams }
+  | { type: 'anchorUmap'; params: UmapParams; dims?: 2 | 3 }
   | { type: 'describeGroups'; seq: number; codes: Uint8Array /* uint16 per prepared row */; k: number; columns: number[] }
   | {
       type: 'writeLabels';
@@ -444,7 +446,7 @@ export type ToHost =
   | { type: 'openLink'; url: string }
   | { type: 'image'; row: number; src: string }
   | { type: 'cancel' }
-  | { type: 'addCoordinates'; anchorXY: Uint8Array | null /* float32 */; useProjection: boolean }
+  | { type: 'addCoordinates'; anchorXY: Uint8Array | null /* float32 */; useProjection: boolean; dims?: 2 | 3 }
   | { type: 'reload' }
   | { type: 'savePng'; bytes: Uint8Array }
   | { type: 'copyText'; text: string }

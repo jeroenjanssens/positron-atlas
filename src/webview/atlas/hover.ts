@@ -18,6 +18,50 @@ export function onPointer(atlas: Atlas, p: { x: number; y: number; world: [numbe
     atlas.renderer?.setHoverRing(-1, atlas.pinnedCard?.preparedIdx ?? -1);
     return;
   }
+  // T4: In 3D mode use screen-space hit index (rebuilt by view3d.ts after camera stops).
+  if (atlas.dims === 3) {
+    if (!atlas.hit) {
+      // Hit index not ready yet (camera is moving or never built); skip hover.
+      atlas.tooltip = null;
+      atlas.pendingHover = null;
+      atlas.renderer?.setHoverRing(-1, atlas.pinnedCard?.preparedIdx ?? -1);
+      return;
+    }
+    // Screen-space nearest: query with pixel coords; radius in pixels.
+    const pixelRadius = Math.max(6, atlas.view.pointSize);
+    const idx = atlas.hit.index.nearest(p.x, p.y, pixelRadius);
+    if (idx < 0) {
+      atlas.tooltip = null;
+      atlas.pendingHover = null;
+      atlas.renderer?.setHoverRing(-1, atlas.pinnedCard?.preparedIdx ?? -1);
+      return;
+    }
+    if (isHiddenPoint(atlas, idx)) {
+      atlas.tooltip = null;
+      atlas.pendingHover = null;
+      atlas.renderer?.setHoverRing(-1, atlas.pinnedCard?.preparedIdx ?? -1);
+      return;
+    }
+    atlas.renderer?.setHoverRing(idx, atlas.pinnedCard?.preparedIdx ?? -1);
+    requestAutoTexts(atlas);
+    atlas.pendingHover = { x: p.x, y: p.y, prepIdx: idx };
+    if (atlas.tooltip && atlas.tooltip.row === atlas.hit.map(idx)) {
+      atlas.tooltip = { ...atlas.tooltip, x: p.x, y: p.y };
+      return;
+    }
+    const cached3d = atlas.rowCache.get(idx);
+    if (cached3d) {
+      showTooltip(atlas, p.x, p.y, idx, cached3d);
+      return;
+    }
+    showInstantTooltip(atlas, p.x, p.y, idx);
+    const seq3d = ++atlas.hoverSeq;
+    atlas.hoverTimer = setTimeout(() => {
+      if (seq3d !== atlas.hoverSeq) return;
+      requestRowsBatch(atlas, idx);
+    }, 30);
+    return;
+  }
   if (!atlas.hit) {
     if (atlas.projection === 'done' && atlas.allXY) {
       atlas.hit = { index: new HitIndex(atlas.allXY, atlas.nKept), map: (i) => i };

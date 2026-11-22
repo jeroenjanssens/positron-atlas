@@ -13,6 +13,8 @@ import { MAX_LABELS } from './types';
 
 /** Re-cluster the current layout (when it has settled; labels follow the points meanwhile). */
 export function refreshClusters(atlas: Atlas): void {
+  // T5: auto clusters not supported in 3D (density grid is 2D only).
+  if (atlas.dims === 3) return;
   if (atlas.labels.clusters && (atlas.phase === 'ready' || atlas.paused)) {
     void runClustering(atlas);
   }

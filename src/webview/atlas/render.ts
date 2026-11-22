@@ -4,7 +4,7 @@
 
 import type { Atlas } from '../atlas.svelte';
 import type { FilterAttribute } from '../render/renderer';
-import { bounds } from '../render/hitIndex';
+import { bounds, bounds3D } from '../render/hitIndex';
 import { lowerBound } from '../logic';
 import { themeBackground } from './utils';
 import { gatherU16 } from './utils';
@@ -78,6 +78,7 @@ export function render(atlas: Atlas): void {
     return { codes: activeCodes ?? new Uint16Array(length), hidden: new Set(), precomputed: out };
   };
 
+  const nd = atlas.dims;
   if (showingAll(atlas) && atlas.allXY && atlas.colorsAll && atlas.anchorPos) {
     const placed = atlas.placedRows;
     const first = lowerBound(atlas.anchorPos, placed);
@@ -86,8 +87,8 @@ export function render(atlas: Atlas): void {
     const radiiAll = buildRadii(atlas, placed, 0);
     const radiiAnchors = buildRadii(atlas, nA - first, first);
     sets = [
-      { id: 'all', positions: atlas.allXY.subarray(0, placed * 2), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, radii: radiiAll ?? undefined },
-      { id: 'anchors', positions: atlas.anchorXY.subarray(first * 2), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, radii: radiiAnchors ?? undefined },
+      { id: 'all', positions: atlas.allXY.subarray(0, placed * nd), colors: atlas.colorsAll.subarray(0, placed * 4), length: placed, positionStride: nd, radii: radiiAll ?? undefined },
+      { id: 'anchors', positions: atlas.anchorXY.subarray(first * nd), colors: atlas.colorsAnchors.subarray(first * 4), length: nA - first, positionStride: nd, radii: radiiAnchors ?? undefined },
     ];
     filters = [
       filterForCodes(atlas.colorValues instanceof Uint16Array ? atlas.colorValues.subarray(0, placed) : null, histAll),
@@ -96,7 +97,7 @@ export function render(atlas: Atlas): void {
   } else {
     const histAll = buildHistFilterValues(atlas, nA, 0);
     const radiiAnchors = buildRadii(atlas, nA, 0);
-    sets = [{ id: 'anchors', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, radii: radiiAnchors ?? undefined }];
+    sets = [{ id: 'anchors', positions: atlas.anchorXY, colors: atlas.colorsAnchors, length: nA, positionStride: nd, radii: radiiAnchors ?? undefined }];
     filters = [filterForCodes(
       atlas.colorValues instanceof Uint16Array
         ? (atlas.prepared.needsProjection && atlas.anchorPos ? gatherU16(atlas.colorValues, atlas.anchorPos) : atlas.colorValues)
@@ -111,24 +112,35 @@ export function render(atlas: Atlas): void {
     if (col !== null) runSearch(atlas, atlas.searchQuery, col);
   }
   atlas._renderTick++;
-  // A12: invalidate glow when point data changes.
-  if (atlas.view.glow) atlas.glowVersion++;
+  // A12: invalidate glow when point data changes (2D only).
+  if (atlas.view.glow && nd === 2) atlas.glowVersion++;
+  // In 3D mode, invalidate the screen-space hit index (needs rebuild after view settles).
+  if (nd === 3) atlas._3dScreenXY = null;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
-    // A11: leave extra margin when around-labels are active so the ring of labels
-    // lands outside the visible cloud (20 % on each side → cloud uses 60 % of viewport).
-    const isAround = atlas.labels.labelStyle === 'around';
-    atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth(), isAround ? 0.2 : 0);
-    atlas.fittedZoom = atlas.renderer.fittedZoom; // A8: track for zoom-dependent fine labels
+    if (nd === 3) {
+      // 3D: use bounds3D and let OrbitView handle fitting.
+      atlas.renderer.fit3D(bounds3D(atlas.anchorXY, nA), false);
+    } else {
+      // A11: leave extra margin when around-labels are active so the ring of labels
+      // lands outside the visible cloud (20 % on each side → cloud uses 60 % of viewport).
+      const isAround = atlas.labels.labelStyle === 'around';
+      atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth(), isAround ? 0.2 : 0);
+      atlas.fittedZoom = atlas.renderer.fittedZoom; // A8: track for zoom-dependent fine labels
+    }
   }
 }
 
 export function fitView(atlas: Atlas): void {
   if (atlas.anchorXY && atlas.prepared) {
     atlas.autoFit = true;
-    const isAround = atlas.labels.labelStyle === 'around';
-    atlas.renderer?.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), true, atlas.legendWidth(), isAround ? 0.2 : 0);
-    if (atlas.renderer) atlas.fittedZoom = atlas.renderer.fittedZoom; // A8
+    if (atlas.dims === 3) {
+      atlas.renderer?.fit3D(bounds3D(atlas.anchorXY, atlas.prepared.nAnchors), true);
+    } else {
+      const isAround = atlas.labels.labelStyle === 'around';
+      atlas.renderer?.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), true, atlas.legendWidth(), isAround ? 0.2 : 0);
+      if (atlas.renderer) atlas.fittedZoom = atlas.renderer.fittedZoom; // A8
+    }
   }
 }
 
@@ -138,7 +150,7 @@ export function fitView(atlas: Atlas): void {
  * Respects userMoved (force = false).
  */
 export function fitForLabelStyle(atlas: Atlas, isAround: boolean): void {
-  if (atlas.anchorXY && atlas.prepared && atlas.renderer) {
+  if (atlas.anchorXY && atlas.prepared && atlas.renderer && atlas.dims === 2) {
     const padExtra = isAround ? 0.2 : 0;
     atlas.renderer.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), false, atlas.legendWidth(), padExtra);
     atlas.fittedZoom = atlas.renderer.fittedZoom;

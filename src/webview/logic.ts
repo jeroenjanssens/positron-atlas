@@ -69,8 +69,9 @@ function prepLines(variable: string, features: string[], prep: PrepareOptions, f
 }
 
 /** UMAP keyword arguments with umap-learn's names (polars-umap uses the same). */
-function umapArgs(p: UmapParams): [string, unknown][] {
+function umapArgs(p: UmapParams, dims: 2 | 3 = 2): [string, unknown][] {
   return Object.entries({
+    ...(dims === 3 ? { n_components: 3 } : {}),
     n_neighbors: p.nNeighbors,
     min_dist: p.minDist,
     spread: p.spread,
@@ -84,14 +85,14 @@ function umapArgs(p: UmapParams): [string, unknown][] {
 }
 
 /** Equivalent umap-learn code for the current settings. */
-export function pythonSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas'): string {
+export function pythonSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas', dims: 2 | 3 = 2): string {
   const lines = ['import numpy as np', 'import umap', '', ...prepLines(variable, features, prep, frameKind)];
-  lines.push('', 'reducer = umap.UMAP(', ...umapArgs(p).map(([k, v]) => `    ${k}=${pyRepr(v)},`), ')', 'embedding = reducer.fit_transform(X)');
+  lines.push('', 'reducer = umap.UMAP(', ...umapArgs(p, dims).map(([k, v]) => `    ${k}=${pyRepr(v)},`), ')', 'embedding = reducer.fit_transform(X)');
   return lines.join('\n') + '\n';
 }
 
 /** Equivalent polars-umap code for the current settings (UMAP in Rust, inside Polars). */
-export function polarsUmapSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas'): string {
+export function polarsUmapSnippet(variable: string, features: string[], prep: PrepareOptions, p: UmapParams, frameKind: 'pandas' | 'polars' = 'pandas', dims: 2 | 3 = 2): string {
   const lines = [
     '# pip install polars-umap',
     'import numpy as np',
@@ -108,7 +109,7 @@ export function polarsUmapSnippet(variable: string, features: string[], prep: Pr
     '    .select(',
     '        xy=pu.umap(',
     '            "features",',
-    ...umapArgs(p).map(([k, v]) => `            ${k}=${pyRepr(v)},`),
+    ...umapArgs(p, dims).map(([k, v]) => `            ${k}=${pyRepr(v)},`),
     '        )',
     '    )["xy"]',
     '    .to_numpy()',

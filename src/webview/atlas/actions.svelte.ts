@@ -17,9 +17,9 @@ export function addCoordinates(atlas: Atlas): void {
     return;
   }
   if (!atlas.prepared.needsProjection) {
-    vscode.post({ type: 'addCoordinates', anchorXY: float32ToBytes(atlas.anchorXY), useProjection: false });
+    vscode.post({ type: 'addCoordinates', anchorXY: float32ToBytes(atlas.anchorXY), useProjection: false, dims: atlas.dims });
   } else if (atlas.projection === 'done') {
-    vscode.post({ type: 'addCoordinates', anchorXY: null, useProjection: true });
+    vscode.post({ type: 'addCoordinates', anchorXY: null, useProjection: true, dims: atlas.dims });
   } else {
     atlas.flash('Place all rows first, then add the coordinates.');
   }
@@ -85,13 +85,13 @@ export function savePng(atlas: Atlas): void {
 export function copyPython(atlas: Atlas): void {
   const names = (atlas.describe?.columns ?? []).filter((c) => atlas.prepare.features.includes(c.index)).map((c) => c.name);
   const kind = atlas.describe?.frameKind ?? 'pandas';
-  vscode.post({ type: 'copyText', text: pythonSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind) });
+  vscode.post({ type: 'copyText', text: pythonSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind, atlas.dims) });
 }
 
 export function copyPolarsUmap(atlas: Atlas): void {
   const names = (atlas.describe?.columns ?? []).filter((c) => atlas.prepare.features.includes(c.index)).map((c) => c.name);
   const kind = atlas.describe?.frameKind ?? 'pandas';
-  vscode.post({ type: 'copyText', text: polarsUmapSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind) });
+  vscode.post({ type: 'copyText', text: polarsUmapSnippet(atlas.variable, names, $state.snapshot(atlas.prepare) as PrepareOptions, $state.snapshot(atlas.umap) as UmapParams, kind, atlas.dims) });
 }
 
 /** Python that draws this map with DataMapPlot (to the clipboard). */
@@ -168,6 +168,7 @@ export function persist(atlas: Atlas): void {
     colorByCluster: atlas.colorByCluster || undefined,
     sizeColumn: atlas.sizeColumn ?? undefined,
     histFilter: atlas.histFilter ?? undefined,
+    dims: atlas.dims !== 2 ? atlas.dims : undefined,
   };
   vscode.setState(state);
   vscode.post({ type: 'state', state });

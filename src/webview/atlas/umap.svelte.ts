@@ -53,6 +53,7 @@ export function startUmap(atlas: Atlas, paused = false): void {
     params: atlas.appliedUmap,
     gpu: atlas.useGpu,
     paused,
+    outputDim: atlas.dims,
   };
   atlas.worker!.postMessage(msg, [data.buffer]);
 }

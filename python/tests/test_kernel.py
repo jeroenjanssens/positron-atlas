@@ -289,6 +289,72 @@ def test_add_coordinates(ns, frame_kind, tmp_path):
     np.testing.assert_allclose(ux[job.kept_idx], xy[:, 0])
 
 
+# T2/T6: 3D projection and add_coordinates tests
+def test_project_3d_numpy(ns, tmp_path):
+    """3D placement: anchor_xy has shape [nAnchors, 3]; output xy files have shape [n, 3]."""
+    jid, st, _, labels = prepared(ns, "pandas", tmp_path, maxAnchors=400)
+    job = pak._JOBS[jid]
+    # Fake anchor layout: 3D positions at distinct cluster locations.
+    anchor_labels = labels[job.kept_idx[job.anchor_pos]]
+    centers_3d = np.array([[0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]], dtype=np.float32)
+    axy = centers_3d[anchor_labels] + np.random.default_rng(0).normal(0, 1, (400, 3)).astype(np.float32)
+    path = tmp_path / "axy3d.f32"
+    axy.astype("<f4").tofile(path)
+    pak.project(jid, str(path), json.dumps({"k": 10, "chunkRows": 1000, "native": False, "dims": 3}))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    assert st["result"]["backend"] == "numpy"
+    files = [o for o in st["outputs"] if o["kind"] == "xy"]
+    assert len(files) >= 1
+    # Each output file must report shape [chunk_rows, 3].
+    for f in files:
+        assert f["shape"][1] == 3, f"Expected shape[1]==3, got {f['shape']}"
+    xy = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3) for f in files])
+    # Anchors must be preserved exactly.
+    np.testing.assert_allclose(xy[job.anchor_pos], axy, atol=1e-5)
+    # Non-anchor points must be close to their cluster's center.
+    dist = np.linalg.norm(xy - centers_3d[labels[job.kept_idx]], axis=1)
+    assert np.mean(dist < 15) > 0.95, f"Mean dist > 15: {np.mean(dist > 15):.2f}"
+
+
+def test_add_coordinates_3d(ns, tmp_path):
+    """T6: add_coordinates writes umap_x, umap_y, umap_z for 3D data."""
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path, samplePct=50)
+    xyz = np.random.default_rng(0).normal(size=(1500, 3)).astype("<f4")
+    p = tmp_path / "xyz.f32"
+    xyz.tofile(p)
+    r = J(pak.add_coordinates(jid, str(p)))
+    assert r["ok"], r
+    assert "umap_z" in r["columns"], f"Expected umap_z in columns, got {r['columns']}"
+    df = ns["df"]
+    ux = df["umap_x"].to_numpy()
+    uz = df["umap_z"].to_numpy()
+    assert np.isnan(ux).sum() == 1500  # half the rows not kept
+    job = pak._JOBS[jid]
+    np.testing.assert_allclose(ux[job.kept_idx], xyz[:, 0])
+    np.testing.assert_allclose(uz[job.kept_idx], xyz[:, 2])
+
+
+def test_exact_umap_3d(ns, tmp_path):
+    """T2: exact_umap with dims=3 produces 3D output."""
+    try:
+        import umap  # noqa: F401
+    except ImportError:
+        pytest.skip("umap-learn not installed")
+    jid, _, _, _ = prepared(ns, "pandas", tmp_path, maxAnchors=200)
+    pak.exact_umap(jid, json.dumps({"nNeighbors": 10, "minDist": 0.1, "spread": 1.0, "metric": "euclidean",
+                                     "nEpochs": 50, "repulsionStrength": 1.0, "negativeSampleRate": 5,
+                                     "learningRate": 1.0, "seed": 42, "dims": 3}))
+    st = wait(jid)
+    assert st["stage"] == "done", st
+    files = [o for o in st["outputs"] if o["kind"] == "xy"]
+    assert len(files) >= 1
+    for f in files:
+        assert f["shape"][1] == 3, f"Expected 3D output, got shape {f['shape']}"
+    xy = np.concatenate([np.fromfile(tmp_path / f["file"], dtype="<f4").reshape(-1, 3) for f in files])
+    assert xy.shape[1] == 3
+
+
 def test_cancel(ns, tmp_path):
     x = np.random.default_rng(0).normal(size=(400_000, 50))
     ns["df"] = pd.DataFrame(x)

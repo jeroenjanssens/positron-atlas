@@ -137,6 +137,15 @@
         <div class="hint muted">polars-umap lays out {formatCount(atlas.nAnchors)} anchors in the kernel; placement uses the neighbour cache. No animation; available when WebGPU is absent.</div>
       {/if}
     {/if}
+    <!-- T2: 2D/3D dimensions toggle (rebuild) -->
+    <div class="select">
+      <span>Dimensions <span class="tag rebuild">rebuild</span> <Info id="umap.dims" /></span>
+      <Select value={String(atlas.dims)} ariaLabel="Dimensions"
+        onchange={(e) => atlas.setDims(Number((e.target as HTMLSelectElement).value) as 2 | 3)}>
+        <option value="2">2D</option>
+        <option value="3">3D</option>
+      </Select>
+    </div>
     <Slider label="Neighbors" tag="rebuild" bind:value={atlas.umap.nNeighbors} min={2} max={200} onchange={umapChanged}
       hint="n_neighbors: larger values preserve more global structure. Rebuilds the neighbor graph." infoId="umap.nNeighbors" />
     <Slider label="Min distance" tag="live" bind:value={atlas.umap.minDist} min={0} max={1} step={0.01} onchange={umapChanged}

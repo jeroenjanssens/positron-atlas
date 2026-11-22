@@ -293,7 +293,8 @@ export class AtlasPanel {
         await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
         try {
           const settings = readSettings();
-          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore })), false);
+          // T2: pass dims to the kernel so it places into 2D or 3D output space.
+          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore, dims: m.dims ?? 2 })), false);
         } finally {
           await fs.rm(xyPath, { force: true });
         }
@@ -301,7 +302,8 @@ export class AtlasPanel {
       }
       case 'exact': {
         const job = this.requireJob();
-        await this.runXYTask('exact', () => this.bridge.call('exact_umap', job, JSON.stringify({ ...m.params, engine: m.engine })), true);
+        // T2: pass dims so the kernel uses n_components=3 for 3D UMAP.
+        await this.runXYTask('exact', () => this.bridge.call('exact_umap', job, JSON.stringify({ ...m.params, engine: m.engine, dims: m.dims ?? 2 })), true);
         break;
       }
       case 'colors': {
@@ -382,10 +384,11 @@ export class AtlasPanel {
       case 'anchorUmap': {
         const job = this.requireJob();
         const token = this.newToken();
+        // T2: pass dims so the kernel uses n_components=3 for 3D anchor UMAP.
         const r = await this.bridge.call<{ file: string; dtype: 'f32'; length: number; shape: number[]; seconds: number }>(
           'anchor_umap',
           job,
-          JSON.stringify(m.params),
+          JSON.stringify({ ...m.params, dims: m.dims ?? 2 }),
         );
         if (!token.isCancellationRequested) {
           this.post({
@@ -522,8 +525,10 @@ export class AtlasPanel {
         break;
       case 'addCoordinates': {
         const job = this.requireJob();
+        // T6: in 3D mode also mention umap_z in the confirmation dialog.
+        const colList = m.dims === 3 ? 'umap_x, umap_y, and umap_z' : 'umap_x and umap_y';
         const pick = await vscode.window.showWarningMessage(
-          `Add columns umap_x and umap_y to ${this.state.variable}? This modifies the DataFrame in your session.`,
+          `Add columns ${colList} to ${this.state.variable}? This modifies the DataFrame in your session.`,
           { modal: true },
           'Add Columns',
         );
