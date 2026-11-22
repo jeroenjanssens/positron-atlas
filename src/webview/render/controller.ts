@@ -228,9 +228,10 @@ export class NavController {
     // CAD 2D: left-drag does nothing unless the lasso tool is active.
     if (dims === 2 && settings.preset === 'cad') {
       if (!e.shiftKey && this.ctx.getTool() !== 'lasso') {
-        // Block deck.gl from panning — absorb the event.
+        // Block deck.gl from panning — stopImmediatePropagation prevents other
+        // canvas listeners (deck.gl EventManager) from also seeing this event.
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         this.startCustomDrag(e, 'blocked');
         return;
       }
@@ -259,6 +260,12 @@ export class NavController {
 
   private onPointerMove = (e: PointerEvent): void => {
     if (!this.activeDrag || e.pointerId !== this.activeDrag.pointerId) return;
+    // For blocked drag, stop event from reaching deck.gl's EventManager.
+    if (this.activeDrag.type === 'blocked') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const dx = e.clientX - this.activeDrag.lastX;
     const dy = e.clientY - this.activeDrag.lastY;
     this.activeDrag.lastX = e.clientX;
@@ -297,9 +304,6 @@ export class NavController {
         }
         break;
       }
-      case 'blocked':
-        // Absorb pointer move to prevent deck.gl panning.
-        break;
     }
   };
 

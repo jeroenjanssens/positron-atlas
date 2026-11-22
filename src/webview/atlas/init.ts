@@ -230,7 +230,8 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
   // Apply navigation settings from the host's init message (item 1).
   if (settings.nav) {
     atlas.navSettings = settings.nav;
-    atlas.renderer?.setNavSettings(settings.nav, atlas.dims);
+    atlas.applyPresetDefaults(settings.nav.preset);
+    atlas.renderer?.setNavSettings(settings.nav, atlas.dims, () => atlas.tool);
   }
   // Reset hover state from prior session.
   atlas.rowCache.clear();
