@@ -174,9 +174,11 @@
     <!-- A12: Glow toggle -->
     <Checkbox
       checked={atlas.view.glow ?? false}
+      disabled={atlas.dims === 3}
       onchange={(v) => atlas.setView({ glow: v })}>
       Glow <Info id="explore.glow" />
     </Checkbox>
+    {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
     {#if atlas.view.glow}
       <Slider label="Strength" value={atlas.view.glowStrength ?? 0.4} min={0.05} max={1} step={0.05}
         hint="Overall opacity of the glow layer (0 = invisible, 1 = opaque)"

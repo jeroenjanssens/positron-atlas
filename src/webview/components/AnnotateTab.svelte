@@ -122,6 +122,7 @@
 </script>
 
 <Section {atlas} id="labels" title="Labels">
+  {#if atlas.dims === 3}<div class="hint muted">In 3D, labels are drawn over the points; automatic clusters, outlines, labels around the map and dragging labels need 2D (Map → UMAP → Dimensions).</div>{/if}
   <div class="select">
     <span>Label by <Info id="labels.labelBy" /></span>
     <Select value={source} ariaLabel="Label by" onchange={onLabelChange}>
@@ -200,7 +201,7 @@
     <!-- A11: label style (over / around) -->
     <div class="select">
       <span>Label style <Info id="labels.labelStyle" /></span>
-      <Select value={atlas.labels.labelStyle ?? 'over'} ariaLabel="Label style"
+      <Select value={atlas.dims === 3 ? 'over' : (atlas.labels.labelStyle ?? 'over')} disabled={atlas.dims === 3} ariaLabel="Label style"
         onchange={(e) => atlas.setLabelOptions({ labelStyle: (e.target as HTMLSelectElement).value as 'over' | 'around' })}>
         <option value="over">Over the points</option>
         <option value="around">Around the map</option>
@@ -396,6 +397,7 @@
 
 <!-- Point annotations (A4) -->
 <Section {atlas} id="pointAnnotations" title="Annotations">
+  {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
   <div class="hint muted">
     <Info id="pointAnnotations.list" />
     Use the <span class="codicon codicon-pin" aria-label="pin" style="font-size:12px;vertical-align:-1px;"></span> Annotate tool in the toolbar to click a point and add a callout, or click <strong>Annotate</strong> on the hover card.

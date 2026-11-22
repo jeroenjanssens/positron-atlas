@@ -121,12 +121,13 @@
       }}
       onkeydown={(e) => e.key === 'Enter' && (atlas.tool === 'annotate' ? atlas.handleAnnotateClick() : atlas.onClick(e as unknown as MouseEvent))}>
       <!-- A12: Glow halo behind everything -->
-      <GlowOverlay {atlas} />
+      <!-- Glow, point annotations and labels around the map are 2D only (T5). -->
+      {#if atlas.dims !== 3}<GlowOverlay {atlas} />{/if}
       <LassoLayer {atlas} />
       <TitleOverlay {atlas} />
-      <AnnotationOverlay {atlas} />
+      {#if atlas.dims !== 3}<AnnotationOverlay {atlas} />{/if}
       <!-- A11: Around-the-map label HTML overlay -->
-      {#if (atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups}
+      {#if atlas.dims !== 3 && (atlas.labels.labelStyle ?? 'over') === 'around' && atlas.aroundLabelGroups}
         <AroundLabelsOverlay {atlas} />
       {/if}
     </div>

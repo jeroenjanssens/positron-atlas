@@ -49,11 +49,13 @@
           Open link
         </button>
       {/if}
+      {#if atlas.dims !== 3}
       <button class="hc-annotate-btn" title="Add annotation for this point (A4)"
         onclick={() => { atlas.closePinnedCard(); atlas.addAnnotationFromCard(card); }}>
         <span class="codicon codicon-pin" aria-hidden="true"></span>
         Annotate
       </button>
+      {/if}
     </div>
     <div class="hc-hint">Click elsewhere or press Escape to close · Cmd/Ctrl+click to open link</div>
   </div>

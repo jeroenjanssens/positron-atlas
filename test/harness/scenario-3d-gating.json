@@ -1,0 +1,64 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 5000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 8, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": "3d-gating.png",
+  "steps": [
+    {
+      "name": "switch to 3D and wait for layout",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": [
+        "a.dims === 3",
+        "a.anchorXY && a.anchorXY.length === a.prepared.nAnchors * 3",
+        "a.anchorXY.every(Number.isFinite)",
+        "a.allXY && a.allXY.length === a.nKept * 3"
+      ],
+      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, nKept: a.nKept, anchorLen: a.anchorXY.length }"
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.colorMeta.categories.length === 4",
+      "timeout": 10000
+    },
+    {
+      "name": "wait for hit index to be built after camera settles",
+      "until": "a.hit !== null && a._3dScreenXY !== null",
+      "timeout": 5000,
+      "assert": [
+        "a._3dScreenXY instanceof Float32Array",
+        "a._3dScreenXY.length === a.nKept * 2"
+      ],
+      "report": "{ nScreenPts: a._3dScreenXY ? a._3dScreenXY.length / 2 : 0, hitReady: a.hit !== null }"
+    },
+    {
+      "name": "annotate tab in 3D",
+      "eval": "a.ui.tab='annotate'",
+      "settle": 600,
+      "assert": [
+        "document.body.textContent.includes('In 3D, labels are drawn over the points')"
+      ]
+    },
+    {
+      "name": "export tab in 3D",
+      "eval": "a.ui.tab='export'",
+      "settle": 600,
+      "assert": [
+        "[...document.querySelectorAll('button')].filter(b => /HTML\u2026|Export with DataMapPlot|Copy as DataMapPlot/.test(b.textContent)).every(b => b.disabled)"
+      ]
+    },
+    {
+      "name": "back to 2D re-enables",
+      "eval": "a.setDims(2)",
+      "until": "a.dims === 2 && a.phase === 'ready'",
+      "timeout": 120000,
+      "assert": [
+        "[...document.querySelectorAll('button')].filter(b => /HTML\u2026/.test(b.textContent)).every(b => !b.disabled)"
+      ]
+    }
+  ]
+}

@@ -69,8 +69,9 @@
 </Section>
 
 <Section {atlas} id="export-html" title="Interactive HTML">
+  {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
   <div class="btn-row">
-    <button disabled={!atlas.prepared} onclick={() => { atlas.htmlExportOpen = true; }}
+    <button disabled={!atlas.prepared || atlas.dims === 3} onclick={() => { atlas.htmlExportOpen = true; }}
       title="Export the map as a self-contained HTML file that works offline in any browser">
       HTML…
     </button>
@@ -156,7 +157,7 @@
     <Info id="export.copyPolarsUmap" />
   </div>
   <div class="btn-row">
-    <button onclick={() => atlas.copyDataMapPlot()} title="Python that draws this map with DataMapPlot, from the coordinates and the label column in the DataFrame">Copy as DataMapPlot code</button>
+    <button disabled={atlas.dims === 3} onclick={() => atlas.copyDataMapPlot()} title="Python that draws this map with DataMapPlot, from the coordinates and the label column in the DataFrame">Copy as DataMapPlot code</button>
     <Info id="export.copyDataMapPlot" />
   </div>
   <div class="hint muted">
@@ -167,8 +168,9 @@
 
 {#if atlas.describe?.deps?.datamapplot}
 <Section {atlas} id="export-datamapplot" title="Interactive HTML (DataMapPlot)">
+  {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
   <div class="btn-row">
-    <button disabled={!atlas.prepared} onclick={() => atlas.exportDataMapPlot()}
+    <button disabled={!atlas.prepared || atlas.dims === 3} onclick={() => atlas.exportDataMapPlot()}
       title="Export the map as a self-contained interactive DataMapPlot HTML file (requires datamapplot)">
       Export with DataMapPlot…
     </button>
