@@ -135,7 +135,7 @@
     jobDir = `job-${Date.now()}`;
     const job = await call('create_job', variable, `${info.jobRoot}/${jobDir}`, JSON.stringify({ maxLazyRows: settings().maxLazyRows }));
     jobId = job.jobId;
-    post({ type: 'init', variable, sessionId: 'harness', describe, settings: settings(), state: harness.state });
+    post({ type: 'init', variable, sessionId: 'harness', describe, settings: settings(), state: harness.state, platform: 'linux', userKeybindings: null });
   }
 
   async function onMessage(m) {
@@ -328,6 +328,11 @@
         if (/^(https?:|mailto:)/i.test(m.url)) {
           window.open(m.url, '_blank', 'noopener');
         }
+        break;
+      }
+      case 'openCommand': {
+        // In the harness, record the command execution (no VS Code to run it).
+        harness.log.push(`openCommand: ${m.command}${m.args ? ' ' + JSON.stringify(m.args) : ''}`);
         break;
       }
       case 'image': {

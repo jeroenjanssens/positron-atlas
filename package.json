@@ -84,7 +84,9 @@
       { "command": "positronAtlas.nav.edit.undo",          "title": "Undo",                                "category": "Atlas" },
       { "command": "positronAtlas.nav.edit.redo",          "title": "Redo",                                "category": "Atlas" },
       { "command": "positronAtlas.nav.select.all",         "title": "Select all visible points",           "category": "Atlas" },
-      { "command": "positronAtlas.nav.select.clear",       "title": "Clear selection",                     "category": "Atlas" }
+      { "command": "positronAtlas.nav.select.clear",       "title": "Clear selection",                     "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.showControls",  "title": "Show controls",                       "category": "Atlas",
+        "icon": "$(keyboard)" }
     ],
     "menus": {
       "commandPalette": [
@@ -220,9 +222,10 @@
       { "command": "positronAtlas.nav.view.top",          "key": "1",          "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.view.front",        "key": "2",          "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.view.side",         "key": "3",          "when": "positronAtlas.webviewFocused" },
-      { "command": "positronAtlas.nav.edit.undo",         "key": "ctrl+z",     "mac": "cmd+z",          "when": "positronAtlas.webviewFocused" },
-      { "command": "positronAtlas.nav.edit.redo",         "key": "ctrl+shift+z","mac": "cmd+shift+z",   "when": "positronAtlas.webviewFocused" },
-      { "command": "positronAtlas.nav.edit.redo",         "key": "ctrl+y",                              "when": "positronAtlas.webviewFocused && !isMac" }
+      { "command": "positronAtlas.nav.edit.undo",           "key": "ctrl+z",     "mac": "cmd+z",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.edit.redo",           "key": "ctrl+shift+z","mac": "cmd+shift+z",   "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.edit.redo",           "key": "ctrl+y",                              "when": "positronAtlas.webviewFocused && !isMac" },
+      { "command": "positronAtlas.nav.view.showControls",   "key": "shift+/",    "when": "positronAtlas.webviewFocused" }
     ]
   },
   "scripts": {

@@ -19,6 +19,7 @@ import type {
   Settings,
   ToHost,
   ToWebview,
+  UserKeybinding,
 } from '../shared/protocol';
 import { estimateSeconds } from '../shared/estimate';
 import { FontManager } from './fonts';
@@ -48,6 +49,51 @@ export function readNavSettings(): NavigationSettings {
     invertZoom: c.get('invertZoom', false),
     emulateMiddleButton: c.get('emulateMiddleButton', false),
   };
+}
+
+/**
+ * Read the user's keybindings.json and return only the Atlas entries.
+ * Returns null on error (file not found, parse failure, profiles not supported).
+ *
+ * Path derivation from S1-Q5: `context.globalStorageUri.fsPath` ends at
+ *   <userDataDir>/User/globalStorage/<ext-id>/
+ * so userDataDir = three levels up.
+ *
+ * The file is JSONC (JSON with comments).  We strip line comments (// …) and
+ * block comments before JSON.parse — a tolerant but good-enough approach.
+ */
+export async function readUserKeybindings(
+  globalStorageUri: vscode.Uri,
+): Promise<UserKeybinding[] | null> {
+  try {
+    const userDataDir = path.dirname(path.dirname(path.dirname(globalStorageUri.fsPath)));
+    const kbPath = path.join(userDataDir, 'User', 'keybindings.json');
+    const raw = await fs.readFile(kbPath, 'utf8');
+    // Strip JSONC comments (line and block) tolerantly.
+    const stripped = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')    // block comments
+      .replace(/\/\/[^\n]*/g, '');          // line comments
+    const parsed: unknown = JSON.parse(stripped);
+    if (!Array.isArray(parsed)) return null;
+    const result: UserKeybinding[] = [];
+    for (const entry of parsed) {
+      if (
+        entry &&
+        typeof entry === 'object' &&
+        typeof (entry as Record<string, unknown>).command === 'string' &&
+        typeof (entry as Record<string, unknown>).key === 'string' &&
+        String((entry as Record<string, unknown>).command).startsWith('positronAtlas.nav.')
+      ) {
+        result.push({
+          command: (entry as Record<string, unknown>).command as string,
+          key: (entry as Record<string, unknown>).key as string,
+        });
+      }
+    }
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 export function readSettings(): Settings {
@@ -250,6 +296,7 @@ export class AtlasPanel {
     this.ctx.log.info(
       `[${this.state.variable}] row placement: ${nat?.available ? `Rust core ${nat.version} (${nat.target})` : `numpy${nat?.reason ? ` (${nat.reason})` : ''}`}`,
     );
+    const userKeybindings = await readUserKeybindings(this.ctx.extension.globalStorageUri);
     this.post({
       type: 'init',
       variable: this.state.variable,
@@ -257,6 +304,8 @@ export class AtlasPanel {
       describe,
       settings: readSettings(),
       state: this.state,
+      platform: process.platform,
+      userKeybindings,
     });
   }
 
@@ -540,6 +589,19 @@ export class AtlasPanel {
           return;
         }
         await vscode.env.openExternal(vscode.Uri.parse(m.url));
+        break;
+      }
+      case 'openCommand': {
+        // Allow only safe, known VS Code command ids to prevent arbitrary command execution.
+        const SAFE_COMMANDS = [
+          'workbench.action.openGlobalKeybindings',
+          'workbench.action.openSettings',
+        ];
+        if (!SAFE_COMMANDS.includes(m.command)) {
+          this.ctx.log.warn(`[openCommand] rejected command: ${m.command}`);
+          return;
+        }
+        await vscode.commands.executeCommand(m.command, ...(m.args ?? []));
         break;
       }
       case 'image': {

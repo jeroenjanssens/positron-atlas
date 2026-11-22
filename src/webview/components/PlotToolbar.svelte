@@ -131,4 +131,13 @@
     onclick={() => atlas.toggleFullscreen()}>
     <span class="codicon {atlas.fullscreen ? 'codicon-screen-normal' : 'codicon-screen-full'}" aria-hidden="true"></span>
   </button>
+
+  <span class="sep" aria-hidden="true"></span>
+
+  <!-- Show controls / cheat sheet (item 2) -->
+  <button class="tool" class:active={atlas.cheatSheetVisible} aria-pressed={atlas.cheatSheetVisible}
+    aria-label="Show controls" title="Show controls (?)"
+    onclick={() => { atlas.cheatSheetVisible = !atlas.cheatSheetVisible; }}>
+    <span class="codicon codicon-keyboard" aria-hidden="true"></span>
+  </button>
 </div>

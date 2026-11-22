@@ -373,8 +373,27 @@ export interface PanelState {
   rotation2D?: number;
 }
 
+/** A user-overridden keybinding from keybindings.json (item 2 cheat sheet). */
+export interface UserKeybinding {
+  /** VS Code command id (e.g. 'positronAtlas.nav.view.reset'). */
+  command: string;
+  /** Key chord string as it appears in keybindings.json (e.g. 'ctrl+r'). */
+  key: string;
+}
+
 export type ToWebview =
-  | { type: 'init'; variable: string; sessionId: string; describe: DescribeResult; settings: Settings; state?: PanelState }
+  | {
+      type: 'init';
+      variable: string;
+      sessionId: string;
+      describe: DescribeResult;
+      settings: Settings;
+      state?: PanelState;
+      /** Host OS: 'darwin' | 'win32' | 'linux'. Used by the cheat sheet for key notation (item 2). */
+      platform: string;
+      /** Atlas keybindings from the user's keybindings.json, or null when unavailable. */
+      userKeybindings: UserKeybinding[] | null;
+    }
   | { type: 'status'; task: string; status: JobStatus }
   | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
   | { type: 'xyChunk'; file: FileRef; total: number }
@@ -482,6 +501,8 @@ export type ToHost =
   | { type: 'rows'; seq: number; indices: number[]; columns?: number[]; imageColumns?: number[] }
   | { type: 'texts'; column: number; maxChars: number }
   | { type: 'openLink'; url: string }
+  /** Execute a VS Code command from the webview (item 2 cheat sheet links). */
+  | { type: 'openCommand'; command: string; args?: unknown[] }
   | { type: 'image'; row: number; src: string }
   | { type: 'cancel' }
   | { type: 'addCoordinates'; anchorXY: Uint8Array | null /* float32 */; useProjection: boolean; dims?: 2 | 3 }
