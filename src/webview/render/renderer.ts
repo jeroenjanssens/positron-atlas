@@ -203,6 +203,8 @@ export class ScatterRenderer {
   private dataBoxShowGrid = false;
   /** Show orientation gizmo (B2). */
   private dataBoxShowGizmo = false;
+  /** Live lasso bounding box in world coordinates (B2). Null = none. */
+  private lassoBounds: Box2D | null = null;
 
   // ---- A3 label drag state ----
   private draggingLabel: MapLabel | null = null;
@@ -547,6 +549,23 @@ export class ScatterRenderer {
   }
 
   /**
+   * Set the live lasso bounding box (shown while the user is drawing a lasso selection, B2).
+   * Pass null to remove it.
+   * @param worldBounds  [minX, minY, maxX, maxY] in world coordinates, or null.
+   */
+  setLassoBounds(worldBounds: [number, number, number, number] | null): void {
+    if (worldBounds) {
+      this.lassoBounds = {
+        extent: worldBounds,
+        color: [80, 160, 240, 160], // translucent blue
+      };
+    } else {
+      this.lassoBounds = null;
+    }
+    this.render();
+  }
+
+  /**
    * Set the 3D data-bounding box, floor grid and gizmo (B2, 3D only).
    * Pass null for extent to hide all three.
    */
@@ -870,9 +889,13 @@ export class ScatterRenderer {
         for (const l of buildBoxLayers3D(this.boxes3D, layerOpacity)) layers.push(l);
         for (const l of buildBoxLabelLayer(this.boxes3D, true, layerOpacity)) layers.push(l as unknown as TextLayer<MapLabel>);
       } else {
-        if (!this.boxes2D?.length) return;
-        for (const l of buildBoxLayers2D(this.boxes2D, layerOpacity)) layers.push(l);
-        for (const l of buildBoxLabelLayer(this.boxes2D, false, layerOpacity)) layers.push(l as unknown as TextLayer<MapLabel>);
+        // Group boxes.
+        const all2D: Box2D[] = [...(this.boxes2D ?? [])];
+        // Live lasso bounding preview (always on top of group boxes).
+        if (this.lassoBounds) all2D.push(this.lassoBounds);
+        if (!all2D.length) return;
+        for (const l of buildBoxLayers2D(all2D, layerOpacity, 'boxes-2d')) layers.push(l);
+        for (const l of buildBoxLabelLayer(all2D, false, layerOpacity)) layers.push(l as unknown as TextLayer<MapLabel>);
       }
     };
 

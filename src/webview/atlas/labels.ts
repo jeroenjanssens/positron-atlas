@@ -17,7 +17,7 @@ import { MAX_LABELS, LABEL_INTERVAL_MS } from './types';
 import { ensureFont } from '../fonts';
 import type { MapLabel } from '../render/renderer';
 import { buildAroundLabelGroups } from '../labels/around';
-import { groupExtents2D, groupExtents3D, type Box2D, type Box3D } from '../render/boxes';
+import { groupExtents2D, groupExtents3D, type Box2D, type Box3D, type Extent2D, type Extent3D } from '../render/boxes';
 
 // ---------------------------------------------------------------------------
 // Weight range helpers (A2)
@@ -409,17 +409,55 @@ function applyGroupBoxes(
     return [plain[0], plain[1], plain[2], 150];
   });
 
+  // Selection box (shown in accent blue when any points are selected).
+  const selectionBox2D: Box2D[] = [];
+  const selectionBox3D: Box3D[] = [];
+  const selMask = atlas.selection;
+  if (selMask && atlas.selectedCount > 0 && xy.length >= 2) {
+    const selColor: [number, number, number, number] = [80, 160, 240, 220];
+    if (is3D) {
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+      const nAll = selMask.length * 8;
+      for (let i = 0; i < nAll; i++) {
+        if (selMask[i >> 3] & (1 << (i & 7))) {
+          const x = xy[3 * i], y = xy[3 * i + 1], z = xy[3 * i + 2];
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        }
+      }
+      if (isFinite(minX)) {
+        selectionBox3D.push({ extent: [minX, minY, minZ, maxX, maxY, maxZ] as Extent3D, color: selColor, label: `Selection (${atlas.selectedCount.toLocaleString()})` });
+      }
+    } else {
+      let minX = Infinity, minY = Infinity;
+      let maxX = -Infinity, maxY = -Infinity;
+      const nAll = selMask.length * 8;
+      for (let i = 0; i < nAll; i++) {
+        if (selMask[i >> 3] & (1 << (i & 7))) {
+          const x = xy[2 * i], y = xy[2 * i + 1];
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+      if (isFinite(minX)) {
+        selectionBox2D.push({ extent: [minX, minY, maxX, maxY] as Extent2D, color: selColor, label: `Selection (${atlas.selectedCount.toLocaleString()})` });
+      }
+    }
+  }
+
   if (is3D) {
     const extents = groupExtents3D(xy, codes, k);
     const boxes: Box3D[] = extents
       .flatMap((ext, i) => ext ? [{ extent: ext, color: groupColors[i] as [number, number, number, number], label: groups.names[i] }] : []);
-    atlas.renderer.setBoxes([], boxes);
+    atlas.renderer.setBoxes([], [...boxes, ...selectionBox3D]);
   } else {
     const stride: 2 | 3 = nd === 3 ? 3 : 2;
     const extents = groupExtents2D(xy, codes, k, stride as 2 | 3);
     const boxes: Box2D[] = extents
       .flatMap((ext, i) => ext ? [{ extent: ext, color: groupColors[i] as [number, number, number, number], label: groups.names[i] }] : []);
-    atlas.renderer.setBoxes(boxes, []);
+    atlas.renderer.setBoxes([...boxes, ...selectionBox2D], []);
   }
 }
 

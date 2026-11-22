@@ -20,6 +20,7 @@
       if (drawing) {
         drawing = false;
         points = [];
+        atlas.setLassoBounds(null);
       } else {
         atlas.clearSelection();
       }
@@ -44,12 +45,17 @@
     if (!drawing) return;
     const p = local(e);
     const last = points[points.length - 1];
-    if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 3) points = [...points, p];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 3) {
+      points = [...points, p];
+      // B2: update live lasso bounding-box overlay.
+      if (points.length >= 2 && atlas.dims !== 3) atlas.setLassoBounds(points);
+    }
   }
 
   function up() {
     if (!drawing) return;
     drawing = false;
+    atlas.setLassoBounds(null); // remove preview box
     if (points.length >= 3) atlas.applyLasso(points, mode);
     points = [];
   }
@@ -67,7 +73,7 @@
     onpointerdown={down}
     onpointermove={move}
     onpointerup={up}
-    onpointercancel={() => ((drawing = false), (points = []))}
+    onpointercancel={() => { drawing = false; points = []; atlas.setLassoBounds(null); }}
   >
     {#if points.length > 1}
       <polygon points={points.map((p) => p.join(',')).join(' ')} />
