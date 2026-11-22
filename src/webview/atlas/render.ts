@@ -115,7 +115,10 @@ export function render(atlas: Atlas): void {
   if (atlas.view.glow) atlas.glowVersion++;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
-    atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth());
+    // A11: leave extra margin when around-labels are active so the ring of labels
+    // lands outside the visible cloud (20 % on each side → cloud uses 60 % of viewport).
+    const isAround = atlas.labels.labelStyle === 'around';
+    atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth(), isAround ? 0.2 : 0);
     atlas.fittedZoom = atlas.renderer.fittedZoom; // A8: track for zoom-dependent fine labels
   }
 }
@@ -123,8 +126,22 @@ export function render(atlas: Atlas): void {
 export function fitView(atlas: Atlas): void {
   if (atlas.anchorXY && atlas.prepared) {
     atlas.autoFit = true;
-    atlas.renderer?.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), true, atlas.legendWidth());
+    const isAround = atlas.labels.labelStyle === 'around';
+    atlas.renderer?.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), true, atlas.legendWidth(), isAround ? 0.2 : 0);
     if (atlas.renderer) atlas.fittedZoom = atlas.renderer.fittedZoom; // A8
+  }
+}
+
+/**
+ * Re-fit the view when the around-labels mode changes.
+ * Called from labels.ts when switching between 'around' and 'over'.
+ * Respects userMoved (force = false).
+ */
+export function fitForLabelStyle(atlas: Atlas, isAround: boolean): void {
+  if (atlas.anchorXY && atlas.prepared && atlas.renderer) {
+    const padExtra = isAround ? 0.2 : 0;
+    atlas.renderer.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), false, atlas.legendWidth(), padExtra);
+    atlas.fittedZoom = atlas.renderer.fittedZoom;
   }
 }
 

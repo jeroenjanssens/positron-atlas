@@ -65,6 +65,9 @@
         fitTopPx: 76,
         legendWidth: atlas.legendWidth(),
       },
+      // Pass all anchor positions for accurate per-angle cloud-boundary radius.
+      atlas.anchorXY ?? undefined,
+      atlas.nAnchors,
     );
 
     // Apply drag offsets to the computed screen positions.

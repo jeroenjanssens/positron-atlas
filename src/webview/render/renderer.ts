@@ -362,7 +362,15 @@ export class ScatterRenderer {
   }
 
   /** Fit the view to the given bounds unless the user has panned/zoomed (force overrides). */
-  fit(b: [number, number, number, number], force = false, padRight = 0): void {
+  /**
+   * @param b        World-space bounding box [minX, minY, maxX, maxY].
+   * @param force    When true, reset userMoved and re-fit even after manual navigation.
+   * @param padRight Reserve this many pixels on the right for the legend.
+   * @param padExtra Extra fractional margin on all sides (0–1).  Pass 0.2 to leave 20 % of
+   *                 the available width/height clear of the data cloud on each side, which
+   *                 makes room for around-the-map label rings (A11).
+   */
+  fit(b: [number, number, number, number], force = false, padRight = 0, padExtra = 0): void {
     if (this.userMoved && !force) {
       return;
     }
@@ -378,7 +386,9 @@ export class ScatterRenderer {
     const h = fullH - top;
     const dx = Math.max(b[2] - b[0], 1e-6);
     const dy = Math.max(b[3] - b[1], 1e-6);
-    const scale = Math.min(w / dx, h / dy) * 0.9;
+    // padExtra shrinks the effective viewport so the point cloud occupies only the
+    // inner (1 - 2·padExtra) fraction, leaving room around it for label rings.
+    const scale = Math.min(w / dx, h / dy) * 0.9 * (1 - 2 * padExtra);
     const zoom = Math.log2(scale);
     // Shift the center left so the data sits in the area not covered by the legend,
     // and by half the top band so the data sits below the toolbar.

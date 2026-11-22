@@ -46,6 +46,8 @@ export function savePng(atlas: Atlas): void {
         fitTopPx: 76,
         legendWidth: atlas.legendWidth(),
       },
+      atlas.anchorXY ?? undefined,
+      atlas.nAnchors,
     );
   }
 

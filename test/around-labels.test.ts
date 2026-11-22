@@ -306,6 +306,48 @@ describe('computeAroundLabels', () => {
     expect(result.map((l) => l.key).sort()).toEqual(['A', 'C'].sort());
   });
 
+  it('no label center is within the point cloud extent (anchor clearance check)', () => {
+    // Create 8 clusters spread over the viewport, provide allAnchorXY so the
+    // per-angle sector radius covers the actual cloud boundary.
+    const groups: AroundLabelGroup[] = [];
+    const anchorPts: number[] = [];
+    const PAD = 50; // padding passed to computeAroundLabels
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const gcx = 400 + Math.cos(angle) * 120;
+      const gcy = 300 + Math.sin(angle) * 120;
+      groups.push(makeGroup(`G${i}`, gcx, gcy, `Cluster ${i}`, 14));
+      // Simulate ~20 member points around each centroid (spread radius 30 px).
+      for (let j = 0; j < 20; j++) {
+        const a2 = (j / 20) * Math.PI * 2;
+        anchorPts.push(gcx + Math.cos(a2) * 30, gcy + Math.sin(a2) * 30);
+      }
+    }
+    const allAnchorXY = new Float32Array(anchorPts);
+    const nAll = anchorPts.length / 2;
+
+    const result = computeAroundLabels(
+      groups, identityProject, VIEW_W, VIEW_H, { padding: PAD }, allAnchorXY, nAll,
+    );
+
+    expect(result.length).toBeGreaterThan(0);
+
+    // Every label center must be at least 15 px away from every anchor point.
+    // The absolute threshold (rather than a fraction of PAD) is robust to clamping
+    // at forbidden zones (toolbar, legend, viewport edges) that can shrink the ideal
+    // ring radius for labels near the boundary.
+    const minClearance = 15;
+    for (const lbl of result) {
+      let closestDist = Infinity;
+      for (let k = 0; k < anchorPts.length; k += 2) {
+        const d = Math.hypot(lbl.screenX - anchorPts[k], lbl.screenY - anchorPts[k + 1]);
+        if (d < closestDist) closestDist = d;
+      }
+      expect(closestDist).toBeGreaterThanOrEqual(minClearance);
+    }
+  });
+
   it('all labels stay inside the viewport', () => {
     const groups: AroundLabelGroup[] = [];
     for (let i = 0; i < 8; i++) {

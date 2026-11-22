@@ -12,7 +12,7 @@ import { collisionPriorities, labelSizes, placeGroupLabels } from '../labels/pla
 import { hexToRgb } from '../color/colormaps';
 import { toHex } from '../logic';
 import { gatherU16, contrastText, labelTextColor, fontFamily as editorFontFamily } from './utils';
-import { plotBackground } from './render';
+import { plotBackground, fitForLabelStyle } from './render';
 import { MAX_LABELS, LABEL_INTERVAL_MS } from './types';
 import { ensureFont } from '../fonts';
 import type { MapLabel } from '../render/renderer';
@@ -352,6 +352,8 @@ export function updateLabels(atlas: Atlas): void {
   // When labelStyle === 'around', build world-space group data for the AroundLabelsOverlay
   // and skip the deck.gl TextLayer.  Fine labels are not shown in around mode.
   const isAround = opts.labelStyle === 'around';
+  const wasAround = atlas.aroundLabelGroups !== null;
+
   if (isAround) {
     // Per-label cluster hex color (for leader lines colored like the cluster).
     const clusterColors: (string | null)[] = placed.map((l) => {
@@ -387,6 +389,10 @@ export function updateLabels(atlas: Atlas): void {
     // Clear deck.gl labels (around mode uses the HTML overlay instead).
     atlas.renderer.setLabels([], undefined);
 
+    // Re-fit with extra margin when first switching to around mode so the ring of
+    // labels lands outside the visible cloud (respects userMoved via force=false).
+    if (!wasAround) fitForLabelStyle(atlas, true);
+
     // Show outlines as normal.
     const showOutlines = opts.clusters && opts.outlines && atlas.cluster && atlas.phase !== 'embedding';
     const coloured = showOutlines ? clusterOutlines(atlas) : null;
@@ -401,6 +407,8 @@ export function updateLabels(atlas: Atlas): void {
   // ---- 'over' mode: clear around labels if switching back ----
   if (atlas.aroundLabelGroups !== null) {
     atlas.aroundLabelGroups = null;
+    // Restore normal fit (no extra margin) when leaving around mode.
+    fitForLabelStyle(atlas, false);
   }
 
   // ---- Build MapLabel array ----
