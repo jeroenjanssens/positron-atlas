@@ -79,6 +79,7 @@ try {
   const steps = scenario ? JSON.parse(readFileSync(env.ATLAS_E2E_SCENARIO, 'utf8')).steps ?? [] : [];
   for (const step of steps) {
     const ts = Date.now();
+    if (step.eval) await cdp.evaluate(`(async () => { const a = window.__atlas; ${step.eval} })()`, ctx);
     // clickMap: a real mouse click in the middle of the Atlas map (page coordinates of the
     // webview's canvas), so the webview gets keyboard focus the way a user gives it.
     if (step.clickMap) {
@@ -98,7 +99,6 @@ try {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
       await sleep(300);
     }
-    if (step.eval) await cdp.evaluate(`(async () => { const a = window.__atlas; ${step.eval} })()`, ctx);
     if (step.until) {
       for (;;) {
         const v = await cdp.evaluate(`(() => { const a = window.__atlas; return !!(${step.until}); })()`, ctx);

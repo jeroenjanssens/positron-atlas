@@ -134,6 +134,7 @@
       <div class="cs-section">
         <div class="cs-section-title">{sec.label}</div>
         <table class="cs-table">
+          <colgroup><col style="width: 42%" /><col style="width: 36%" /><col style="width: 22%" /></colgroup>
           <tbody>
           {#each sec.entries as entry (entry.actionId)}
             {@const isActive = lastAction === entry.actionId}
@@ -244,8 +245,9 @@
   }
 
   .cs-section {
-    min-width: 200px;
-    flex: 1;
+    /* Sections wrap to the next line instead of shrinking below their content. */
+    flex: 1 1 260px;
+    min-width: 0;
     padding-right: 16px;
   }
 
@@ -264,6 +266,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
+    table-layout: fixed;
   }
 
   .cs-row {
@@ -280,13 +283,13 @@
 
   .cs-action {
     color: var(--vscode-editor-foreground, #ccc);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .cs-mouse {
     color: var(--vscode-descriptionForeground, #888);
     font-size: 11px;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .cs-key {

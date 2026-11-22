@@ -94,6 +94,19 @@
         "Array.from(document.querySelectorAll('.cs-key kbd')).some(k => k.textContent.length > 0)"
       ],
       "report": "{ keyCount: document.querySelectorAll('.cs-key kbd').length }"
+    },
+    {
+      "name": "no cell overflows into its neighbour (a narrow editor)",
+      "eval": "if (!a.cheatSheetVisible) window.postMessage({ type: 'command', id: 'view.showControls' }, '*'); await new Promise((r) => setTimeout(r, 300));",
+      "until": "a.cheatSheetVisible",
+      "timeout": 3000,
+      "assert": [
+        "[...document.querySelectorAll('.cheat-sheet td')].every((td) => td.scrollWidth <= td.clientWidth + 1)",
+        "[...document.querySelectorAll('.cs-section')].every((s) => s.scrollWidth <= s.clientWidth + 1)"
+      ],
+      "report": "[...document.querySelectorAll('.cheat-sheet td')].filter((td) => td.scrollWidth > td.clientWidth + 1).map((td) => td.textContent).slice(0, 5)",
+      "screenshot": "cheat-sheet-narrow.png"
     }
-  ]
+  ],
+  "size": "1000x700"
 }

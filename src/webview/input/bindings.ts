@@ -240,6 +240,12 @@ export const BINDINGS: BindingEntry[] = [
   {
     actionId: 'tool.lasso',
     label: 'Lasso select tool',
+    mouse: {
+      dataMap: 'Shift-drag adds, Alt-drag removes',
+      molecular: 'Shift-drag adds, Alt-drag removes',
+      cad: 'Shift-drag adds, Alt-drag removes',
+      design: 'Left-drag (Shift adds, Alt removes)',
+    },
     section: 'select',
     context: 'both',
   },
