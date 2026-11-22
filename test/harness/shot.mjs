@@ -26,7 +26,9 @@ const scenario = JSON.parse(readFileSync(scenarioPath, 'utf8'));
 const out = resolve(opt('out', process.env.HARNESS_OUT ?? '/tmp/positron-atlas-harness'));
 const theme = opt('theme', scenario.theme ?? 'dark');
 const [width, height] = opt('size', scenario.size ?? '1400x860').split('x').map(Number);
-const port = Number(opt('port', 8700 + Math.floor(Math.random() * 200)));
+// Port 0 lets the operating system pick a free port (several runs can share a machine);
+// the server prints the port it got.
+let port = Number(opt('port', '0'));
 const timeoutMs = Number(process.env.HARNESS_TIMEOUT ?? 300_000);
 const scale = Number(opt('scale', '1'));
 mkdirSync(out, { recursive: true });
@@ -45,7 +47,13 @@ const server = spawn('uv', ['run', '--project', 'python', 'python', 'test/harnes
 let serverLog = '';
 server.stderr.on('data', (d) => (serverLog += d));
 await new Promise((ok, bad) => {
-  server.stdout.on('data', (d) => /listening/.test(String(d)) && ok());
+  server.stdout.on('data', (d) => {
+    const m = /listening on http:\/\/127\.0\.0\.1:(\d+)\//.exec(String(d));
+    if (m) {
+      port = Number(m[1]);
+      ok();
+    }
+  });
   server.on('exit', (code) => bad(new Error(`server exited (${code}):\n${serverLog}`)));
   setTimeout(() => bad(new Error(`server did not start:\n${serverLog}`)), 180_000);
 });
