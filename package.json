@@ -62,7 +62,31 @@
         "title": "Open example…",
         "category": "Atlas",
         "enablement": "isPositron"
-      }
+      },
+      { "command": "positronAtlas.nav.view.reset",         "title": "Fit to view",                         "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.zoomIn",        "title": "Zoom in",                             "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.zoomOut",       "title": "Zoom out",                            "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.panLeft",       "title": "Pan left",                            "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.panRight",      "title": "Pan right",                           "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.panUp",         "title": "Pan up",                              "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.panDown",       "title": "Pan down",                            "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.rotateLeft",    "title": "Rotate map 15° counter-clockwise",    "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.rotateRight",   "title": "Rotate map 15° clockwise",            "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.resetRotation", "title": "Reset map rotation (north up)",       "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.top",           "title": "Top view (3D)",                       "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.front",         "title": "Front view (3D)",                     "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.side",          "title": "Side view (3D)",                      "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.toggle3D",      "title": "Toggle 2D / 3D",                      "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.toggleFullScreen","title": "Toggle full screen",                 "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.showControls",  "title": "Show controls / cheat sheet",         "category": "Atlas" },
+      { "command": "positronAtlas.nav.view.toggleGrid",    "title": "Toggle grid mode (small multiples)",  "category": "Atlas" },
+      { "command": "positronAtlas.nav.tool.pan",           "title": "Pan tool",                            "category": "Atlas" },
+      { "command": "positronAtlas.nav.tool.lasso",         "title": "Lasso select tool",                   "category": "Atlas" },
+      { "command": "positronAtlas.nav.tool.annotate",      "title": "Annotate tool",                       "category": "Atlas" },
+      { "command": "positronAtlas.nav.edit.undo",          "title": "Undo",                                "category": "Atlas" },
+      { "command": "positronAtlas.nav.edit.redo",          "title": "Redo",                                "category": "Atlas" },
+      { "command": "positronAtlas.nav.select.all",         "title": "Select all visible points",           "category": "Atlas" },
+      { "command": "positronAtlas.nav.select.clear",       "title": "Clear selection",                     "category": "Atlas" }
     ],
     "menus": {
       "commandPalette": [
@@ -143,9 +167,65 @@
           "type": "number",
           "default": 1024,
           "description": "Memory budget (MB) for the nearest-anchor neighbour cache. When a placement result fits within this budget (n_rows × k × 8 bytes), Atlas pre-computes neighbours during prepare and reuses them on subsequent placements with the same metric and k, skipping the index build and search entirely. Set to 0 to disable."
+        },
+        "positronAtlas.navigation.preset": {
+          "type": "string",
+          "default": "dataMap",
+          "enum": ["dataMap", "molecular", "cad", "design"],
+          "enumDescriptions": [
+            "**Data map** (default): scroll to zoom, left-drag to pan, right-drag to rotate (2D only).",
+            "**Molecular viewer**: scroll to zoom, left-drag to pan/rotate, like PyMOL.",
+            "**3D / CAD**: scroll to zoom, middle-drag to pan, left-drag to orbit.",
+            "**Design**: Ctrl+scroll / pinch to zoom, Space+drag to pan, like Figma or Sketch."
+          ],
+          "markdownDescription": "Navigation interaction preset. Affects which mouse buttons pan vs. orbit/rotate.\n\n- `dataMap`: scroll = zoom, left-drag = pan, right-drag = rotate (2D)\n- `molecular`: scroll = zoom, left-drag = pan/orbit\n- `cad`: scroll = zoom, middle-drag = pan, left-drag = orbit\n- `design`: Ctrl+scroll = zoom, Space+drag = pan"
+        },
+        "positronAtlas.navigation.scrollGesture": {
+          "type": "string",
+          "default": "zoom",
+          "enum": ["zoom", "pan"],
+          "enumDescriptions": [
+            "**Zoom** (default): scroll wheel zooms in and out.",
+            "**Pan**: scroll wheel pans the map; horizontal two-finger swipe pans horizontally."
+          ],
+          "markdownDescription": "What the scroll wheel (or two-finger trackpad swipe) does over the map.\n\n- `zoom` (default): scroll to zoom in/out\n- `pan`: scroll to pan up/down"
+        },
+        "positronAtlas.navigation.zoomToCursor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When **enabled** (default), zooming keeps the point under the cursor stationary — like a geographic map. When **disabled**, the view always zooms toward the view center."
+        },
+        "positronAtlas.navigation.invertZoom": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Invert** the scroll-to-zoom direction. By default, scrolling up / pinching out zooms in. Enable this to reverse that direction."
+        },
+        "positronAtlas.navigation.emulateMiddleButton": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Treat **Alt + left-drag** as a middle-button drag. Useful with the `cad` preset on a laptop trackpad that has no physical middle button."
         }
       }
-    }
+    },
+    "keybindings": [
+      { "command": "positronAtlas.nav.view.reset",        "key": "r",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.zoomIn",       "key": "+",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.zoomIn",       "key": "=",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.zoomOut",      "key": "-",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.panLeft",      "key": "left",       "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.panRight",     "key": "right",      "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.panUp",        "key": "up",         "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.panDown",      "key": "down",       "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.rotateLeft",   "key": "[",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.rotateRight",  "key": "]",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.resetRotation","key": "n",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.top",          "key": "1",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.front",        "key": "2",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.side",         "key": "3",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.view.showControls", "key": "shift+/",    "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.edit.undo",         "key": "ctrl+z",     "mac": "cmd+z",          "when": "positronAtlas.webviewFocused" },
+      { "command": "positronAtlas.nav.edit.redo",         "key": "ctrl+shift+z","mac": "cmd+shift+z",   "when": "positronAtlas.webviewFocused" }
+    ]
   },
   "scripts": {
     "build": "npm run build:ext && npm run build:webview && npm run build:viewer",

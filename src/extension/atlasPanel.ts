@@ -11,6 +11,7 @@ import type {
   FileRef,
   JobStatus,
   KernelOutput,
+  NavigationSettings,
   SelectionComparison,
   PanelState,
   PrepareResult,
@@ -37,6 +38,17 @@ export interface OpenTarget {
   languageId: string;
 }
 
+export function readNavSettings(): NavigationSettings {
+  const c = vscode.workspace.getConfiguration('positronAtlas.navigation');
+  return {
+    preset: c.get('preset', 'dataMap'),
+    scrollGesture: c.get('scrollGesture', 'zoom'),
+    zoomToCursor: c.get('zoomToCursor', true),
+    invertZoom: c.get('invertZoom', false),
+    emulateMiddleButton: c.get('emulateMiddleButton', false),
+  };
+}
+
 export function readSettings(): Settings {
   const c = vscode.workspace.getConfiguration('positronAtlas');
   return {
@@ -50,6 +62,7 @@ export function readSettings(): Settings {
     nativeCore: c.get('nativeCore', true),
     maxLazyRows: c.get('maxLazyRows', 10_000_000),
     neighborCacheMB: c.get('neighborCacheMB', 1024),
+    nav: readNavSettings(),
   };
 }
 
@@ -125,6 +138,11 @@ export class AtlasPanel {
     for (const p of [...AtlasPanel.panels]) {
       p.panel.dispose();
     }
+  }
+
+  /** Return all open panels (for command forwarding). */
+  static getAll(): AtlasPanel[] {
+    return [...AtlasPanel.panels];
   }
 
   private post(msg: ToWebview): void {
@@ -700,7 +718,30 @@ export class AtlasPanel {
         await vscode.commands.executeCommand(command).then(undefined, () => undefined);
         break;
       }
+      // --- Navigation focus tracking (item 1) ---
+      case 'webviewFocused':
+        await vscode.commands.executeCommand('setContext', 'positronAtlas.webviewFocused', true).then(undefined, () => undefined);
+        break;
+      case 'webviewBlurred':
+        await vscode.commands.executeCommand('setContext', 'positronAtlas.webviewFocused', false).then(undefined, () => undefined);
+        break;
     }
+  }
+
+  /**
+   * Forward a VS Code command id to this panel's webview.
+   * Called by navigation command registrations in extension.ts.
+   */
+  forwardCommand(id: string): void {
+    this.post({ type: 'command', id });
+  }
+
+  /**
+   * Push updated navigation settings to this panel's webview (item 1).
+   * Called when positronAtlas.navigation configuration changes.
+   */
+  postNavSettings(nav: NavigationSettings): void {
+    this.post({ type: 'settingsChanged', nav });
   }
 
   /** Write a selection mask (Uint8Array packed bits, or base64 string as fallback) into the job directory for one kernel call. */

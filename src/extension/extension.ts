@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { getPositron, type PositronApi } from './positron';
-import { AtlasPanel, VIEW_TYPE, type AtlasContext, type OpenTarget } from './atlasPanel';
+import { AtlasPanel, VIEW_TYPE, type AtlasContext, type OpenTarget, readNavSettings } from './atlasPanel';
 import { KernelBridge, pyStr } from './kernelBridge';
 import type { PanelState } from '../shared/protocol';
+import type { ActionId } from '../webview/input/bindings';
 import { isPlainName, parseDataExplorerTabLabel } from './tabLabel';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -58,6 +59,33 @@ export function activate(context: vscode.ExtensionContext): void {
         await runOpenExample(p, ctx(p), context);
       } catch (e) {
         void vscode.window.showErrorMessage(`Atlas: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }),
+    // ---- Navigation commands (item 1) -------------------------------------------
+    // All 24 actionIds forwarded to the active webview panel.
+    ...(([
+      'view.reset', 'view.zoomIn', 'view.zoomOut',
+      'view.panLeft', 'view.panRight', 'view.panUp', 'view.panDown',
+      'view.rotateLeft', 'view.rotateRight', 'view.resetRotation',
+      'view.top', 'view.front', 'view.side',
+      'view.toggle3D', 'view.toggleFullScreen', 'view.showControls', 'view.toggleGrid',
+      'tool.pan', 'tool.lasso', 'tool.annotate',
+      'edit.undo', 'edit.redo',
+      'select.all', 'select.clear',
+    ] as ActionId[]).map((actionId) =>
+      vscode.commands.registerCommand(`positronAtlas.nav.${actionId}`, () => {
+        for (const panel of AtlasPanel.getAll()) {
+          panel.forwardCommand(actionId);
+        }
+      }),
+    )),
+    // ---- Configuration change listener (item 1) ----------------------------------
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('positronAtlas.navigation')) {
+        const nav = readNavSettings();
+        for (const panel of AtlasPanel.getAll()) {
+          panel.postNavSettings(nav);
+        }
       }
     }),
     vscode.window.registerWebviewPanelSerializer(VIEW_TYPE, {

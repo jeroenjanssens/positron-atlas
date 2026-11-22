@@ -531,8 +531,23 @@
         harness.log.push(`fullscreen: ${m.on ? 'on' : 'off'}`);
         harness.fullscreen = !!m.on;
         break;
+      // --- Navigation focus tracking (item 1) ---
+      case 'webviewFocused':
+        harness.webviewFocused = true;
+        harness.log.push('webviewFocused');
+        break;
+      case 'webviewBlurred':
+        harness.webviewFocused = false;
+        harness.log.push('webviewBlurred');
+        break;
     }
   }
+
+  /**
+   * Dispatch a navigation action id to the webview (item 1).
+   * Useful from scenario scripts: window.__harness.dispatch('view.reset')
+   */
+  harness.dispatch = (id) => post({ type: 'command', id });
 
   // ---- Harness font helpers ----
 
