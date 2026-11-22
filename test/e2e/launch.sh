@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Launch an isolated Positron with this extension in development mode and CDP enabled.
+# Optional: set ATLAS_E2E_COLOR_THEME to override workbench.colorTheme (e.g. "Light Modern").
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 E2E="${E2E_DIR:-/tmp/positron-atlas-e2e}"
 PORT="${CDP_PORT:-9333}"
 PY="${ATLAS_E2E_PYTHON:-$ROOT/.venv-e2e/bin/python}"
+THEME="${ATLAS_E2E_COLOR_THEME:-}"
 rm -rf "$E2E/user" "$E2E/logs" && mkdir -p "$E2E/user/User" "$E2E/ext" "$E2E/ws"
+THEME_LINE=""
+if [ -n "$THEME" ]; then
+  THEME_LINE="  \"workbench.colorTheme\": \"$THEME\","
+fi
 cat > "$E2E/user/User/settings.json" <<JSON
 {
+  $THEME_LINE
   "python.defaultInterpreterPath": "$PY",
   "workbench.startupEditor": "none",
   "interpreters.startupBehavior": "manual",
