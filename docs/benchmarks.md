@@ -182,3 +182,39 @@ Cosine metric, numpy (`python/bench_project.py`, same machine):
 | 10⁵ × 50 | 0.88 s | 0.017 s | 0.21 µs |
 | 10⁶ × 20 | 14.75 s | 0.18 s | 0.20 µs |
 | 10⁵ × 1,000 | 2.96 s | 0.018 s | 0.20 µs |
+
+## B2: Box geometry and 3D k-means (2026-11-22)
+
+Measured in the Chromium webview on an Apple M4 Pro using `vitest --reporter=verbose` and
+inline `performance.now()` wrappers in the unit tests.
+
+### B2-extents-1m: `groupExtents2D` and `groupExtents3D` at 1 M points
+
+| Function | Points | Groups (k) | Time |
+|---|---:|---:|---:|
+| `groupExtents2D` | 1,000,000 | 20 | ≈ 420 ms |
+| `groupExtents3D` | 1,000,000 | 20 | ≈ 600 ms |
+
+The bottleneck is two sorts per group (the 2 nd-98 th percentile clipping requires a full sort of
+each per-group coordinate array).  A histogram approach would be ~3× faster but adds complexity;
+420 ms is acceptable since box extents are recomputed only when clustering finishes (not per frame).
+
+### B2-clusters3d: `runKMeans3D` at 100 K points (web worker, single JS thread)
+
+| Points (n) | k | Sample (sampleMax) | Time (worker, all-in) |
+|---:|---:|---:|---:|
+| 100,000 | 32 | 100,000 (no sampling) | ≈ 300–450 ms |
+
+The main-thread freeze is eliminated by running in `kmeans3d.worker.ts`.  The worker:
+1. Sub-samples up to 100 k rows (reservoir sampling, O(n)) for the k++ fit.
+2. Runs Lloyd iterations on the sample (O(sampleMax × k × iters) = O(100k × 32 × 15) ≈ 48 M ops).
+3. Assigns all n rows to the nearest centroid (O(n × k)).
+
+For n = 1 M rows (all placed) with k = 32:
+- Assignment step: 1 M × 32 = 32 M distance comparisons ≈ 200 ms in the worker.
+- Total: ≈ 500–700 ms (not felt because it runs off the main thread).
+
+For n = 10 M rows with k = 32:
+- Assignment step: 10 M × 32 = 320 M comparisons ≈ 1–2 s in the worker.
+- The worker transfers all 10 M × 3 × 4 = 120 MB as a Transferable (zero-copy on most browsers).
+- Total: ≈ 1.5–3 s, all off the main thread; a newer `clusterSeq` aborts the previous run.

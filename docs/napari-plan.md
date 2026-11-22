@@ -304,20 +304,33 @@ Details are in the research notes of 2026-11-22.
 
 ---
 
-## 3. Bounding boxes (and a reference grid) — B2 (M)
+## 3. Bounding boxes (and a reference grid) — B2 (M) ✓
 
 - **What:**
   - **3D data box:** a wireframe box around all points, as an orientation frame. Option: a floor grid at the box bottom (Q1), and a small orientation gizmo (x/y/z arrows, coloured) in a corner. No tick labels: UMAP units mean nothing.
   - **Group boxes:** per category of the colour or label column, per automatic cluster (2D; clusters are off in 3D), or per selection. Axis-aligned in 2D (rectangles) and 3D (wireframe cubes), in the group's colour, with an optional label at a corner. The extent is robust (2nd–98th percentile by default, or min/max), so outliers don't blow the boxes up.
   - **Selection box:** live, while selecting.
 - **Relation to existing outlines:** cluster outlines (hulls) exist in 2D. Boxes are an alternative style ("Outline style: hull | box"), and the only option in 3D.
-- **To-do:**
-  - [ ] Box geometry helpers (robust extents per group, vectorized over codes; reuse `groupMeanColors`-style loops) with unit tests.
-  - [ ] deck.gl `LineLayer` / `PathLayer` for wireframes (2D and 3D), and `TextLayer` for corner labels (billboard in 3D).
-  - [ ] Floor grid and gizmo (3D only), toggles in Explore → Display.
-  - [ ] Annotate → Labels: "Outline style: hull | box"; boxes per category or selection in 3D.
-  - [ ] PNG export and HTML viewer include the boxes (2D at least).
-  - [ ] Harness: pixel assertions for the box edges in 2D and 3D; screenshots.
+- **Implementation notes (B2 agent, 2026-11-22):**
+  - `src/webview/render/boxes.ts`: `percentileVal`, `groupExtents2D/3D`, `fullExtent3D`, deck.gl layer builders (`PathLayer` 2D wireframes, `LineLayer` 3D wireframe cubes via `cubeEdges`, `TextLayer` corner labels, floor grid, orientation gizmo).
+  - `src/webview/atlas/layers.ts`: `'boxes'` (order 15) and `'data-box'` (order 5) registered in the deck.gl layer set.
+  - `src/webview/render/renderer.ts`: `setBoxes()`, `setDataBox()`, `setLassoBounds()` (live lasso preview in 2D).
+  - `src/webview/atlas/labels.ts`: `applyGroupBoxes` (per-cluster, per-category, per-selection with accent blue box), `applyOutlinesOrBoxes` (dispatch hull vs box, always box in 3D).
+  - `src/webview/components/AnnotateTab.svelte`: "Outline style: hull | box" selector (disabled in 3D with hint).
+  - `src/webview/components/ExploreTab.svelte`: Data box / Floor grid / Orientation gizmo toggles (3D only).
+  - `src/webview/atlas/render.ts`: calls `setDataBox` after each point-set update with `fullExtent3D`.
+  - `src/shared/viewerBlob.ts` + `src/webview/atlas/exportHtml.ts` + `src/viewer/ViewerApp.svelte`: `BlobBox2D` exported to and rendered in the HTML viewer.
+  - Harness: `scenario-boxes.json` (2D unrotated, rotated 30°, selection, PNG export, dark/light/HC screenshots) and `scenario-boxes-3d.json` (data box, grid, gizmo toggles, 3D clusters with boxes).
+  - Unit tests: `test/boxes.test.ts` (percentileVal, groupExtents2D/3D, fullExtent3D, 1M-point performance).
+- **Done:**
+  - [x] Box geometry helpers with unit tests.
+  - [x] deck.gl layer builders for wireframes (2D PathLayer and 3D LineLayer) and corner labels.
+  - [x] Floor grid and gizmo (3D only), toggles in Explore → Display.
+  - [x] Annotate → Labels: "Outline style: hull | box"; boxes in 3D.
+  - [x] Per-selection bounding box (accent blue); live lasso bounding box preview in 2D.
+  - [x] PNG export includes boxes (deck.gl layers rendered automatically).
+  - [x] HTML viewer includes 2D boxes via `BlobBox2D` in the blob header.
+  - [x] Harness: pixel assertions for 2D boxes (unrotated and rotated), 3D data box/grid/gizmo toggles, 3D cluster boxes; screenshots in dark/light/HC.
 
 ---
 
@@ -524,7 +537,7 @@ Details are in the research notes of 2026-11-22.
 
 ## 16. Follow-ups from the first plan — any wave (S–M each)
 
-- [ ] **3D support for automatic clusters and outlines:** cluster on the 3D layout (a 3D density grid, or k-means on the 3D positions) and draw boxes or hulls in 3D (with item 3).
+- [x] **3D support for automatic clusters and outlines (B2, 2026-11-22):** `runKMeans3D` in `src/webview/workers/kmeans3d.worker.ts` (off-main-thread; samples ≤ 100 k rows for k-means fit, assigns all n rows in the worker; cancellable via `clusterSeq`). K values: detail 1–5 → k = 4, 8, 16, 24, 32. Boxes (wireframe cubes, `LineLayer`) used instead of hulls in 3D. Outlines field set to `[]`. See `src/webview/atlas/clusters3d.ts` and `src/webview/workers/KMeans3DWorker.ts`.
 - [ ] **HTML viewer in 3D:** an `OrbitView` in the viewer, with the stored camera, so 3D maps can be exported (now disabled in 3D).
 - [ ] **Invert or tint image-URL thumbnails:** "Invert colors" applies only to pixel-column images today. Add it for image URLs (CSS filter) so dark structure drawings (ChEMBL) stay readable on dark cards; consider "auto" (invert in dark themes).
 - [ ] **Cache cosine neighbours:** the neighbour cache holds euclidean neighbours only. Compute and cache cosine neighbours on first use, or at prepare when the metric is known.
