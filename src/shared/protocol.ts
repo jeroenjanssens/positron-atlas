@@ -733,8 +733,10 @@ export type ToHost =
   // ---- C2: Time slider (item 10) -----------------------------------------------
   /** Request normalised float32 column values for the animate filter (C2). */
   | { type: 'timeValues'; column: number }
-  /** Request tracks (group-by-ID, sort-by-time, 5 binary files) (C2, item 11). */
-  | { type: 'tracks'; idColumn: number; timeColumn: number; nd: 2 | 3 }
+  /** Request tracks (group-by-ID, sort-by-time, 5 binary files) (C2, item 11).
+   * anchorXY is included so the kernel can use it when job.xy is not set
+   * (e.g. browser-side UMAP with needsProjection=false). */
+  | { type: 'tracks'; idColumn: number; timeColumn: number; nd: 2 | 3; anchorXY?: Uint8Array | string }
   /** Save a video clip to a .webm file (C2, item 10). */
   | { type: 'saveVideo'; bytes: string /* base64 WebM */; filename: string }
   /**

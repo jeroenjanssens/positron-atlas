@@ -5,7 +5,7 @@
   "screenshot": false,
   "steps": [
     { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 120000 },
-    { "name": "switch to 3D", "eval": "a.setDims(3)", "until": "a.dims === 3", "timeout": 10000 },
+    { "name": "switch to 3D and wait for 3D layout", "eval": "a.setDims(3)", "until": "a.dims === 3 && a.phase === 'ready' && a.anchorXY !== null && a.anchorXY.length === a.prepared.nAnchors * 3", "timeout": 60000 },
     {
       "name": "request 3D tracks",
       "eval": "const idCol = a.describe.columns.find(c => c.name === 'track_id'); const tCol = a.describe.columns.find(c => c.name === 'time'); a.requestTracks(idCol.index, tCol.index)",

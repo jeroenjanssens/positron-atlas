@@ -30,7 +30,7 @@ import type {
 import { computeTimeFilter, stepWindow, DEFAULT_ANIMATE_SPEED, DEFAULT_WINDOW_SIZE } from './atlas/animate';
 import { buildTrackPaths, thinIndices, createPathLayer } from './atlas/tracks';
 import { buildVectors, thinVectors, createVectorLayer } from './atlas/vectors';
-import { vscode, isVsCodeWebview } from './vscode';
+import { vscode, isVsCodeWebview, float32ToBytes } from './vscode';
 import { initFonts } from './fonts';
 import { ScatterRenderer } from './render/renderer';
 import { HitIndex } from './render/hitIndex';
@@ -1116,7 +1116,10 @@ export class Atlas {
   requestTracks(idColumn: number, timeColumn: number): void {
     this.tracks = { ...this.tracks, idColumn, timeColumn };
     const nd = this.dims as 2 | 3;
-    this.post({ type: 'tracks', idColumn, timeColumn, nd });
+    // Include anchorXY so the kernel can use it when job.xy is not set
+    // (browser-side UMAP with needsProjection=false).
+    const anchorXY = this.anchorXY ? float32ToBytes(this.anchorXY) : undefined;
+    this.post({ type: 'tracks', idColumn, timeColumn, nd, anchorXY });
   }
 
   setTracksOptions(opts: Partial<TracksOptions>): void {

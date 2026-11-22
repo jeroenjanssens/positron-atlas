@@ -898,28 +898,39 @@ export class AtlasPanel {
       // --- C2: Tracks (item 11) ------------------------------------------------
       case 'tracks': {
         const job = this.requireJob();
-        const r = await this.bridge.call<{
-          ok: boolean;
-          xy_file?: string; starts_file?: string; lengths_file?: string;
-          time_file?: string; id_file?: string;
-          id_colors?: number[]; n_tracks?: number; n_points?: number; error?: string;
-        }>('tracks', job, m.idColumn, m.timeColumn, m.nd);
-        if (r.ok && r.xy_file !== undefined) {
-          const nd2 = m.nd as 2 | 3;
-          this.post({
-            type: 'tracks',
-            result: {
-              xyFile: this.fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points! * nd2] }),
-              startsFile: this.fileRef({ file: r.starts_file!, dtype: 'u32', shape: [r.n_tracks!] }),
-              lengthsFile: this.fileRef({ file: r.lengths_file!, dtype: 'u32', shape: [r.n_tracks!] }),
-              timeFile: this.fileRef({ file: r.time_file!, dtype: 'f32', shape: [r.n_points!] }),
-              idFile: this.fileRef({ file: r.id_file!, dtype: 'u32', shape: [r.n_points!] }),
-              idColors: r.id_colors!,
-              nTracks: r.n_tracks!,
-              nPoints: r.n_points!,
-              nd: nd2,
-            },
-          });
+        // Write anchorXY to a temp file so the kernel can use it when job.xy
+        // is not available (browser-side UMAP with needsProjection=false).
+        let xyPath: string | null = null;
+        if (m.anchorXY) {
+          xyPath = path.join(this.jobDir.fsPath, `anchor_xy_tracks_${Date.now()}.f32`);
+          await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
+        }
+        try {
+          const r = await this.bridge.call<{
+            ok: boolean;
+            xy_file?: string; starts_file?: string; lengths_file?: string;
+            time_file?: string; id_file?: string;
+            id_colors?: number[]; n_tracks?: number; n_points?: number; error?: string;
+          }>('tracks', job, m.idColumn, m.timeColumn, m.nd, xyPath ?? '');
+          if (r.ok && r.xy_file !== undefined) {
+            const nd2 = m.nd as 2 | 3;
+            this.post({
+              type: 'tracks',
+              result: {
+                xyFile: this.fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points! * nd2] }),
+                startsFile: this.fileRef({ file: r.starts_file!, dtype: 'u32', shape: [r.n_tracks!] }),
+                lengthsFile: this.fileRef({ file: r.lengths_file!, dtype: 'u32', shape: [r.n_tracks!] }),
+                timeFile: this.fileRef({ file: r.time_file!, dtype: 'f32', shape: [r.n_points!] }),
+                idFile: this.fileRef({ file: r.id_file!, dtype: 'u32', shape: [r.n_points!] }),
+                idColors: r.id_colors!,
+                nTracks: r.n_tracks!,
+                nPoints: r.n_points!,
+                nd: nd2,
+              },
+            });
+          }
+        } finally {
+          if (xyPath) await fs.rm(xyPath, { force: true });
         }
         break;
       }

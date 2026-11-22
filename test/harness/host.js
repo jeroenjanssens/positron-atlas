@@ -585,20 +585,30 @@
       }
       // --- C2: Tracks (item 11) ---
       case 'tracks': {
-        const r = await call('tracks', jobId, m.idColumn, m.timeColumn, m.nd);
-        if (r.ok && r.xy_file !== undefined) {
-          const nd2 = m.nd;
-          post({ type: 'tracks', result: {
-            xyFile: fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points * nd2] }),
-            startsFile: fileRef({ file: r.starts_file, dtype: 'u32', shape: [r.n_tracks] }),
-            lengthsFile: fileRef({ file: r.lengths_file, dtype: 'u32', shape: [r.n_tracks] }),
-            timeFile: fileRef({ file: r.time_file, dtype: 'f32', shape: [r.n_points] }),
-            idFile: fileRef({ file: r.id_file, dtype: 'u32', shape: [r.n_points] }),
-            idColors: r.id_colors,
-            nTracks: r.n_tracks,
-            nPoints: r.n_points,
-            nd: nd2,
-          } });
+        // Write anchorXY to a temp file so the kernel can use it when job.xy is not set.
+        let xyPath = null;
+        if (m.anchorXY) {
+          const xyName = `anchor_xy_tracks_${Date.now()}.f32`;
+          xyPath = await writeJobFile(xyName, m.anchorXY);
+        }
+        try {
+          const r = await call('tracks', jobId, m.idColumn, m.timeColumn, m.nd, xyPath || '');
+          if (r.ok && r.xy_file !== undefined) {
+            const nd2 = m.nd;
+            post({ type: 'tracks', result: {
+              xyFile: fileRef({ file: r.xy_file, dtype: 'f32', shape: [r.n_points * nd2] }),
+              startsFile: fileRef({ file: r.starts_file, dtype: 'u32', shape: [r.n_tracks] }),
+              lengthsFile: fileRef({ file: r.lengths_file, dtype: 'u32', shape: [r.n_tracks] }),
+              timeFile: fileRef({ file: r.time_file, dtype: 'f32', shape: [r.n_points] }),
+              idFile: fileRef({ file: r.id_file, dtype: 'u32', shape: [r.n_points] }),
+              idColors: r.id_colors,
+              nTracks: r.n_tracks,
+              nPoints: r.n_points,
+              nd: nd2,
+            } });
+          }
+        } finally {
+          if (xyPath) rmJobFile(xyPath.split('/').pop()).catch(() => undefined);
         }
         break;
       }

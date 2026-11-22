@@ -3221,20 +3221,31 @@ def time_values(job_id: str, col: int) -> str:
         hi = lo + 1.0
     normed = ((fv - lo) / (hi - lo)).astype(np.float32)
     normed = np.clip(normed, 0.0, 1.0)
-    fname = _write(job, "time_values.f32", normed)
+    fname = f"time_values_{uuid.uuid4().hex[:8]}.f32"
+    _write(job, fname, normed)
     return _json({"ok": True, "file": fname, "min": lo, "max": hi, "length": int(len(normed))})
 
 
 @_guard
-def tracks(job_id: str, id_col: int, time_col: int, nd: int = 2) -> str:
+def tracks(job_id: str, id_col: int, time_col: int, nd: int = 2, xy_path: str = '') -> str:
     """Build track paths sorted by ID then time (C2, item 11).
 
     Groups kept rows by id_col, sorts within each group by time_col, and writes 5 binary
     files: xy coords, starts (u32), lengths (u32), time values (f32), id index (u32).
     Returns {"ok": True, "xy_file": ..., "starts_file": ..., "lengths_file": ...,
              "time_file": ..., "id_file": ..., "id_colors": [...], "n_tracks": int, "n_points": int}.
+
+    xy_path: optional path to a float32 file with anchorXY from the browser (used when
+             job.xy is not set, e.g. browser-side UMAP with needsProjection=False).
     """
-    import matplotlib.cm as cm  # noqa: PLC0415
+    # Matplotlib-free tab20 palette (same 20 colours as matplotlib's tab20).
+    _TAB20 = [
+        (31, 119, 180), (174, 199, 232), (255, 127, 14), (255, 187, 120),
+        (44, 160, 44),  (152, 223, 138), (214, 39, 40),  (255, 152, 150),
+        (148, 103, 189),(197, 176, 213), (140, 86, 75),  (196, 156, 148),
+        (227, 119, 194),(247, 182, 210), (127, 127, 127),(199, 199, 199),
+        (188, 189, 34), (219, 219, 141), (23, 190, 207), (158, 218, 229),
+    ]
 
     job = _get(job_id)
     id_col, time_col, nd = int(id_col), int(time_col), int(nd)
@@ -3257,24 +3268,39 @@ def tracks(job_id: str, id_col: int, time_col: int, nd: int = 2) -> str:
     n_tracks = int(len(unique_ids_int))
     n_points = int(n)
 
-    # XY layout from job.xy (shape (n_kept, nd)).
-    if job.xy is None:
+    # XY layout: prefer job.xy (kernel UMAP / coords mode).
+    # Fall back to the caller-supplied xy_path (browser-side UMAP, needsProjection=False).
+    if job.xy is not None:
+        job_xy: np.ndarray = job.xy
+    elif xy_path:
+        raw = np.fromfile(xy_path, dtype="<f4")
+        # Infer actual nd from the file size and number of rows; don't trust the
+        # requested nd (e.g. setDims(3) may be called before the 3D UMAP completes).
+        n_rows_total = len(rows)
+        actual_nd = int(raw.size // n_rows_total) if n_rows_total > 0 and raw.size % n_rows_total == 0 else int(nd)
+        job_xy = raw.reshape(n_rows_total, actual_nd)
+    else:
         return _json({"ok": False, "error": "Layout not ready — run UMAP first"})
-    xy_s = job.xy[order, :nd].astype(np.float32)
+    xy_s = job_xy[order, :nd].astype(np.float32)
     xy_flat = xy_s.ravel()
 
-    # Per-track colours from tab20 colormap.
-    cmap = cm.get_cmap("tab20", n_tracks)
+    # Per-track colours cycling through tab20.
     id_colors: list[int] = []
     for i in range(n_tracks):
-        r, g, b, a = cmap(i)
-        id_colors.extend([int(r * 255), int(g * 255), int(b * 255), 255])
+        r, g, b = _TAB20[i % len(_TAB20)]
+        id_colors.extend([r, g, b, 255])
 
-    xy_file = _write(job, "tracks_xy.f32", xy_flat)
-    starts_file = _write(job, "tracks_starts.u32", starts_arr.astype(np.uint32))
-    lengths_file = _write(job, "tracks_lengths.u32", lengths_arr.astype(np.uint32))
-    time_file = _write(job, "tracks_time.f32", times_s)
-    id_file = _write(job, "tracks_ids.u32", ids_s)
+    suffix = uuid.uuid4().hex[:8]
+    xy_file = f"tracks_xy_{suffix}.f32"
+    starts_file = f"tracks_starts_{suffix}.u32"
+    lengths_file = f"tracks_lengths_{suffix}.u32"
+    time_file = f"tracks_time_{suffix}.f32"
+    id_file = f"tracks_ids_{suffix}.u32"
+    _write(job, xy_file, xy_flat)
+    _write(job, starts_file, starts_arr.astype(np.uint32))
+    _write(job, lengths_file, lengths_arr.astype(np.uint32))
+    _write(job, time_file, times_s)
+    _write(job, id_file, ids_s)
 
     return _json({
         "ok": True,
