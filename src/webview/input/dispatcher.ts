@@ -167,6 +167,13 @@ export class InputDispatcher {
       case 'brush.sizeDown':
         a.adjustBrushSize(-5);
         break;
+      // ---- Shapes order (item 8) ------------------------------------------------
+      case 'shapes.order.front':
+        a.bringToFront(a.shapesSelectedId ?? '');
+        break;
+      case 'shapes.order.back':
+        a.sendToBack(a.shapesSelectedId ?? '');
+        break;
     }
   }
 
@@ -232,18 +239,26 @@ export class InputDispatcher {
         e.preventDefault();
         break;
       case '[':
-        // In brush mode (B4), [ decreases brush size.  Otherwise, rotate left.
+        // In brush mode (B4), [ decreases brush size.
+        // In shapes mode (B4) with a selected shape, [ sends it to back.
+        // Otherwise, [ rotates left.
         if (this.atlas.annotateTool === 'brush') {
           this.dispatch('brush.sizeDown');
+        } else if (this.atlas.annotateTool === 'shapes' && this.atlas.shapesSelectedId) {
+          this.dispatch('shapes.order.back');
         } else {
           this.dispatch('view.rotateLeft');
         }
         e.preventDefault();
         break;
       case ']':
-        // In brush mode (B4), ] increases brush size.  Otherwise, rotate right.
+        // In brush mode (B4), ] increases brush size.
+        // In shapes mode (B4) with a selected shape, ] brings it to front.
+        // Otherwise, ] rotates right.
         if (this.atlas.annotateTool === 'brush') {
           this.dispatch('brush.sizeUp');
+        } else if (this.atlas.annotateTool === 'shapes' && this.atlas.shapesSelectedId) {
+          this.dispatch('shapes.order.front');
         } else {
           this.dispatch('view.rotateRight');
         }

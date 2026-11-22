@@ -230,9 +230,12 @@ import {
   addShape as addShapeImpl,
   removeShape as removeShapeImpl,
   updateShape as updateShapeImpl,
+  commitShapeEdit as commitShapeEditImpl,
   tagPointsInShape as tagPointsInShapeImpl,
   exportShapes as exportShapesImpl,
   importShapes as importShapesImpl,
+  bringToFront as bringToFrontImpl,
+  sendToBack as sendToBackImpl,
 } from './atlas/shapeOps';
 
 // Re-export types and constants for backward compatibility with components
@@ -290,6 +293,8 @@ export class Atlas {
   pendingBrushCodes = $state.raw<Uint16Array | null>(null);
   /** Shape draw type (item 8, B4): which shape the next drag will create. */
   shapeDrawType = $state<import('./atlas/shapes').ShapeType>('rect');
+  /** ID of the currently selected shape (kept in sync by ShapeLayer). Used by dispatcher for order commands. */
+  shapesSelectedId = $state<string | null>(null);
   /** Shapes on the map (item 8, B4).  Persisted in panel state. */
   shapes = $state.raw<Shape[]>([]);
   selection = $state.raw<Uint8Array | null>(null);
@@ -1162,9 +1167,12 @@ export class Atlas {
   addShape(shape: Shape): void { addShapeImpl(this, shape); }
   removeShape(id: string): void { removeShapeImpl(this, id); }
   updateShape(id: string, patch: Partial<Shape>): void { updateShapeImpl(this, id, patch); }
+  commitShapeEdit(id: string, origShape: Shape, finalPatch: Partial<Shape>): void { commitShapeEditImpl(this, id, origShape, finalPatch); }
   tagPointsInShape(shapeId: string, column: string): void { tagPointsInShapeImpl(this, shapeId, column); }
   exportShapes(): string { return exportShapesImpl(this); }
   importShapes(json: string): void { importShapesImpl(this, json); }
+  bringToFront(id: string): void { bringToFrontImpl(this, id); }
+  sendToBack(id: string): void { sendToBackImpl(this, id); }
 
   // ---- undo / redo (A3) --------------------------------------------------------
   recordHistory(entry: HistoryEntry): void { recordHistoryImpl(this, entry); }

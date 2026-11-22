@@ -47,6 +47,27 @@ export function removeShape(atlas: Atlas, id: string): void {
   atlas.persist();
 }
 
+/**
+ * Commit a shape edit that was previewed live (live previews already updated atlas.shapes).
+ * Uses `origShape` as the before-state so undo correctly restores the shape to its pre-edit
+ * appearance even after many intermediate live-preview updates.
+ */
+export function commitShapeEdit(atlas: Atlas, id: string, origShape: Shape, finalPatch: Partial<Shape>): void {
+  // 'before' = current shapes array but with the ORIGINAL shape restored at this id
+  const before = atlas.shapes.map((s) => s.id === id ? origShape : s);
+  // 'after' = apply final patch on top of whatever the live preview left
+  const after = atlas.shapes.map((s) => s.id === id ? { ...s, ...finalPatch } as Shape : s);
+  recordHistory(atlas, {
+    label: `Edit ${origShape.kind} shape`,
+    undo: () => { atlas.shapes = before; atlas.renderer?.setShapes(before); },
+    redo: () => { atlas.shapes = after; atlas.renderer?.setShapes(after); },
+    coalesceKey: `shape:edit:${id}`,
+  });
+  atlas.shapes = after;
+  atlas.renderer?.setShapes(after);
+  atlas.persist();
+}
+
 /** Update a shape (move, resize, style change, etc.) and record as undoable. */
 export function updateShape(atlas: Atlas, id: string, patch: Partial<Shape>): void {
   const before = atlas.shapes.slice();
@@ -113,6 +134,38 @@ export function tagPointsInShape(atlas: Atlas, shapeId: string, column: string):
       refreshBrushOverlay(atlas);
     },
   });
+}
+
+/** Move a shape to the front (top of stack) and record as undoable. */
+export function bringToFront(atlas: Atlas, id: string): void {
+  const before = atlas.shapes.slice();
+  const idx = before.findIndex((s) => s.id === id);
+  if (idx < 0 || idx === before.length - 1) return;
+  const after = [...before.slice(0, idx), ...before.slice(idx + 1), before[idx]];
+  recordHistory(atlas, {
+    label: 'Bring to front',
+    undo: () => { atlas.shapes = before; atlas.renderer?.setShapes(before); },
+    redo: () => { atlas.shapes = after; atlas.renderer?.setShapes(after); },
+  });
+  atlas.shapes = after;
+  atlas.renderer?.setShapes(after);
+  atlas.persist();
+}
+
+/** Move a shape to the back (bottom of stack) and record as undoable. */
+export function sendToBack(atlas: Atlas, id: string): void {
+  const before = atlas.shapes.slice();
+  const idx = before.findIndex((s) => s.id === id);
+  if (idx <= 0) return;
+  const after = [before[idx], ...before.slice(0, idx), ...before.slice(idx + 1)];
+  recordHistory(atlas, {
+    label: 'Send to back',
+    undo: () => { atlas.shapes = before; atlas.renderer?.setShapes(before); },
+    redo: () => { atlas.shapes = after; atlas.renderer?.setShapes(after); },
+  });
+  atlas.shapes = after;
+  atlas.renderer?.setShapes(after);
+  atlas.persist();
 }
 
 /** Export all shapes to a JSON string (versioned). */

@@ -5,7 +5,9 @@
    * Handles:
    *  - Drawing new shapes (rect, ellipse, polygon, freehand, line, arrow, text)
    *  - Selecting and editing existing shapes (move, resize via 8 handles, rotate, delete)
-   *  - All edits delegate to atlas.addShape / atlas.updateShape / atlas.removeShape
+   *  - Polygon/polyline vertex editing: drag vertex, dbl-click edge to insert, Alt-click to remove
+   *  - Front/back order via keyboard ([ / ] when shapes tool active)
+   *  - All edits are undoable via atlas.updateShape
    *
    * Coordinates:
    *  - Everything in world space.  Screen ↔ world via atlas.renderer.unproject / projectWorld.
@@ -22,7 +24,7 @@
 
   // ---- drawing state ----------------------------------------------------------
   type DrawMode = 'idle' | 'draw-rect' | 'draw-ellipse' | 'draw-polygon' | 'draw-freehand' | 'draw-line' | 'draw-arrow' | 'draw-text';
-  type EditMode = 'idle' | 'move' | 'resize' | 'rotate';
+  type EditMode = 'idle' | 'move' | 'resize' | 'rotate' | 'vertex';
 
   let drawMode = $state<DrawMode>('idle');
   let editMode = $state<EditMode>('idle');
@@ -35,9 +37,10 @@
 
   // Selection / editing
   let selectedId = $state<string | null>(null);
-  let editHandle = $state<number>(-1);    // 0-7 = resize handles, 8 = rotate handle
+  let editHandle = $state<number>(-1);    // 0-7 = resize handles, 8 = rotate handle (rect); 0-3 resize, 4 rotate (ellipse); vertex index (polygon/line)
   let editStart = $state<[number, number] | null>(null);  // world
   let editOrigShape = $state<Shape | null>(null);
+  let rotateStartAngle = $state(0);  // initial angle when rotate drag started
 
   // DOM
   let el = $state<SVGSVGElement>();
@@ -54,6 +57,9 @@
     obs.observe(el);
     return () => obs.disconnect();
   });
+
+  // Keep atlas.shapesSelectedId in sync for dispatcher (front/back order keys)
+  $effect(() => { atlas.shapesSelectedId = selectedId; });
 
   const selectedShape = $derived(atlas.shapes.find((s) => s.id === selectedId) ?? null);
 
@@ -100,10 +106,14 @@
       const e = shape as EllipseShape;
       const segs = 48;
       const pts: string[] = [];
+      const angle = (e.rotation ?? 0) * Math.PI / 180;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
       for (let i = 0; i < segs; i++) {
         const t = (2 * Math.PI * i) / segs;
-        const wx = e.cx + e.rx * Math.cos(t);
-        const wy = e.cy + e.ry * Math.sin(t);
+        const ex = e.rx * Math.cos(t);
+        const ey = e.ry * Math.sin(t);
+        const wx = e.cx + ex * cos - ey * sin;
+        const wy = e.cy + ex * sin + ey * cos;
         const s = screen(wx, wy);
         if (s) pts.push(`${s[0]},${s[1]}`);
       }
@@ -181,7 +191,7 @@
     return pts.join(' ');
   });
 
-  // ---- edit handles: 8 resize + 1 rotate ------------------------------------
+  // ---- edit handles: 8 resize + 1 rotate for rect; 4 resize + 1 rotate for ellipse ----
   function handlePositions(shape: Shape): ([number, number] | null)[] {
     if (!atlas.renderer) return [];
     if (shape.kind === 'rect') {
@@ -192,30 +202,174 @@
       const hh = r.h / 2;
       const angle = (r.rotation ?? 0) * Math.PI / 180;
       const cos = Math.cos(angle), sin = Math.sin(angle);
+      // Local handle positions: in world space y increases upward, so +hh is the top of the shape.
+      // Handle order: TL(0) T(1) TR(2) R(3) BR(4) B(5) BL(6) L(7) Rotate(8)
+      // "Top" = higher y in world = top of shape on screen.
       const local: [number, number][] = [
-        [-hw, -hh], [0, -hh], [hw, -hh],
-        [hw, 0],
-        [hw, hh], [0, hh], [-hw, hh],
-        [-hw, 0],
-        [0, -hh - 20 / (atlas.renderer.worldPerPixel() * 1 || 1)] // rotate handle
+        [-hw, hh], [0, hh], [hw, hh],  // 0,1,2: top-left, top-center, top-right
+        [hw, 0],                          // 3: right-center
+        [hw, -hh], [0, -hh], [-hw, -hh], // 4,5,6: bottom-right, bottom-center, bottom-left
+        [-hw, 0],                         // 7: left-center
+        [0, hh + 20 * (atlas.renderer.worldPerPixel() || 1)] // 8: rotate handle 20px above top
       ];
       return local.map(([dx, dy]) => screen(cx + dx * cos - dy * sin, cy + dx * sin + dy * cos));
     }
     if (shape.kind === 'ellipse') {
       const e = shape as EllipseShape;
-      const pts: [number, number][] = [
-        [e.cx - e.rx, e.cy],
-        [e.cx, e.cy - e.ry],
-        [e.cx + e.rx, e.cy],
-        [e.cx, e.cy + e.ry],
-        [e.cx, e.cy - e.ry - 20 / (atlas.renderer.worldPerPixel() || 1)], // rotate
+      const angle = (e.rotation ?? 0) * Math.PI / 180;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      // In world space y increases upward, so +ry is the top of the ellipse.
+      const local: [number, number][] = [
+        [-e.rx, 0],  // 0: left
+        [0, e.ry],   // 1: top (positive y = up)
+        [e.rx, 0],   // 2: right
+        [0, -e.ry],  // 3: bottom
+        [0, e.ry + 20 * (atlas.renderer.worldPerPixel() || 1)] // 4: rotate handle 20px above top
       ];
-      return pts.map((v) => screen(v[0], v[1]));
+      return local.map(([dx, dy]) => screen(e.cx + dx * cos - dy * sin, e.cy + dx * sin + dy * cos));
     }
     return [];
   }
 
+  // ---- resize math for rect -----------------------------------------------------
+  function resizePatchRect(orig: RectShape, wx: number, wy: number, handle: number, shiftKey: boolean): Partial<RectShape> {
+    const rot = (orig.rotation ?? 0) * Math.PI / 180;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const cx = orig.x + orig.w / 2, cy = orig.y + orig.h / 2;
+    const hw = orig.w / 2, hh = orig.h / 2;
+
+    // Convert world pointer to local (un-rotate around current center)
+    const dx = wx - cx, dy = wy - cy;
+    let lx = dx * cos + dy * sin;
+    let ly = -dx * sin + dy * cos;
+
+    // Handle layout (y+ = up in world): 0=TL(-hw,+hh) 1=T(0,+hh) 2=TR(+hw,+hh)
+    //   3=R(+hw,0) 4=BR(+hw,-hh) 5=B(0,-hh) 6=BL(-hw,-hh) 7=L(-hw,0) 8=Rotate
+    const isLeft  = handle === 0 || handle === 6 || handle === 7;
+    const isRight = handle === 2 || handle === 3 || handle === 4;
+    const isTop   = handle === 0 || handle === 1 || handle === 2;  // at local +hh
+    const isBottom = handle === 4 || handle === 5 || handle === 6; // at local -hh
+
+    // Pinned corner/edge in local coords (opposite to handle, anchored during resize)
+    // Top handles at +hh → anchor is at -hh (bottom); bottom handles → anchor at +hh (top)
+    const pLx = isLeft ? hw : (isRight ? -hw : 0);
+    const pLy = isTop  ? -hh : (isBottom ? hh : 0);
+
+    // For edge handles, constrain pointer to same x=0 or y=0 line in local
+    if (!isLeft && !isRight) lx = 0;
+    if (!isTop && !isBottom) ly = 0;
+
+    // Pinned world position
+    const pWx = cx + pLx * cos - pLy * sin;
+    const pWy = cy + pLx * sin + pLy * cos;
+
+    // Handle world position (from constrained local)
+    const hWx = cx + lx * cos - ly * sin;
+    const hWy = cy + lx * sin + ly * cos;
+
+    // New center world = midpoint of pinned and handle
+    const newCx = (pWx + hWx) / 2;
+    const newCy = (pWy + hWy) / 2;
+
+    // New dimensions from diff vector projected onto local axes
+    const diffX = hWx - pWx, diffY = hWy - pWy;
+    let newHw = (!isLeft && !isRight) ? hw : Math.max(0.001, Math.abs(diffX * cos + diffY * sin) / 2);
+    let newHh = (!isTop && !isBottom) ? hh : Math.max(0.001, Math.abs(-diffX * sin + diffY * cos) / 2);
+
+    // Shift = aspect ratio lock (corner handles only)
+    if (shiftKey && (isLeft || isRight) && (isTop || isBottom)) {
+      const aspect = hw / hh;
+      if (newHw / newHh > aspect) newHh = newHw / aspect;
+      else newHw = newHh * aspect;
+    }
+
+    return { x: newCx - newHw, y: newCy - newHh, w: newHw * 2, h: newHh * 2 };
+  }
+
+  // ---- resize math for ellipse -------------------------------------------------
+  function resizePatchEllipse(orig: EllipseShape, wx: number, wy: number, handle: number, shiftKey: boolean): Partial<EllipseShape> {
+    const rot = (orig.rotation ?? 0) * Math.PI / 180;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const dx = wx - orig.cx, dy = wy - orig.cy;
+    // Local position of pointer
+    const lx = dx * cos + dy * sin;
+    const ly = -dx * sin + dy * cos;
+
+    let newRx = orig.rx, newRy = orig.ry;
+    if (handle === 0 || handle === 2) newRx = Math.max(0.001, Math.abs(lx));
+    if (handle === 1 || handle === 3) newRy = Math.max(0.001, Math.abs(ly));
+
+    if (shiftKey) {
+      const aspect = orig.rx / orig.ry;
+      if (handle === 0 || handle === 2) newRy = newRx / aspect;
+      else newRx = newRy * aspect;
+    }
+    return { rx: newRx, ry: newRy };
+  }
+
+  // ---- rotate math -------------------------------------------------------------
+  function rotatePatch(orig: RectShape | EllipseShape, wx: number, wy: number): { rotation: number } {
+    const cx = orig.kind === 'rect' ? orig.x + orig.w / 2 : orig.cx;
+    const cy = orig.kind === 'rect' ? orig.y + orig.h / 2 : orig.cy;
+    const angle = Math.atan2(wy - cy, wx - cx) * 180 / Math.PI;
+    const newRotation = ((angle - rotateStartAngle) % 360 + 360) % 360;
+    return { rotation: newRotation };
+  }
+
   // ---- pointer events ---------------------------------------------------------
+
+  /** Called when a resize or rotate handle is pressed. Stops propagation so the SVG onDown doesn't also fire. */
+  function onHandleDown(e: PointerEvent, handleIdx: number) {
+    e.stopPropagation();
+    if (e.button !== 0 || !atlas.renderer || !el || !selectedShape) return;
+    if (selectedShape.kind !== 'rect' && selectedShape.kind !== 'ellipse') return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const [wx, wy] = world(e);
+    editHandle = handleIdx;
+    editStart = [wx, wy];
+    editOrigShape = JSON.parse(JSON.stringify(selectedShape)) as Shape;
+
+    const rotateIdx = selectedShape.kind === 'rect' ? 8 : 4;
+    if (handleIdx === rotateIdx) {
+      editMode = 'rotate';
+      const cx = selectedShape.kind === 'rect' ? selectedShape.x + selectedShape.w / 2 : selectedShape.cx;
+      const cy = selectedShape.kind === 'rect' ? selectedShape.y + selectedShape.h / 2 : selectedShape.cy;
+      const currentRotation = (selectedShape as any).rotation ?? 0;
+      rotateStartAngle = Math.atan2(wy - cy, wx - cx) * 180 / Math.PI - currentRotation;
+    } else {
+      editMode = 'resize';
+    }
+  }
+
+  /** Called when a polygon/line vertex handle is pressed. */
+  function onVertexDown(e: PointerEvent, vertexIdx: number) {
+    e.stopPropagation();
+    if (e.button !== 0 || !atlas.renderer || !el || !selectedShape) return;
+    if (e.altKey) {
+      // Alt-click: remove vertex (minimum 3 for polygon, 2 for line/arrow)
+      removeVertex(vertexIdx);
+      return;
+    }
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const [wx, wy] = world(e);
+    editHandle = vertexIdx;
+    editStart = [wx, wy];
+    editOrigShape = JSON.parse(JSON.stringify(selectedShape)) as Shape;
+    editMode = 'vertex';
+  }
+
+  function removeVertex(vertexIdx: number) {
+    if (!selectedShape || !selectedId) return;
+    const minVerts = (selectedShape.kind === 'line' || selectedShape.kind === 'arrow') ? 2 : 3;
+    const field = (selectedShape.kind === 'line' || selectedShape.kind === 'arrow') ? 'points' : 'vertices';
+    const verts: [number, number][] = [...(selectedShape as any)[field]];
+    if (verts.length <= minVerts) return;
+    verts.splice(vertexIdx, 1);
+    atlas.updateShape(selectedId, { [field]: verts } as any);
+  }
+
   function onDown(e: PointerEvent) {
     if (e.button !== 0 || !atlas.renderer || !el) return;
     e.preventDefault();
@@ -229,7 +383,7 @@
         selectedId = hit.id;
         editMode = 'move';
         editStart = [wx, wy];
-        editOrigShape = { ...hit } as Shape;
+        editOrigShape = JSON.parse(JSON.stringify(hit)) as Shape;
         return;
       }
       // No hit: auto-start drawing the current type.
@@ -275,7 +429,43 @@
     if (editMode === 'move' && editStart && editOrigShape && selectedId) {
       const dx = wx - editStart[0];
       const dy = wy - editStart[1];
-      applyMove(selectedId, editOrigShape, dx, dy, false);
+      // Live preview: update atlas.shapes directly without undo record
+      const patch = movePatch(editOrigShape, dx, dy);
+      atlas.shapes = atlas.shapes.map((s) => s.id === selectedId ? { ...s, ...patch } as Shape : s);
+      atlas.renderer?.setShapes(atlas.shapes);
+    }
+
+    if (editMode === 'resize' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      let patch: any;
+      if (orig.kind === 'rect') {
+        patch = resizePatchRect(orig as RectShape, wx, wy, editHandle, e.shiftKey);
+      } else if (orig.kind === 'ellipse') {
+        patch = resizePatchEllipse(orig as EllipseShape, wx, wy, editHandle, e.shiftKey);
+      }
+      if (patch) {
+        // Live preview without undo record
+        atlas.shapes = atlas.shapes.map((s) => s.id === selectedId ? { ...s, ...patch } as Shape : s);
+        atlas.renderer?.setShapes(atlas.shapes);
+      }
+    }
+
+    if (editMode === 'rotate' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      if (orig.kind === 'rect' || orig.kind === 'ellipse') {
+        const patch = rotatePatch(orig as RectShape | EllipseShape, wx, wy);
+        atlas.shapes = atlas.shapes.map((s) => s.id === selectedId ? { ...s, ...patch } as Shape : s);
+        atlas.renderer?.setShapes(atlas.shapes);
+      }
+    }
+
+    if (editMode === 'vertex' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      const field = (orig.kind === 'line' || orig.kind === 'arrow') ? 'points' : 'vertices';
+      const verts: [number, number][] = [...(orig as any)[field]];
+      verts[editHandle] = [wx, wy];
+      atlas.shapes = atlas.shapes.map((s) => s.id === selectedId ? { ...s, [field]: verts } as Shape : s);
+      atlas.renderer?.setShapes(atlas.shapes);
     }
 
     if (drawMode === 'draw-freehand' && freePoints.length > 0) {
@@ -289,7 +479,40 @@
     if (editMode === 'move' && editStart && editOrigShape && selectedId) {
       const dx = wx - editStart[0];
       const dy = wy - editStart[1];
-      applyMove(selectedId, editOrigShape, dx, dy, true);
+      // Use commitShapeEdit so undo correctly restores from editOrigShape, not the live-preview state
+      atlas.commitShapeEdit(selectedId, editOrigShape, movePatch(editOrigShape, dx, dy));
+      editMode = 'idle';
+      editStart = null;
+      editOrigShape = null;
+    }
+
+    if (editMode === 'resize' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      let patch: any;
+      if (orig.kind === 'rect') patch = resizePatchRect(orig as RectShape, wx, wy, editHandle, e.shiftKey);
+      else if (orig.kind === 'ellipse') patch = resizePatchEllipse(orig as EllipseShape, wx, wy, editHandle, e.shiftKey);
+      if (patch) atlas.commitShapeEdit(selectedId, orig, patch);
+      editMode = 'idle';
+      editStart = null;
+      editOrigShape = null;
+    }
+
+    if (editMode === 'rotate' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      if (orig.kind === 'rect' || orig.kind === 'ellipse') {
+        atlas.commitShapeEdit(selectedId, orig, rotatePatch(orig as RectShape | EllipseShape, wx, wy));
+      }
+      editMode = 'idle';
+      editStart = null;
+      editOrigShape = null;
+    }
+
+    if (editMode === 'vertex' && editOrigShape && selectedId) {
+      const orig = editOrigShape;
+      const field = (orig.kind === 'line' || orig.kind === 'arrow') ? 'points' : 'vertices';
+      const verts: [number, number][] = [...(orig as any)[field]];
+      verts[editHandle] = [wx, wy];
+      atlas.commitShapeEdit(selectedId, orig, { [field]: verts } as any);
       editMode = 'idle';
       editStart = null;
       editOrigShape = null;
@@ -336,12 +559,14 @@
     const r = el.getBoundingClientRect();
     const [wx, wy] = atlas.renderer.unproject(e.clientX - r.left, e.clientY - r.top);
 
+    // Close polygon / line in drawing mode
     if (drawMode === 'draw-polygon' && polyPoints.length >= 3) {
       const shape = makePolygon([...polyPoints], currentStyle());
       atlas.addShape(shape);
       selectedId = shape.id;
       polyPoints = [];
       drawCurrent = null;
+      return;
     }
     if ((drawMode === 'draw-line' || drawMode === 'draw-arrow') && polyPoints.length >= 2) {
       const shape = drawMode === 'draw-arrow'
@@ -351,6 +576,30 @@
       selectedId = shape.id;
       polyPoints = [];
       drawCurrent = null;
+      return;
+    }
+
+    // Insert vertex on edge of selected polygon/line/arrow
+    if (selectedShape && (selectedShape.kind === 'polygon' || selectedShape.kind === 'freehand' ||
+        selectedShape.kind === 'line' || selectedShape.kind === 'arrow') && selectedId) {
+      const field = (selectedShape.kind === 'line' || selectedShape.kind === 'arrow') ? 'points' : 'vertices';
+      const verts: [number, number][] = (selectedShape as any)[field];
+      const wpp = atlas.renderer.worldPerPixel();
+      const tol = 10 * wpp;
+      let bestEdge = -1, bestDist = Infinity;
+      for (let i = 0; i < verts.length - 1; i++) {
+        const d = distToSegment(wx, wy, verts[i], verts[i + 1]);
+        if (d < tol && d < bestDist) { bestDist = d; bestEdge = i; }
+      }
+      // For closed shapes, also check the edge from last to first
+      if (selectedShape.kind === 'polygon' || selectedShape.kind === 'freehand') {
+        const d = distToSegment(wx, wy, verts[verts.length - 1], verts[0]);
+        if (d < tol && d < bestDist) { bestDist = d; bestEdge = verts.length - 1; }
+      }
+      if (bestEdge >= 0) {
+        const newVerts = [...verts.slice(0, bestEdge + 1), [wx, wy] as [number, number], ...verts.slice(bestEdge + 1)];
+        atlas.updateShape(selectedId, { [field]: newVerts } as any);
+      }
     }
   }
 
@@ -362,6 +611,7 @@
       freePoints = [];
       selectedId = null;
       editMode = 'idle';
+      drawMode = 'idle';
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
       const target = e.target as HTMLElement;
@@ -390,17 +640,6 @@
   }
 
   // ---- edit helpers ----------------------------------------------------------
-  function applyMove(id: string, orig: Shape, dx: number, dy: number, final: boolean): void {
-    if (!final) {
-      // Live preview without recording undo (undo will be recorded on final).
-      const patch = movePatch(orig, dx, dy);
-      atlas.shapes = atlas.shapes.map((s) => s.id === id ? { ...s, ...patch } as Shape : s);
-      atlas.renderer?.setShapes(atlas.shapes);
-    } else {
-      atlas.updateShape(id, movePatch(orig, dx, dy));
-    }
-  }
-
   function movePatch(orig: Shape, dx: number, dy: number): Partial<Shape> {
     if (orig.kind === 'rect') return { x: (orig as any).x + dx, y: (orig as any).y + dy } as any;
     if (orig.kind === 'ellipse') return { cx: (orig as any).cx + dx, cy: (orig as any).cy + dy } as any;
@@ -523,21 +762,30 @@
           class:selected={isSelected}
         />
       {:else if shape.kind === 'line' || shape.kind === 'arrow'}
+        {@const ah = shape.style.arrowHead ?? (shape.kind === 'arrow' ? 'end' : 'none')}
         <polyline
           points={shapeScreenLine(shape)}
           fill="none"
           stroke={styleString(shape)}
           stroke-width={strokeW(shape)}
           stroke-dasharray={shape.style.dash?.join(',') || 'none'}
-          marker-end={shape.kind === 'arrow' ? `url(#arrow-${shape.id})` : ''}
+          marker-end={ah === 'end' || ah === 'both' ? `url(#arrowend-${shape.id})` : ''}
+          marker-start={ah === 'start' || ah === 'both' ? `url(#arrowstart-${shape.id})` : ''}
           opacity={shape.style.opacity}
           class:selected={isSelected}
         />
-        {#if shape.kind === 'arrow'}
+        {#if ah !== 'none'}
           <defs>
-            <marker id="arrow-{shape.id}" markerWidth="8" markerHeight="8" refX="4" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L8,3 z" fill={styleString(shape)} />
-            </marker>
+            {#if ah === 'end' || ah === 'both'}
+              <marker id="arrowend-{shape.id}" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill={styleString(shape)} />
+              </marker>
+            {/if}
+            {#if ah === 'start' || ah === 'both'}
+              <marker id="arrowstart-{shape.id}" markerWidth="8" markerHeight="8" refX="1" refY="3" orient="auto-start-reverse">
+                <path d="M0,0 L0,6 L8,3 z" fill={styleString(shape)} />
+              </marker>
+            {/if}
           </defs>
         {/if}
       {:else if shape.kind === 'text'}
@@ -553,20 +801,42 @@
         {/if}
       {/if}
 
-      <!-- Selection handles for selected shape -->
+      <!-- Resize and rotate handles for selected rect/ellipse -->
       {#if isSelected && (shape.kind === 'rect' || shape.kind === 'ellipse')}
         {#each handlePositions(shape) as hp, i}
           {#if hp}
             {#if i === (shape.kind === 'rect' ? 8 : 4)}
               <!-- Rotate handle -->
-              <circle cx={hp[0]} cy={hp[1]} r="6" fill="rgba(255,200,0,0.9)" stroke="white" stroke-width="1.5" class="handle rotate-handle" />
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <circle cx={hp[0]} cy={hp[1]} r="6" fill="rgba(255,200,0,0.9)" stroke="white" stroke-width="1.5"
+                class="handle rotate-handle"
+                onpointerdown={(e) => onHandleDown(e, i)}
+              />
             {:else}
               <!-- Resize handle -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <rect x={hp[0] - 4} y={hp[1] - 4} width="8" height="8"
                 fill="white" stroke="rgba(0,120,255,0.9)" stroke-width="1.5"
                 class="handle resize-handle"
+                onpointerdown={(e) => onHandleDown(e, i)}
               />
             {/if}
+          {/if}
+        {/each}
+      {/if}
+
+      <!-- Vertex handles for selected polygon/polyline -->
+      {#if isSelected && (shape.kind === 'polygon' || shape.kind === 'freehand' || shape.kind === 'line' || shape.kind === 'arrow')}
+        {@const verts = shape.kind === 'polygon' || shape.kind === 'freehand' ? (shape as any).vertices : (shape as any).points}
+        {#each verts as v, i}
+          {@const sp = screen(v[0], v[1])}
+          {#if sp}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <circle cx={sp[0]} cy={sp[1]} r="5"
+              fill="rgba(0,120,255,0.8)" stroke="white" stroke-width="1.5"
+              class="handle vertex-handle"
+              onpointerdown={(e) => onVertexDown(e, i)}
+            />
           {/if}
         {/each}
       {/if}
@@ -635,5 +905,8 @@
   }
   .rotate-handle {
     cursor: grab;
+  }
+  .vertex-handle {
+    cursor: move;
   }
 </style>

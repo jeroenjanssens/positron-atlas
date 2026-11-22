@@ -38,15 +38,18 @@ export type ActionId =
   | 'select.all'
   | 'select.clear'
   | 'brush.sizeUp'
-  | 'brush.sizeDown';
+  | 'brush.sizeDown'
+  | 'shapes.order.front'
+  | 'shapes.order.back';
 
 /**
  * Which contexts a binding applies in.
  * '2d-brush' means the binding is only active while the brush tool is active in 2D.
+ * '2d-shapes' means the binding is only active while the shapes tool is active in 2D.
  * This is enforced by the dispatcher (which checks atlas.annotateTool) and by the
  * VS Code `when` clause `positronAtlas.annotateTool == 'brush'` (set by the host).
  */
-export type BindingContext = '2d' | '3d' | 'both' | '2d-brush';
+export type BindingContext = '2d' | '3d' | 'both' | '2d-brush' | '2d-shapes';
 
 /**
  * Per-preset mouse / gesture description.
@@ -309,6 +312,21 @@ export const BINDINGS: BindingEntry[] = [
     key: ']',
     section: 'annotate',
     context: '2d-brush',
+  },
+  // ---- Shapes order (item 8, B4) ------------------------------------------------
+  {
+    actionId: 'shapes.order.front',
+    label: 'Bring shape to front',
+    key: ']',
+    section: 'annotate',
+    context: '2d-shapes',
+  },
+  {
+    actionId: 'shapes.order.back',
+    label: 'Send shape to back',
+    key: '[',
+    section: 'annotate',
+    context: '2d-shapes',
   },
   // ---- Preset-specific: CAD fit keys -------------------------------------------
   {
