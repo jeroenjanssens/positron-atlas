@@ -22,5 +22,5 @@ examples/ggumap_files/
 
 # Rust core: build output (npm run build:native; CI builds release binaries)
 rust/target/
-native/
+native
 .vscodeignore.package
