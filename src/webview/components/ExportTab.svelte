@@ -4,8 +4,26 @@
   import Info from './controls/Info.svelte';
   import { formatCount } from '../logic';
   import type { HtmlExportOptions } from '../atlas/exportHtml';
+  import { isVideoSupported } from '../render/videoExport';
+  import type { VideoExportOptions } from '../../shared/protocol';
 
   let { atlas }: { atlas: Atlas } = $props();
+
+  // ---- Video export state ----
+  const videoAvailable = isVideoSupported();
+  let videoMode = $state<'time' | 'turntable'>('time');
+  let videoFps = $state(30);
+  let videoDuration = $state(3);
+
+  function doRecord() {
+    const opts: VideoExportOptions = {
+      mode: videoMode,
+      widthPx: 1280, heightPx: 720,
+      fps: videoFps,
+      durationSecs: videoDuration,
+    };
+    atlas.startVideoExport(opts);
+  }
 
   // Coordinates exist for every prepared row once UMAP has run (and all rows are placed).
   const needsPlacement = $derived(!!atlas.prepared?.needsProjection && atlas.projection !== 'done');
@@ -126,6 +144,37 @@
   </div>
 {/if}
 
+<Section {atlas} id="export-video" title="Video">
+  {#if videoAvailable}
+    <div class="btn-row">
+      <select bind:value={videoMode} style="flex:1">
+        <option value="time">Time animation</option>
+        <option value="turntable">3D turntable</option>
+      </select>
+    </div>
+    <div class="btn-row" style="gap:4px">
+      <label class="compact-label" for="vid-fps">FPS</label>
+      <input id="vid-fps" type="number" class="num-sm" bind:value={videoFps} min="10" max="60" step="5" />
+      <label class="compact-label" for="vid-dur">Duration (s)</label>
+      <input id="vid-dur" type="number" class="num-sm" bind:value={videoDuration} min="1" max="60" step="1" />
+    </div>
+    <div class="btn-row">
+      <button disabled={atlas.videoRecording || (videoMode === 'time' && !atlas.animateValues)} onclick={doRecord}>
+        {atlas.videoRecording ? 'Recording…' : 'Record'}
+      </button>
+      <Info id="export.video" />
+    </div>
+    {#if videoMode === 'time' && !atlas.animateValues}
+      <div class="hint muted">Set Animate by a column first (Explore tab).</div>
+    {/if}
+    {#if videoMode === 'turntable' && atlas.dims !== 3}
+      <div class="hint muted">Switch to 3D for a turntable recording.</div>
+    {/if}
+  {:else}
+    <div class="hint muted">WebM recording is not available in this browser.</div>
+  {/if}
+</Section>
+
 <Section {atlas} id="export-frame" title="To the DataFrame">
   <div class="btn-row">
     <button disabled={atlas.phase !== 'ready' || needsPlacement} onclick={() => atlas.addCoordinates()}
@@ -182,6 +231,8 @@
 {/if}
 
 <style>
+  .compact-label { font-size: 0.85em; white-space: nowrap; }
+  .num-sm { width: 56px; }
   .html-export-backdrop {
     position: fixed;
     inset: 0;

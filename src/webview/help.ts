@@ -1092,6 +1092,16 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  'export.video': {
+    title: 'Record video',
+    what: 'Records a WebM video clip of the map animation or 3D turntable and saves it as a .webm file.',
+    intuition:
+      'Starts the animation (time mode) or auto-rotation (turntable mode), captures the deck.gl canvas via ' +
+      'MediaRecorder for the chosen duration, then writes the resulting WebM file through the host save dialog.',
+    when: 'To share a short animated clip of the layout changing over time, or a 3D rotation.',
+    cost: 'none',
+  },
+
   // ---- Search ------------------------------------------------------------------
 
   'search.query': {
