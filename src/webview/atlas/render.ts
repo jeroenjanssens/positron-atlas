@@ -204,6 +204,8 @@ export function render(atlas: Atlas): void {
   }
 
   atlas.renderer.setPointSets(sets, filters);
+  // C1: re-apply grid per-panel colors whenever point data changes.
+  if (atlas.grid.enabled) atlas.applyGridToRenderer();
   // B5: push annotations to renderer for the leader-lines deck.gl layer.
   atlas.renderer.setAnnotations(atlas.annotations);
   // Re-apply any active search highlight after the point sets change (A7).

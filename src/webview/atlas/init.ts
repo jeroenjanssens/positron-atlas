@@ -12,6 +12,7 @@ import { detectTitleColumn, detectLinkColumn, detectImageUrlColumn } from '../ho
 import { detectCoordsColumns } from './coords';
 import { restoreLayers } from './layers';
 import { importShapesJson } from './shapes';
+import { createGridState } from './grid';
 
 export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
   atlas.describe = d;
@@ -256,6 +257,22 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     atlas.renderer?.setRotation2D(state.rotation2D);
   } else {
     atlas.rotation2D = 0;
+  }
+  // C1: Restore grid state.
+  if (state?.grid && typeof state.grid === 'object') {
+    const g = state.grid;
+    atlas.grid = {
+      enabled: !!g.enabled,
+      layout: (g.layout as import('../atlas/grid').GridLayout) ?? '2x2',
+      panels: Array.isArray(g.panels)
+        ? (g.panels as { colorColumn: number | null; title: string | null }[]).map((p) => ({
+            colorColumn: typeof p.colorColumn === 'number' ? p.colorColumn : null,
+            title: typeof p.title === 'string' ? p.title : null,
+          }))
+        : [],
+    };
+  } else {
+    atlas.grid = createGridState('2x2');
   }
   // Apply navigation settings from the host's init message (item 1).
   if (settings.nav) {

@@ -234,6 +234,16 @@ import {
 } from './atlas/searchOverlay';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
+import {
+  createGridState,
+  setGridLayout as setGridLayoutImpl,
+  requestGridColors as requestGridColorsImpl,
+  onGridColors as onGridColorsImpl,
+  buildPanelColors as buildPanelColorsImpl,
+  type GridState,
+  type GridLayout,
+  type GridColorCache,
+} from './atlas/grid';
 import { enqueueApiCommand as enqueueApiCommandImpl } from './atlas/api';
 import {
   createBrushState,
@@ -398,6 +408,15 @@ export class Atlas {
   layoutMode = $state<'umap' | 'columns'>('umap');
   /** True when 3D auto-rotate is active (T3). */
   autoRotate = $state(false);
+
+  // ---- C1: Grid mode (item 4) ------------------------------------------------
+  /** Grid configuration (small multiples). Persisted in panel state. */
+  grid = $state<GridState>(createGridState('2x2'));
+  /**
+   * Per-column RGBA color cache for grid panels.
+   * Non-reactive; keyed by column index; populated as `colors` responses arrive.
+   */
+  gridColorCache: GridColorCache = new Map();
 
   // ---- A2: layer model ---------------------------------------------------------
   /** Point-layer list: base layer (and future overlay-frame layers).  Persisted. */
@@ -763,6 +782,11 @@ export class Atlas {
         break;
       case 'colors':
         await onColorsImpl(this, msg.column, msg.file, msg.meta);
+        // C1: also cache colors for grid panels that use this column.
+        if (this.grid.enabled && this.grid.panels.some((p) => p.colorColumn === msg.column)) {
+          await onGridColorsImpl(this, msg.column, msg.file, msg.meta, this.gridColorCache);
+          this.applyGridToRenderer();
+        }
         break;
       case 'sizes':
         await onSizesImpl(this, msg.column, msg.file, msg.meta);
@@ -1051,6 +1075,50 @@ export class Atlas {
   openPinnedLink(): void { openPinnedLinkImpl(this); }
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
   post(msg: import('../shared/protocol').ToHost): void { vscode.post(msg); }
+
+  // ---- C1: Grid mode (item 4) --------------------------------------------------
+
+  /**
+   * Toggle grid mode on or off.
+   * When turning on: use the current state's layout and request missing panel colors.
+   * When turning off: restore single-view mode.
+   */
+  toggleGrid(): void {
+    const enabled = !this.grid.enabled;
+    this.grid = { ...this.grid, enabled };
+    this.applyGridToRenderer();
+    if (enabled) requestGridColorsImpl(this, this.grid, this.gridColorCache);
+  }
+
+  /** Set the grid layout (1x2 | 2x2 | 2x3 | 3x3), resizing the panels array. */
+  setGridLayout(layout: GridLayout): void {
+    this.grid = setGridLayoutImpl(this.grid, layout);
+    this.applyGridToRenderer();
+    if (this.grid.enabled) requestGridColorsImpl(this, this.grid, this.gridColorCache);
+  }
+
+  /** Set the color column for a specific panel (0-based index). */
+  setPanelColorColumn(panelIndex: number, colorColumn: number | null): void {
+    const panels = this.grid.panels.map((p, i) =>
+      i === panelIndex ? { ...p, colorColumn } : p,
+    );
+    this.grid = { ...this.grid, panels };
+    this.applyGridToRenderer();
+    if (this.grid.enabled && colorColumn !== null && !this.gridColorCache.has(colorColumn)) {
+      requestGridColorsImpl(this, this.grid, this.gridColorCache);
+    }
+  }
+
+  /**
+   * Push the current grid configuration and per-panel colors to the renderer.
+   * Called after any grid state change and after new panel colors arrive.
+   */
+  applyGridToRenderer(): void {
+    if (!this.renderer) return;
+    const panelColors = buildPanelColorsImpl(this.grid, this.colorsAll, this.gridColorCache);
+    this.renderer.setGrid(this.grid.enabled, this.grid.layout, panelColors);
+    this._renderTick++;
+  }
 
   // ---- C2: animate, video, tracks, vectors (atlas/animateOps.ts, atlas/tracksOps.ts) ----
   requestTimeValues(column: number): void { requestTimeValuesImpl(this, column); }
