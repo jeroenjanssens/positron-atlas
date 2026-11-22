@@ -1,0 +1,106 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(13)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['group'] = [f'g{v}' for v in k]\n# Two overlay DataFrames.\nm1 = 150\nk1 = rng.integers(0, 3, m1)\ndf2 = pd.DataFrame(centers[k1] + rng.normal(0, 1, (m1, 10)), columns=[f'x{i}' for i in range(10)])\ndf2['group'] = [f'g{v}' for v in k1]\nm2 = 100\nk2 = rng.integers(0, 3, m2)\ndf3 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m2, 10)), columns=[f'x{i}' for i in range(10)])\ndf3['group'] = [f'g{v}' for v in k2]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 500
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 90000
+    },
+    {
+      "name": "count base pixels",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsBase = n",
+      "until": "window.__pixelsBase !== undefined",
+      "assert": "window.__pixelsBase > 100"
+    },
+    {
+      "name": "add first overlay df2",
+      "eval": "a.addOverlay('df2')",
+      "until": "a.layers.filter(l => l.kind === 'point-overlay').length === 1",
+      "timeout": 60000
+    },
+    {
+      "name": "wait for df2 overlay XY",
+      "until": "(() => { const ov = a.layers.find(l => l.kind === 'point-overlay'); return ov && (a.overlayFilled.get(ov.id) ?? 0) >= (a.overlayNKept.get(ov.id) ?? 1); })()",
+      "timeout": 60000
+    },
+    {
+      "name": "add second overlay df3",
+      "eval": "a.addOverlay('df3')",
+      "until": "a.layers.filter(l => l.kind === 'point-overlay').length === 2",
+      "timeout": 60000
+    },
+    {
+      "name": "wait for df3 overlay XY",
+      "until": "(() => { const ovs = a.layers.filter(l => l.kind === 'point-overlay'); return ovs.length === 2 && ovs.every(ov => (a.overlayFilled.get(ov.id) ?? 0) >= (a.overlayNKept.get(ov.id) ?? 1)); })()",
+      "timeout": 60000
+    },
+    {
+      "name": "verify two overlays have different symbol codes",
+      "assert": [
+        "a.layers.filter(l => l.kind === 'point-overlay').length === 2",
+        "a.layers.filter(l => l.kind === 'point-overlay').map(l => l.symbol).every(s => s > 0)",
+        "new Set(a.layers.filter(l => l.kind === 'point-overlay').map(l => l.symbol)).size === 2"
+      ],
+      "report": "{ symbols: a.layers.filter(l => l.kind === 'point-overlay').map(l => ({ name: l.name, symbol: l.symbol })) }"
+    },
+    {
+      "name": "count pixels with both overlays — must exceed base",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsBothOverlays = n",
+      "until": "window.__pixelsBothOverlays !== undefined",
+      "screenshot": "overlay-export-both.png",
+      "assert": "window.__pixelsBothOverlays > window.__pixelsBase",
+      "report": "{ pixelsBase: window.__pixelsBase, pixelsBothOverlays: window.__pixelsBothOverlays, diff: window.__pixelsBothOverlays - window.__pixelsBase }"
+    },
+    {
+      "name": "hide first overlay and verify pixel count drops",
+      "eval": "const ov1 = a.layers.filter(l => l.kind === 'point-overlay')[0]; a.updateLayer(ov1.id, { visible: false });",
+      "until": "a.layers.filter(l => l.kind === 'point-overlay')[0].visible === false",
+      "timeout": 5000
+    },
+    {
+      "name": "count pixels with only second overlay",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pixelsOneOverlay = n",
+      "until": "window.__pixelsOneOverlay !== undefined",
+      "assert": "window.__pixelsOneOverlay < window.__pixelsBothOverlays",
+      "report": "{ pixelsOneOverlay: window.__pixelsOneOverlay }"
+    },
+    {
+      "name": "restore first overlay",
+      "eval": "const ov1 = a.layers.filter(l => l.kind === 'point-overlay')[0]; a.updateLayer(ov1.id, { visible: true });",
+      "until": "a.layers.filter(l => l.kind === 'point-overlay')[0].visible === true",
+      "timeout": 5000
+    },
+    {
+      "name": "export html with overlays",
+      "eval": "a.htmlExportOpen = true; a.exportHtml({ tooltipColumns: [], linkColumn: -1, maxChars: 100, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 30000,
+      "assert": [
+        "h.htmlExport.ok === true",
+        "h.htmlExport.nPoints > 1000"
+      ],
+      "report": "{ htmlExport: h.htmlExport }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 30000,
+      "openPageScreenshot": "overlay-export-viewer.png",
+      "checkOpenPagePixels": { "background": "#1e1e1e", "threshold": 20, "minCount": 100 },
+      "openPageSteps": [
+        {
+          "name": "viewer has more points than base (includes overlays)",
+          "assert": "v.totalPoints > 1000",
+          "report": "{ totalPoints: v.totalPoints, overlayCount: v.overlayCount }"
+        },
+        {
+          "name": "viewer has overlay descriptors",
+          "assert": "v.overlayCount === 2",
+          "report": "{ overlayCount: v.overlayCount }"
+        }
+      ]
+    }
+  ]
+}
