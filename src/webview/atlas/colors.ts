@@ -232,12 +232,20 @@ export async function onHistValues(atlas: Atlas, column: number, file: FileRef):
 }
 
 export function setHistRange(atlas: Atlas, range: [number, number] | null): void {
+  const before = atlas.histFilter;
   if (range === null || !atlas.histFilter) {
     atlas.histFilter = null;
   } else {
     atlas.histFilter = { ...atlas.histFilter, range };
   }
+  const after = atlas.histFilter;
   atlas.render();
+  atlas.recordHistory({
+    label: range === null ? 'Clear histogram filter' : 'Set histogram range',
+    undo: () => { atlas.histFilter = before; atlas.render(); },
+    redo: () => { atlas.histFilter = after; atlas.render(); },
+    coalesceKey: 'histRange',
+  });
 }
 
 /**
@@ -371,6 +379,7 @@ export function toggleCategory(atlas: Atlas, catIndex: number, solo: boolean): v
   if (col === null || !atlas.colorMeta || atlas.colorMeta.kind !== 'categorical') return;
   const k = atlas.colorMeta.categories.length;
   const existing = atlas.hiddenCategories.get(col) ?? new Set<number>();
+  const before = new Map(atlas.hiddenCategories);
 
   let next: Set<number>;
   if (solo) {
@@ -402,4 +411,13 @@ export function toggleCategory(atlas: Atlas, catIndex: number, solo: boolean): v
   }
   atlas.hiddenCategories = newMap;
   atlas.render();
+
+  const categoryName = atlas.colorMeta.kind === 'categorical' ? (atlas.colorMeta.categories[catIndex] ?? String(catIndex)) : String(catIndex);
+  const isNowHidden = next.has(catIndex);
+  const after = new Map(atlas.hiddenCategories);
+  atlas.recordHistory({
+    label: isNowHidden ? `Hide category "${categoryName}"` : `Show category "${categoryName}"`,
+    undo: () => { atlas.hiddenCategories = new Map(before); atlas.render(); },
+    redo: () => { atlas.hiddenCategories = new Map(after); atlas.render(); },
+  });
 }

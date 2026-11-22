@@ -1,0 +1,134 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 2000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 5, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 2000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "history starts empty",
+      "assert": [
+        "!a.history.canUndo",
+        "!a.history.canRedo",
+        "a.undoLabel === ''",
+        "a.redoLabel === ''"
+      ]
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 15000
+    },
+    {
+      "name": "hide category 0 (records history)",
+      "eval": "a.toggleCategory(0, false)",
+      "until": "a.isCategoryHidden(0)",
+      "timeout": 3000,
+      "assert": [
+        "a.isCategoryHidden(0)",
+        "a.history.canUndo",
+        "a.undoLabel !== ''"
+      ],
+      "report": "{ undoLabel: a.undoLabel, canRedo: a.history.canRedo }"
+    },
+    {
+      "name": "undo restores hidden categories",
+      "eval": "a.undo()",
+      "until": "!a.isCategoryHidden(0)",
+      "timeout": 3000,
+      "assert": [
+        "!a.isCategoryHidden(0)",
+        "!a.history.canUndo",
+        "a.history.canRedo",
+        "a.redoLabel !== ''"
+      ],
+      "report": "{ redoLabel: a.redoLabel, anyHidden: a.anyHidden }"
+    },
+    {
+      "name": "redo re-hides the category",
+      "eval": "a.redo()",
+      "until": "a.isCategoryHidden(0)",
+      "timeout": 3000,
+      "assert": [
+        "a.isCategoryHidden(0)",
+        "a.history.canUndo",
+        "!a.history.canRedo"
+      ]
+    },
+    {
+      "name": "undo legend toggle again for clean state",
+      "eval": "a.undo()",
+      "until": "!a.isCategoryHidden(0)",
+      "timeout": 3000
+    },
+    {
+      "name": "add annotation via annotate tool",
+      "eval": "a.tool = 'annotate'; const xy = a.anchorXY; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.pendingHover && a.pendingHover.prepIdx !== undefined",
+      "timeout": 5000
+    },
+    {
+      "name": "click creates annotation (records history)",
+      "eval": "a.handleAnnotateClick()",
+      "assert": [
+        "a.annotations.size === 1",
+        "a.history.canUndo",
+        "a.undoLabel.includes('annotation')"
+      ],
+      "report": "{ size: a.annotations.size, undoLabel: a.undoLabel }"
+    },
+    {
+      "name": "undo removes annotation",
+      "eval": "a.undo()",
+      "until": "a.annotations.size === 0",
+      "timeout": 3000,
+      "assert": [
+        "a.annotations.size === 0",
+        "a.history.canRedo"
+      ]
+    },
+    {
+      "name": "redo restores annotation",
+      "eval": "a.redo()",
+      "until": "a.annotations.size === 1",
+      "timeout": 3000,
+      "assert": [
+        "a.annotations.size === 1"
+      ]
+    },
+    {
+      "name": "set title overlay (records history)",
+      "eval": "a.setTitleOverlay({ title: 'Test Title' })",
+      "assert": [
+        "a.titleOverlay.title === 'Test Title'",
+        "a.history.canUndo",
+        "a.undoLabel.includes('title')"
+      ],
+      "report": "{ title: a.titleOverlay.title, undoLabel: a.undoLabel }"
+    },
+    {
+      "name": "undo title change restores empty title",
+      "eval": "a.undo()",
+      "until": "a.titleOverlay.title !== 'Test Title'",
+      "timeout": 3000,
+      "assert": [
+        "a.titleOverlay.title !== 'Test Title'"
+      ]
+    },
+    {
+      "name": "clear resets history on reinit",
+      "eval": "a.history.clear()",
+      "assert": [
+        "!a.history.canUndo",
+        "!a.history.canRedo"
+      ]
+    }
+  ]
+}

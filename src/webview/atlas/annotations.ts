@@ -179,19 +179,60 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
     }
   }
 
+  // Record undo: removing the annotation reverts the add.
+  const label = ann.text ? `Add annotation "${ann.text}"` : 'Add annotation';
+  atlas.recordHistory({
+    label,
+    undo: () => {
+      const m = new Map(atlas.annotations);
+      m.delete(id);
+      atlas.annotations = m;
+    },
+    redo: () => {
+      const m = new Map(atlas.annotations);
+      m.set(id, ann);
+      atlas.annotations = m;
+    },
+  });
+
   return ann;
 }
 
 /** Remove a single annotation by id. */
 export function removeAnnotation(atlas: Atlas, id: string): void {
+  const ann = atlas.annotations.get(id);
   const next = new Map(atlas.annotations);
   next.delete(id);
   atlas.annotations = next;
+  if (ann) {
+    const label = ann.text ? `Remove annotation "${ann.text}"` : 'Remove annotation';
+    atlas.recordHistory({
+      label,
+      undo: () => {
+        const m = new Map(atlas.annotations);
+        m.set(id, ann);
+        atlas.annotations = m;
+      },
+      redo: () => {
+        const m = new Map(atlas.annotations);
+        m.delete(id);
+        atlas.annotations = m;
+      },
+    });
+  }
 }
 
 /** Remove all annotations. */
 export function clearAnnotations(atlas: Atlas): void {
+  const before = new Map(atlas.annotations);
   atlas.annotations = new Map();
+  if (before.size > 0) {
+    atlas.recordHistory({
+      label: 'Clear all annotations',
+      undo: () => { atlas.annotations = new Map(before); },
+      redo: () => { atlas.annotations = new Map(); },
+    });
+  }
 }
 
 /** Update the pixel data of an image annotation (called async when rows response arrives). */
@@ -294,18 +335,55 @@ export function updateAnnotationOffset(atlas: Atlas, id: string, offsetX: number
 export function updateAnnotationText(atlas: Atlas, id: string, text: string): void {
   const ann = atlas.annotations.get(id);
   if (!ann) return;
+  const oldText = ann.text;
   const next = new Map(atlas.annotations);
   next.set(id, { ...ann, text });
   atlas.annotations = next;
+  atlas.recordHistory({
+    label: 'Edit annotation text',
+    undo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, text: oldText });
+      atlas.annotations = m;
+    },
+    redo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, text });
+      atlas.annotations = m;
+    },
+    coalesceKey: `ann-text:${id}`,
+  });
 }
 
 /** Update the style of an annotation. */
 export function updateAnnotationStyle(atlas: Atlas, id: string, style: AnnotationData['style']): void {
   const ann = atlas.annotations.get(id);
   if (!ann) return;
+  const oldStyle = ann.style;
   const next = new Map(atlas.annotations);
   next.set(id, { ...ann, style });
   atlas.annotations = next;
+  atlas.recordHistory({
+    label: 'Change annotation style',
+    undo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, style: oldStyle });
+      atlas.annotations = m;
+    },
+    redo: () => {
+      const a = atlas.annotations.get(id);
+      if (!a) return;
+      const m = new Map(atlas.annotations);
+      m.set(id, { ...a, style });
+      atlas.annotations = m;
+    },
+  });
 }
 
 /** Export all annotations as a JSON string. */
@@ -316,6 +394,7 @@ export function exportAnnotationsJson(atlas: Atlas): string {
 
 /** Import annotations from a JSON string (replaces current annotations). */
 export function importAnnotationsJson(atlas: Atlas, json: string): void {
+  const before = new Map(atlas.annotations);
   const arr = JSON.parse(json) as AnnotationData[];
   const next = new Map<string, AnnotationData>();
   for (const ann of arr) {
@@ -324,6 +403,11 @@ export function importAnnotationsJson(atlas: Atlas, json: string): void {
     }
   }
   atlas.annotations = next;
+  atlas.recordHistory({
+    label: 'Import annotations',
+    undo: () => { atlas.annotations = new Map(before); },
+    redo: () => { atlas.annotations = new Map(next); },
+  });
 }
 
 /** Project world coordinates to CSS-pixel screen coordinates.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
+  import Info from './controls/Info.svelte';
   let { atlas }: { atlas: Atlas } = $props();
 
   // Keep atlas.fullscreen in sync with the browser Fullscreen API events.
@@ -108,6 +109,24 @@
   {/if}
 
   <span class="sep" aria-hidden="true"></span>
+
+  <!-- Undo (A3) -->
+  <button class="tool" aria-label={atlas.undoLabel ? `Undo: ${atlas.undoLabel}` : 'Undo'}
+    title={atlas.undoLabel ? `Undo: ${atlas.undoLabel}` : 'Nothing to undo'}
+    disabled={!atlas.undoLabel}
+    onclick={() => atlas.undo()}>
+    <span class="codicon codicon-discard" aria-hidden="true"></span>
+    <Info id="toolbar.undo" />
+  </button>
+
+  <!-- Redo (A3) -->
+  <button class="tool" aria-label={atlas.redoLabel ? `Redo: ${atlas.redoLabel}` : 'Redo'}
+    title={atlas.redoLabel ? `Redo: ${atlas.redoLabel}` : 'Nothing to redo'}
+    disabled={!atlas.redoLabel}
+    onclick={() => atlas.redo()}>
+    <span class="codicon codicon-redo" aria-hidden="true"></span>
+    <Info id="toolbar.redo" />
+  </button>
 
   <!-- Fullscreen (F1) -->
   <button class="tool" class:active={atlas.fullscreen} aria-pressed={atlas.fullscreen} aria-label={atlas.fullscreen ? 'Exit full screen' : 'Full screen'}

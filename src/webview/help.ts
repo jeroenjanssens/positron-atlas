@@ -1271,6 +1271,24 @@ export const HELP: Record<string, HelpEntry> = {
       'Enable this and Alt+drag will pan instead of rotate in that preset.',
     cost: 'none',
   },
+  'toolbar.undo': {
+    title: 'Undo',
+    what: 'Undo the last action in Atlas (label drag, annotation edit, legend toggle, selection, histogram brush, etc.).',
+    intuition:
+      'Atlas keeps up to 200 actions in its undo history for the current session. ' +
+      'Consecutive dragging operations are merged into a single undo step. ' +
+      'Keyboard shortcut: Ctrl+Z (Cmd+Z on Mac). ' +
+      'Note: writes to the DataFrame (tags, coordinates) cannot be undone.',
+    cost: 'none',
+  },
+  'toolbar.redo': {
+    title: 'Redo',
+    what: 'Redo the last undone action.',
+    intuition:
+      'Reapplies changes that were undone with Undo. The redo stack is cleared whenever a new action is recorded. ' +
+      'Keyboard shortcut: Ctrl+Shift+Z / Ctrl+Y (Cmd+Shift+Z on Mac).',
+    cost: 'none',
+  },
 };
 
 /** Look up a help entry by its dot-separated id.  Returns undefined when not found. */

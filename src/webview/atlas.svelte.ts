@@ -159,6 +159,8 @@ import {
   searchColumn as searchColumnImpl,
 } from './atlas/search';
 import { probeWebGpu } from './atlas/utils';
+import { CommandStack } from './atlas/history';
+import type { HistoryEntry } from './atlas/history';
 import type { SelectMode } from './select/lasso';
 import {
   startAutoRotate as startAutoRotateImpl,
@@ -361,6 +363,17 @@ export class Atlas {
   /** True while waiting for the kernel search response. */
   searchPending = $state(false);
 
+  // ---- undo / redo (plan item 6, wave A3) ----------------------------------------
+  /**
+   * Session-only command stack.  Not persisted: a reload clears history.
+   * Plain (non-reactive) field; undoLabel/redoLabel are the reactive signals.
+   */
+  readonly history = new CommandStack();
+  /** Non-empty label = can undo; shown in toolbar tooltip. */
+  undoLabel = $state('');
+  /** Non-empty label = can redo; shown in toolbar tooltip. */
+  redoLabel = $state('');
+
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
   // Treat as internal: do not use directly outside this module tree.
@@ -449,17 +462,48 @@ export class Atlas {
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
     this.renderer.onPointer((p) => this.onPointer(p));
-    // A3: wire up label drag callbacks.
+    // A3: wire up label drag callbacks; record each drag/reset in the undo history.
     this.renderer.onLabelDrag({
       onEnd: (label, delta) => {
         // Accumulate the new offset on top of any existing one.
         const key = label.key ?? label.text;
-        const existing = this.labels.dragOffsets?.[key] ?? [0, 0];
-        setDragOffsetImpl(this, key, [existing[0] + delta[0], existing[1] + delta[1]]);
+        const beforeOffsets = { ...(this.labels.dragOffsets ?? {}) };
+        const existing = beforeOffsets[key] ?? [0, 0] as [number, number];
+        const newOffset: [number, number] = [existing[0] + delta[0], existing[1] + delta[1]];
+        setDragOffsetImpl(this, key, newOffset);
+        const afterOffsets = { ...(this.labels.dragOffsets ?? {}) };
+        this.recordHistory({
+          label: `Move label "${key}"`,
+          undo: () => {
+            this.labels = { ...this.labels, dragOffsets: beforeOffsets };
+            this.persist();
+            this.updateLabels();
+          },
+          redo: () => {
+            this.labels = { ...this.labels, dragOffsets: afterOffsets };
+            this.persist();
+            this.updateLabels();
+          },
+        });
       },
       onRightClick: (label, _pos) => {
         const key = label.key ?? label.text;
+        const beforeOffsets = { ...(this.labels.dragOffsets ?? {}) };
         setDragOffsetImpl(this, key, null);
+        const afterOffsets = { ...(this.labels.dragOffsets ?? {}) };
+        this.recordHistory({
+          label: `Reset label "${key}"`,
+          undo: () => {
+            this.labels = { ...this.labels, dragOffsets: beforeOffsets };
+            this.persist();
+            this.updateLabels();
+          },
+          redo: () => {
+            this.labels = { ...this.labels, dragOffsets: afterOffsets };
+            this.persist();
+            this.updateLabels();
+          },
+        });
       },
     });
     // A8: re-schedule labels when zoom changes.  A12: also invalidate glow.
@@ -668,6 +712,10 @@ export class Atlas {
 
   /** @internal Accessible via a['onInit'] in harness tests. */
   onInit(d: DescribeResult, settings: Settings, variable: string, state?: PanelState): void {
+    // Clear undo/redo history on each new session / reload.
+    this.history.clear();
+    this.undoLabel = '';
+    this.redoLabel = '';
     onInitImpl(this, d, settings, variable, state);
   }
 
@@ -757,10 +805,17 @@ export class Atlas {
   /** Show all hidden categories for the current color column. */
   showAllCategories(): void {
     if (this.colorColumn === null) return;
+    const before = new Map(this.hiddenCategories);
     const newMap = new Map(this.hiddenCategories);
     newMap.delete(this.colorColumn);
     this.hiddenCategories = newMap;
     this.render();
+    const after = new Map(this.hiddenCategories);
+    this.recordHistory({
+      label: 'Show all categories',
+      undo: () => { this.hiddenCategories = before; this.render(); },
+      redo: () => { this.hiddenCategories = after; this.render(); },
+    });
   }
 
   // ---- labels ------------------------------------------------------------------
@@ -772,8 +827,27 @@ export class Atlas {
   updateLabels(): void { updateLabelsImpl(this); }
   /** Set/clear a drag offset for a label group (A3). key = group name. */
   setDragOffset(key: string, offset: [number, number] | null): void { setDragOffsetImpl(this, key, offset); }
-  /** Clear all drag offsets (A3). */
-  resetAllDragOffsets(): void { resetAllDragOffsetsImpl(this); }
+  /** Clear all drag offsets (A3). Records an undo entry. */
+  resetAllDragOffsets(): void {
+    const before = { ...(this.labels.dragOffsets ?? {}) };
+    resetAllDragOffsetsImpl(this);
+    if (Object.keys(before).length > 0) {
+      const after = { ...(this.labels.dragOffsets ?? {}) };
+      this.recordHistory({
+        label: 'Reset all label positions',
+        undo: () => {
+          this.labels = { ...this.labels, dragOffsets: before };
+          this.persist();
+          this.updateLabels();
+        },
+        redo: () => {
+          this.labels = { ...this.labels, dragOffsets: after };
+          this.persist();
+          this.updateLabels();
+        },
+      });
+    }
+  }
 
   // ---- clusters ----------------------------------------------------------------
   refreshClusters(): void { refreshClustersImpl(this); }
@@ -873,6 +947,57 @@ export class Atlas {
   handleAnnotateClick(titleText = ''): AnnotationData | null { return handleAnnotateClickImpl(this, titleText); }
   /** Create an annotation from the pinned hover card. */
   addAnnotationFromCard(card: { row: number; title?: string; preparedIdx: number; x: number; y: number; image?: (number | null)[]; imageUri?: string }): AnnotationData | null { return addAnnotationFromCardImpl(this, card); }
+
+  // ---- undo / redo (A3) --------------------------------------------------------
+
+  /** Record a history entry and update reactive undo/redo labels. */
+  recordHistory(entry: HistoryEntry): void {
+    this.history.record(entry);
+    this.undoLabel = this.history.undoLabel;
+    this.redoLabel = this.history.redoLabel;
+  }
+
+  /** Undo the most recent recorded action (Cmd+Z / Ctrl+Z). */
+  undo(): void {
+    this.history.undo();
+    this.undoLabel = this.history.undoLabel;
+    this.redoLabel = this.history.redoLabel;
+  }
+
+  /** Redo the most recently undone action (Shift+Cmd+Z / Ctrl+Y). */
+  redo(): void {
+    this.history.redo();
+    this.undoLabel = this.history.undoLabel;
+    this.redoLabel = this.history.redoLabel;
+  }
+
+  /**
+   * Set a partial update on titleOverlay and record it in the undo history.
+   * Called by AnnotateTab instead of directly assigning atlas.titleOverlay.
+   */
+  setTitleOverlay(partial: Partial<import('../shared/protocol').TitleOptions>): void {
+    const before = { ...this.titleOverlay };
+    this.titleOverlay = { ...this.titleOverlay, ...partial };
+    const after = { ...this.titleOverlay };
+    const keys = Object.keys(partial) as (keyof import('../shared/protocol').TitleOptions)[];
+    const changedKey = keys[0] ?? 'title';
+    const labelMap: Partial<Record<string, string>> = {
+      title: 'Change title',
+      subtitle: 'Change subtitle',
+      logoData: 'Change logo',
+      fontSize: 'Change title font size',
+      fontFamily: 'Change title font',
+      color: 'Change title color',
+      logoWidth: 'Change logo width',
+    };
+    const histLabel = labelMap[changedKey] ?? 'Change title overlay';
+    this.recordHistory({
+      label: histLabel,
+      undo: () => { this.titleOverlay = before; },
+      redo: () => { this.titleOverlay = after; },
+      coalesceKey: `titleOverlay:${changedKey}`,
+    });
+  }
 
   // ---- actions -----------------------------------------------------------------
   addCoordinates(): void { addCoordinatesImpl(this); }

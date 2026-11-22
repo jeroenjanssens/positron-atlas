@@ -442,7 +442,7 @@ export class AtlasPanel {
       }
       case 'writeLabels': {
         const pick = await vscode.window.showWarningMessage(
-          `${m.description} in column ${m.column} of ${this.state.variable}? This modifies the DataFrame in your session.`,
+          `${m.description} in column ${m.column} of ${this.state.variable}? This modifies the DataFrame in your session. This can't be undone in Atlas.`,
           { modal: true },
           'Write Column',
         );
@@ -576,7 +576,7 @@ export class AtlasPanel {
         // T6: in 3D mode also mention umap_z in the confirmation dialog.
         const colList = m.dims === 3 ? 'umap_x, umap_y, and umap_z' : 'umap_x and umap_y';
         const pick = await vscode.window.showWarningMessage(
-          `Add columns ${colList} to ${this.state.variable}? This modifies the DataFrame in your session.`,
+          `Add columns ${colList} to ${this.state.variable}? This modifies the DataFrame in your session. This can't be undone in Atlas.`,
           { modal: true },
           'Add Columns',
         );

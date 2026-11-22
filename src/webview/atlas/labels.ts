@@ -124,8 +124,26 @@ export function setLabelColumn(atlas: Atlas, c: number | null): void {
   setLabelSource(atlas, c);
 }
 
+/**
+ * Label option keys that are purely display-only (do not trigger kernel requests or
+ * cluster recomputation that is hard to undo).  Changes to these keys are recorded
+ * in the undo history.
+ */
+const UNDOABLE_LABEL_OPTION_KEYS = new Set<keyof LabelOptions>([
+  'minSize', 'maxSize', 'fontFamily', 'fontWeight', 'minFontWeight', 'maxFontWeight',
+  'haloWidth', 'haloColor', 'lineSpacing', 'wrapWidth', 'textCase', 'colorText',
+  'outlines', 'labelStyle', 'leaderStyle', 'leaderColor', 'leaderWidth', 'highlightGroups',
+  'detail', 'multiLevel',
+]);
+
 export function setLabelOptions(atlas: Atlas, o: Partial<LabelOptions>): void {
   const prev = atlas.labels;
+
+  // Decide whether to record history before applying the change.
+  const changedKeys = (Object.keys(o) as (keyof LabelOptions)[]).filter(k => (o as unknown as Record<string, unknown>)[k] !== (prev as unknown as Record<string, unknown>)[k]);
+  const isUndoable = changedKeys.length > 0 && changedKeys.every(k => UNDOABLE_LABEL_OPTION_KEYS.has(k));
+  const beforeLabels = isUndoable ? { ...prev } : null;
+
   atlas.labels = { ...atlas.labels, ...o };
   if (atlas.labels.clusters && o.detail !== undefined && o.detail !== prev.detail) {
     atlas.refreshClusters();
@@ -137,6 +155,44 @@ export function setLabelOptions(atlas: Atlas, o: Partial<LabelOptions>): void {
     requestFineLabelCodes(atlas);
   }
   updateLabels(atlas);
+
+  if (isUndoable && beforeLabels) {
+    const afterLabels = { ...atlas.labels };
+    const firstKey = changedKeys[0]!;
+    atlas.recordHistory({
+      label: labelOptionHistoryLabel(firstKey, changedKeys),
+      undo: () => { atlas.labels = beforeLabels; updateLabels(atlas); },
+      redo: () => { atlas.labels = afterLabels; updateLabels(atlas); },
+      coalesceKey: `labelOptions:${changedKeys.sort().join(',')}`,
+    });
+  }
+}
+
+function labelOptionHistoryLabel(firstKey: keyof LabelOptions, keys: (keyof LabelOptions)[]): string {
+  if (keys.length > 1) return 'Change label options';
+  const map: Partial<Record<keyof LabelOptions, string>> = {
+    minSize: 'Change smallest label size',
+    maxSize: 'Change largest label size',
+    fontFamily: 'Change label font',
+    fontWeight: 'Change label font weight',
+    minFontWeight: 'Change label min font weight',
+    maxFontWeight: 'Change label max font weight',
+    haloWidth: 'Change label halo width',
+    haloColor: 'Change label halo color',
+    lineSpacing: 'Change label line spacing',
+    wrapWidth: 'Change label wrap width',
+    textCase: 'Change label case',
+    colorText: 'Change colored labels',
+    outlines: 'Toggle cluster outlines',
+    labelStyle: 'Change label style',
+    leaderStyle: 'Change leader style',
+    leaderColor: 'Change leader color',
+    leaderWidth: 'Change leader width',
+    highlightGroups: 'Change highlighted labels',
+    detail: 'Change cluster detail',
+    multiLevel: 'Toggle multi-level labels',
+  };
+  return map[firstKey] ?? 'Change label options';
 }
 
 export function requestLabelCodes(atlas: Atlas): void {

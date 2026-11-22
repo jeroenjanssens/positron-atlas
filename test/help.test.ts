@@ -156,7 +156,7 @@ describe('Info component cross-references (I3)', () => {
     // Nav settings will be wired to <Info> in the B-wave sidebar; exempt for now.
     const toolbarExempt = new Set([
       'toolbar.pan', 'toolbar.lasso', 'toolbar.fitView', 'toolbar.annotate',
-      'toolbar.compass',
+      'toolbar.compass', 'toolbar.undo', 'toolbar.redo',
       'nav.preset', 'nav.scrollGesture', 'nav.zoomToCursor', 'nav.invertZoom', 'nav.emulateMiddleButton',
     ]);
     for (const id of Object.keys(HELP)) {

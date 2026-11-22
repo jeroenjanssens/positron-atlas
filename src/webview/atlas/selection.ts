@@ -18,6 +18,9 @@ export function applyLasso(atlas: Atlas, screen: [number, number][], mode: Selec
   if (!atlas.renderer || !atlas.prepared || !atlas.anchorXY || !atlas.anchorPos || screen.length < 3) {
     return;
   }
+  const beforeMask = atlas.selection ? new Uint8Array(atlas.selection) : null;
+  const beforeOnAnchors = atlas.selectionOnAnchors;
+
   // T4: In 3D mode, lasso operates in screen space; use the projected screen XY.
   if (atlas.dims === 3 && atlas._3dScreenXY) {
     const poly = new Float64Array(screen.length * 2);
@@ -28,27 +31,46 @@ export function applyLasso(atlas: Atlas, screen: [number, number][], mode: Selec
     const next = combineSelection(atlas.selection, hits, n, mode);
     atlas.selectionOnAnchors = false;
     setSelection(atlas, next);
-    return;
-  }
-  const poly = new Float64Array(screen.length * 2);
-  screen.forEach(([x, y], i) => {
-    const [wx, wy] = atlas.renderer!.unproject(x, y);
-    poly[2 * i] = wx;
-    poly[2 * i + 1] = wy;
-  });
-  const n = atlas.nKept;
-  let hits: Uint32Array;
-  const onAnchors = !!atlas.prepared.needsProjection && !(atlas.projection === 'done' && atlas.allXY);
-  if (!onAnchors) {
-    hits = pointsInPolygon(atlas.prepared.needsProjection ? atlas.allXY! : atlas.anchorXY, n, poly);
   } else {
-    const local = pointsInPolygon(atlas.anchorXY, atlas.prepared.nAnchors, poly);
-    hits = new Uint32Array(local.length);
-    for (let i = 0; i < local.length; i++) hits[i] = atlas.anchorPos[local[i]];
+    const poly = new Float64Array(screen.length * 2);
+    screen.forEach(([x, y], i) => {
+      const [wx, wy] = atlas.renderer!.unproject(x, y);
+      poly[2 * i] = wx;
+      poly[2 * i + 1] = wy;
+    });
+    const n = atlas.nKept;
+    let hits: Uint32Array;
+    const onAnchors = !!atlas.prepared.needsProjection && !(atlas.projection === 'done' && atlas.allXY);
+    if (!onAnchors) {
+      hits = pointsInPolygon(atlas.prepared.needsProjection ? atlas.allXY! : atlas.anchorXY, n, poly);
+    } else {
+      const local = pointsInPolygon(atlas.anchorXY, atlas.prepared.nAnchors, poly);
+      hits = new Uint32Array(local.length);
+      for (let i = 0; i < local.length; i++) hits[i] = atlas.anchorPos[local[i]];
+    }
+    const next = combineSelection(atlas.selection, hits, n, mode);
+    atlas.selectionOnAnchors = next ? (mode === 'replace' || !atlas.selection ? onAnchors : atlas.selectionOnAnchors || onAnchors) : false;
+    setSelection(atlas, next);
   }
-  const next = combineSelection(atlas.selection, hits, n, mode);
-  atlas.selectionOnAnchors = next ? (mode === 'replace' || !atlas.selection ? onAnchors : atlas.selectionOnAnchors || onAnchors) : false;
-  setSelection(atlas, next);
+
+  const afterMask = atlas.selection ? new Uint8Array(atlas.selection) : null;
+  const afterOnAnchors = atlas.selectionOnAnchors;
+  const modeLabels: Record<SelectMode, string> = {
+    replace: 'Select points (lasso)',
+    add: 'Add to selection (lasso)',
+    remove: 'Remove from selection (lasso)',
+  };
+  atlas.recordHistory({
+    label: modeLabels[mode] ?? 'Lasso selection',
+    undo: () => {
+      atlas.selectionOnAnchors = beforeOnAnchors;
+      setSelection(atlas, beforeMask ? new Uint8Array(beforeMask) : null);
+    },
+    redo: () => {
+      atlas.selectionOnAnchors = afterOnAnchors;
+      setSelection(atlas, afterMask ? new Uint8Array(afterMask) : null);
+    },
+  });
 }
 
 export function setSelection(atlas: Atlas, mask: Uint8Array | null): void {
@@ -64,13 +86,37 @@ export function setSelection(atlas: Atlas, mask: Uint8Array | null): void {
 }
 
 export function clearSelection(atlas: Atlas): void {
-  if (atlas.selection) setSelection(atlas, null);
+  if (!atlas.selection) return;
+  const beforeMask = new Uint8Array(atlas.selection);
+  const beforeOnAnchors = atlas.selectionOnAnchors;
+  setSelection(atlas, null);
+  atlas.recordHistory({
+    label: 'Clear selection',
+    undo: () => {
+      atlas.selectionOnAnchors = beforeOnAnchors;
+      setSelection(atlas, new Uint8Array(beforeMask));
+    },
+    redo: () => { setSelection(atlas, null); },
+  });
 }
 
 export function invertSelection(atlas: Atlas): void {
   if (!atlas.prepared || !atlas.anchorPos) return;
+  const beforeMask = atlas.selection ? new Uint8Array(atlas.selection) : null;
+  const beforeOnAnchors = atlas.selectionOnAnchors;
   const scope = atlas.selectionOnAnchors ? atlas.anchorPos : undefined;
   setSelection(atlas, invertSel(atlas.selection, atlas.nKept, scope));
+  const afterMask = atlas.selection ? new Uint8Array(atlas.selection) : null;
+  atlas.recordHistory({
+    label: 'Invert selection',
+    undo: () => {
+      atlas.selectionOnAnchors = beforeOnAnchors;
+      setSelection(atlas, beforeMask ? new Uint8Array(beforeMask) : null);
+    },
+    redo: () => {
+      setSelection(atlas, afterMask ? new Uint8Array(afterMask) : null);
+    },
+  });
 }
 
 export function compareSelection(atlas: Atlas): void {

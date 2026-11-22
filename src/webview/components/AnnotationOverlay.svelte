@@ -81,6 +81,22 @@
   function onWindowMouseUp(e: MouseEvent) {
     window.removeEventListener('mousemove', onWindowMouseMove);
     window.removeEventListener('mouseup', onWindowMouseUp);
+    if (isDragging && dragId) {
+      const id = dragId;
+      const beforeX = origOffsetX;
+      const beforeY = origOffsetY;
+      const ann = atlas.annotations.get(id);
+      if (ann) {
+        const afterX = ann.offsetX;
+        const afterY = ann.offsetY;
+        atlas.recordHistory({
+          label: 'Move annotation',
+          undo: () => atlas.updateAnnotationOffset(id, beforeX, beforeY),
+          redo: () => atlas.updateAnnotationOffset(id, afterX, afterY),
+          coalesceKey: `ann-drag:${id}`,
+        });
+      }
+    }
     dragId = null;
     isDragging = false;
   }

@@ -14,10 +14,6 @@
   // ---- Title overlay (A1) ----
   const title = $derived(atlas.titleOverlay);
 
-  function setTitle(partial: Partial<typeof title>) {
-    atlas.titleOverlay = { ...atlas.titleOverlay, ...partial };
-  }
-
   function onLogoFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -25,7 +21,7 @@
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        setTitle({ logoData: reader.result });
+        atlas.setTitleOverlay({ logoData: reader.result });
       }
     };
     reader.readAsDataURL(file);
@@ -358,24 +354,24 @@
   <label class="select">
     <span>Title <Info id="titleOverlay.title" /></span>
     <input class="text" type="text" placeholder="Map title" value={title.title}
-      oninput={(e) => setTitle({ title: (e.target as HTMLInputElement).value })} aria-label="Map title" />
+      oninput={(e) => atlas.setTitleOverlay({ title: (e.target as HTMLInputElement).value })} aria-label="Map title" />
   </label>
   <label class="select">
     <span>Subtitle <Info id="titleOverlay.subtitle" /></span>
     <input class="text" type="text" placeholder="Subtitle (optional)" value={title.subtitle}
-      oninput={(e) => setTitle({ subtitle: (e.target as HTMLInputElement).value })} aria-label="Subtitle" />
+      oninput={(e) => atlas.setTitleOverlay({ subtitle: (e.target as HTMLInputElement).value })} aria-label="Subtitle" />
   </label>
   <div class="select">
     <span>Font <Info id="titleOverlay.fontFamily" /></span>
-    <FontPicker value={title.fontFamily} ariaLabel="Title font" onchange={(f) => setTitle({ fontFamily: f })} />
+    <FontPicker value={title.fontFamily} ariaLabel="Title font" onchange={(f) => atlas.setTitleOverlay({ fontFamily: f })} />
   </div>
   <Slider label="Size" value={title.fontSize} min={10} max={72} format={(v) => `${v}px`}
     hint="Title font size in pixels"
-    onchange={(v) => setTitle({ fontSize: v })} infoId="titleOverlay.fontSize" />
+    onchange={(v) => atlas.setTitleOverlay({ fontSize: v })} infoId="titleOverlay.fontSize" />
   <label class="select">
     <span>Color <Info id="titleOverlay.color" /></span>
     <input type="color" class="color" value={title.color || '#cccccc'}
-      oninput={(e) => setTitle({ color: (e.target as HTMLInputElement).value })} aria-label="Title color" />
+      oninput={(e) => atlas.setTitleOverlay({ color: (e.target as HTMLInputElement).value })} aria-label="Title color" />
   </label>
   <label class="select">
     <span>Logo <Info id="titleOverlay.logo" /></span>
@@ -384,12 +380,12 @@
   {#if title.logoData}
     <div class="logo-preview">
       <img src={title.logoData} alt="Logo preview" style="max-height:40px;max-width:80px;object-fit:contain;" />
-      <button onclick={() => setTitle({ logoData: '' })} title="Remove logo">Remove</button>
+      <button onclick={() => atlas.setTitleOverlay({ logoData: '' })} title="Remove logo">Remove</button>
     </div>
   {/if}
   <Slider label="Logo width" value={title.logoWidth || 48} min={16} max={160} format={(v) => `${v}px`}
     hint="Logo width in pixels (0 = 48 px)"
-    onchange={(v) => setTitle({ logoWidth: v })} infoId="titleOverlay.logoWidth" />
+    onchange={(v) => atlas.setTitleOverlay({ logoWidth: v })} infoId="titleOverlay.logoWidth" />
   {#if !title.title.trim() && !title.subtitle.trim() && !title.logoData}
     <div class="hint muted">Enter a title above, then it appears as an overlay on the map (top left) and is included in PNG exports.</div>
   {/if}
@@ -450,6 +446,7 @@
   </div>
   <div class="hint muted">
     {#if !atlas.selection}Select points first, with the lasso tool or Shift-drag.{:else}Writes the tag into {tagColumn.trim() || 'the column'} of {atlas.variable}; you can then color or label by it.{/if}
+    This can't be undone in Atlas.
   </div>
 </Section>
 

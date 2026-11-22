@@ -33,6 +33,7 @@
   let origOffsetX = 0;
   let origOffsetY = 0;
   let isDragging = false;
+  let beforeDragOffsets: Record<string, [number, number]> = {};
 
   function tick() {
     const groups = atlas.aroundLabelGroups;
@@ -102,6 +103,7 @@
     const existing = atlas.labels.dragOffsets?.[al.key] ?? [0, 0];
     origOffsetX = existing[0];
     origOffsetY = existing[1];
+    beforeDragOffsets = { ...(atlas.labels.dragOffsets ?? {}) };
     isDragging = false;
     window.addEventListener('mousemove', onWindowMove);
     window.addEventListener('mouseup', onWindowUp);
@@ -120,6 +122,17 @@
   function onWindowUp() {
     window.removeEventListener('mousemove', onWindowMove);
     window.removeEventListener('mouseup', onWindowUp);
+    if (isDragging && dragKey) {
+      const key = dragKey;
+      const before = { ...beforeDragOffsets };
+      const after = { ...(atlas.labels.dragOffsets ?? {}) };
+      atlas.recordHistory({
+        label: `Move label "${key}"`,
+        undo: () => { atlas.labels = { ...atlas.labels, dragOffsets: before }; atlas.updateLabels(); },
+        redo: () => { atlas.labels = { ...atlas.labels, dragOffsets: after }; atlas.updateLabels(); },
+        coalesceKey: `around-drag:${key}`,
+      });
+    }
     dragKey = null;
     isDragging = false;
   }

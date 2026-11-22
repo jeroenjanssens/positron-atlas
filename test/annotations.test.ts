@@ -55,6 +55,7 @@ function makeAtlas(partial: Partial<{
     renderer: null,
     titleOverlay: { ...DEFAULT_TITLE },
     pendingHover: null,
+    recordHistory: () => {},
     ...partial,
   } as any;
 }

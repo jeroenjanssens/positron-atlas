@@ -152,10 +152,10 @@ export class InputDispatcher {
         a.setDims(a.dims === 2 ? 3 : 2);
         break;
       case 'edit.undo':
-        // Undo/redo — A3 will plug into this command forwarding path.
+        a.undo();
         break;
       case 'edit.redo':
-        // Undo/redo — A3 will plug into this command forwarding path.
+        a.redo();
         break;
     }
   }
