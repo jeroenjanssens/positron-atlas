@@ -1,0 +1,46 @@
+{
+  "description": "Animate by column in real Positron: Space (a contributed keybinding) plays and pauses; Export → Video saves a WebM through the host (ATLAS_E2E_SAVE_DIR skips the save dialog). The e2e window may not be visible (the webview then reports document.hidden and requestAnimationFrame doesn't run), so window movement during playback is checked in the harness (scenario-animate.json), not here.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nn = 3000\nk = rng.integers(0, 4, n)\ndf = pd.DataFrame(rng.normal(0, 1, (n, 6)) + k[:, None] * 4, columns=[f'x{i}' for i in range(6)])\ndf['t'] = rng.uniform(0, 100, n)\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "steps": [
+    {
+      "name": "animate by t",
+      "eval": "a.requestTimeValues(a.describe.columns.find((c) => c.name === 't').index)",
+      "until": "a.animateValues !== null",
+      "timeout": 15000
+    },
+    {
+      "name": "focus the map",
+      "clickMap": true,
+      "until": "document.hasFocus()",
+      "timeout": 5000,
+      "report": "{ pos: a.animate.windowPos, playing: a.animatePlaying }"
+    },
+    {
+      "name": "Space starts playback (the keybinding reaches the webview)",
+      "eval": "a.stopAnimation()",
+      "key": " ",
+      "code": "Space",
+      "until": "a.animatePlaying",
+      "timeout": 5000
+    },
+    {
+      "name": "Space pauses",
+      "key": " ",
+      "code": "Space",
+      "until": "!a.animatePlaying",
+      "timeout": 4000
+    },
+    {
+      "name": "Export → Video writes a WebM through the host",
+      "eval": "a.stopAnimation(); a.startVideoExport({ mode: 'time', fps: 15, durationSecs: 1 })",
+      "checkNewestFile": {
+        "dir": "/tmp/positron-atlas-e2e/videos",
+        "ext": ".webm",
+        "headerHex": "1a45dfa3",
+        "minBytes": 100
+      },
+      "timeout": 20000
+    }
+  ]
+}

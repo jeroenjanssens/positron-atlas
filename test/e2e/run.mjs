@@ -3,7 +3,7 @@
 // Launches an isolated Positron (test/e2e/launch.sh), lets the helper extension start Python,
 // create a DataFrame and open Atlas, then waits for the layout and takes screenshots.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { connect } from './cdp.mjs';
 import { parsePngToRgba, drawnPixels } from '../png.mjs';
 
@@ -84,6 +84,8 @@ try {
     // clickMap: a real mouse click in the middle of the Atlas map (page coordinates of the
     // webview's canvas), so the webview gets keyboard focus the way a user gives it.
     if (step.clickMap) {
+      // A covered window gets no requestAnimationFrame (Chromium occlusion); bring it forward.
+      await cdp.send('Page.bringToFront').catch(() => undefined);
       const r = JSON.parse(await cdp.evaluate(
         `(() => { const f = [...document.querySelectorAll('iframe')].find((e) => e.getBoundingClientRect().width > 300); const b = f.getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width * 0.6, y: b.top + b.height * 0.5 }); })()`,
       ));
@@ -125,6 +127,23 @@ try {
         console.log(`  ${step.name}: ${n} drawn pixels`);
         if (n < step.minDrawnPixels) throw new Error(`step ${step.name}: only ${n} drawn pixels (want ${step.minDrawnPixels})`);
       }
+    }
+    // checkNewestFile: { dir, ext, headerHex, minBytes } waits for a file with that
+    // extension in dir and checks its first bytes (e.g. "1a45dfa3" for WebM).
+    if (step.checkNewestFile) {
+      const { dir, ext, headerHex = '', minBytes = 1 } = step.checkNewestFile;
+      let file;
+      for (;;) {
+        const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(ext)) : [];
+        if (files.length) { file = `${dir}/${files.sort().at(-1)}`; break; }
+        if (Date.now() - ts > (step.timeout ?? 30000)) throw new Error(`step ${step.name}: no ${ext} file in ${dir}`);
+        await sleep(300);
+      }
+      await sleep(300);
+      const buf = readFileSync(file);
+      const head = buf.subarray(0, headerHex.length / 2).toString('hex');
+      console.log(`  ${step.name}: ${file} (${buf.length} bytes, header ${head})`);
+      if (head !== headerHex.toLowerCase() || buf.length < minBytes) throw new Error(`step ${step.name}: unexpected file ${file}`);
     }
     if (step.waitFile) {
       while (!existsSync(step.waitFile)) {
