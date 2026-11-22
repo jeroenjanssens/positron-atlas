@@ -91,7 +91,7 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
     const lineColor = badgeColor ?? 'rgba(200,200,200,0.8)';
 
     if (ann.style === 'image' && ann.imagePixels && ann.imageShape) {
-      // ---- Image callout -------------------------------------------------------
+      // ---- Pixel-column image callout ------------------------------------------
       const [imgW, imgH] = ann.imageShape;
       const rgba = imageToRgba(ann.imagePixels, imgW, imgH, false);
       const imgCanvas = document.createElement('canvas');
@@ -136,6 +136,47 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
       ctx.drawImage(imgCanvas, bx + pad, by + pad, dw, dh);
       ctx.imageSmoothingEnabled = true;
       ctx.restore();
+    } else if (ann.style === 'image' && ann.imageDataUrl) {
+      // ---- Image-URL thumbnail callout (D5) ------------------------------------
+      const img = new Image();
+      img.src = ann.imageDataUrl;
+      try {
+        await img.decode();
+        const dispSize = 64 * dpr;
+        const scale = Math.min(dispSize / (img.naturalWidth || 1), dispSize / (img.naturalHeight || 1), 1);
+        const dw = Math.max(1, Math.round(img.naturalWidth * scale));
+        const dh = Math.max(1, Math.round(img.naturalHeight * scale));
+        const pad = 4 * dpr;
+        const boxW = dw + pad * 2;
+        const boxH = dh + pad * 2;
+
+        ctx.save();
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx + boxW / 2, by + boxH / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = lineColor;
+        ctx.beginPath();
+        ctx.arc(ax, ay, 3 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(37,37,38,0.92)';
+        ctx.strokeStyle = 'rgba(70,70,70,0.9)';
+        ctx.lineWidth = 1 * dpr;
+        roundRect(ctx, bx, by, boxW, boxH, 4 * dpr);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, bx + pad, by + pad, dw, dh);
+        ctx.restore();
+      } catch {
+        // Thumbnail unavailable; skip drawing this annotation image.
+      }
     } else {
       // ---- Text callout --------------------------------------------------------
       // Leader line.

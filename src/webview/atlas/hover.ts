@@ -98,6 +98,12 @@ export function onRows(
         for (const cb of cbs) cb(image);
       }
     }
+    // Fire any pending annotation rows callbacks (for image-URL annotations, D5).
+    const rowCbs = atlas.annotationRowsPending.get(pIdx);
+    if (rowCbs?.length) {
+      atlas.annotationRowsPending.delete(pIdx);
+      for (const cb of rowCbs) cb(updated);
+    }
   }
   if (msg.seq !== atlas.hoverInflight) return;
   atlas.hoverInflight = 0;
@@ -132,6 +138,12 @@ export function onImageUri(atlas: Atlas, row: number, uri: string): void {
   }
   if (atlas.pinnedCard && atlas.pinnedCard.preparedIdx === row) {
     atlas.pinnedCard = { ...atlas.pinnedCard, imageUri: uri };
+  }
+  // Fire any pending annotation image-URI callbacks (D5).
+  const annCbs = atlas.annotationImageUriPending.get(row);
+  if (annCbs?.length) {
+    atlas.annotationImageUriPending.delete(row);
+    for (const cb of annCbs) cb(uri);
   }
 }
 

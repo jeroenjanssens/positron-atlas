@@ -31,7 +31,6 @@ import { ClusterFinder } from './labels/clusterWorker';
 import { detectImageColumns, guessImageWidth, type ImageColumns, formatCount } from './logic';
 import { DEFAULT_UMAP } from './defaults';
 import { DEFAULT_LABELS } from './atlas/labels-defaults';
-import { initFonts } from './fonts';
 import { LruCache, type CachedRow } from './hover/cache';
 import { TextsStore } from './hover/texts';
 
@@ -323,12 +322,16 @@ export class Atlas {
   annRowsSeq = 0;
   /** Callbacks waiting for pixel data for a given prepared-row index (A4 image annotations). */
   annotationPixelPending = new Map<number, Array<(pixels: (number | null)[]) => void>>();
+  /** Callbacks waiting for imageUri for a given prepared-row index (D5 image-URL annotations). */
+  annotationImageUriPending = new Map<number, Array<(uri: string) => void>>();
+  /** Callbacks waiting for row values for a given prepared-row index (D5 image-URL annotations). */
+  annotationRowsPending = new Map<number, Array<(cached: import('./hover/cache').CachedRow) => void>>();
   /** Lazy UTF-8 title decoder (H3). */
   textsStore = new TextsStore();
 
   // ---- lifecycle ---------------------------------------------------------------
   attach(container: HTMLElement): void {
-    // initFonts expects { postMessage } but our vscode wrapper uses { post }; bridge it.
+    // D11 + A1: initialise the font module once; bridge vscode.post → postMessage interface.
     initFonts({ postMessage: (msg: unknown) => vscode.post(msg as import('../shared/protocol').ToHost) });
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
@@ -350,8 +353,6 @@ export class Atlas {
     this.renderer.onViewChange((_zoom) => {
       scheduleLabelsImpl(this);
     });
-    // D11: initialise the font module with the current vscode postMessage function.
-    initFonts({ postMessage: (msg) => vscode.post(msg as any) });
     createWorkerImpl(this);
     window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
       this.inbox = this.inbox
@@ -630,7 +631,7 @@ export class Atlas {
   /** Handle a click in annotate-tool mode; returns the new annotation or null. */
   handleAnnotateClick(titleText = ''): AnnotationData | null { return handleAnnotateClickImpl(this, titleText); }
   /** Create an annotation from the pinned hover card. */
-  addAnnotationFromCard(card: { row: number; title?: string; preparedIdx: number; x: number; y: number }): AnnotationData | null { return addAnnotationFromCardImpl(this, card); }
+  addAnnotationFromCard(card: { row: number; title?: string; preparedIdx: number; x: number; y: number; image?: (number | null)[]; imageUri?: string }): AnnotationData | null { return addAnnotationFromCardImpl(this, card); }
 
   // ---- actions -----------------------------------------------------------------
   addCoordinates(): void { addCoordinatesImpl(this); }

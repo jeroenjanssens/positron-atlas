@@ -1,0 +1,104 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(77)\nn = 500\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 6, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['label'] = [f'item_{i}' for i in range(n)]\n# All rows point to the same test PNG served by the harness /images/ route.\ndf['image_path'] = 'test_img.png'\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 500
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "set image URL column to image_path",
+      "eval": "const imgCol = a.describe.columns.find(c => c.name === 'image_path').index; a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: imgCol, fieldMode: 'all' }",
+      "assert": [
+        "a.tooltipOpts.imageUrlColumn !== undefined && a.tooltipOpts.imageUrlColumn !== null"
+      ]
+    },
+    {
+      "name": "set image permission to always",
+      "eval": "a.loadImagesFromUrls = 'always'",
+      "until": "a.loadImagesFromUrls === 'always'",
+      "timeout": 2000
+    },
+    {
+      "name": "switch to annotate tool",
+      "eval": "a.tool = 'annotate'"
+    },
+    {
+      "name": "hover first anchor",
+      "eval": "const xy = a.anchorXY; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.pendingHover && a.pendingHover.prepIdx !== undefined",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for rows so image_path value is in cache",
+      "until": "a.tooltip && a.tooltip.values && a.tooltip.values.some(([k]) => k === 'image_path')",
+      "timeout": 10000,
+      "assert": [
+        "a.tooltip.values.some(([k, v]) => k === 'image_path' && v === 'test_img.png')"
+      ]
+    },
+    {
+      "name": "click creates image-style annotation (imageUrlColumn set, no pixel columns)",
+      "eval": "a.handleAnnotateClick()",
+      "assert": [
+        "a.annotations.size === 1",
+        "[...a.annotations.values()][0].style === 'image'"
+      ],
+      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style }",
+      "screenshot": "annotation-url-created.png"
+    },
+    {
+      "name": "wait for imageDataUrl thumbnail to arrive on annotation",
+      "until": "[...a.annotations.values()][0].imageDataUrl && [...a.annotations.values()][0].imageDataUrl.length > 100",
+      "timeout": 10000,
+      "assert": [
+        "[...a.annotations.values()][0].imageDataUrl.startsWith('data:image/png')"
+      ],
+      "report": "{ dataUrlLen: ([...a.annotations.values()][0].imageDataUrl || '').length }",
+      "screenshot": "annotation-url-thumbnail.png"
+    },
+    {
+      "name": "export PNG includes image-URL annotation thumbnail",
+      "eval": "a.savePng()",
+      "until": "h.png.length > 1000",
+      "timeout": 10000,
+      "assert": [
+        "h.png.startsWith('data:image/png')"
+      ],
+      "report": "{ pngLen: h.png.length }",
+      "screenshot": "annotation-url-exported.png"
+    },
+    {
+      "name": "PNG callout box contains varied pixels (real image, not solid fill)",
+      "eval": "(() => { const ann = [...a.annotations.values()][0]; const pt = a.renderer.projectWorld(ann.worldX, ann.worldY); if (!pt) { window.__pxCheck2 = { ok: false, reason: 'no projection' }; return; } const dpr = window.devicePixelRatio || 1; const bx = Math.round((pt[0] + ann.offsetX + 4) * dpr); const by = Math.round((pt[1] + ann.offsetY + 4) * dpr); const size = Math.round(64 * dpr); const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const safe_bx = Math.max(0, Math.min(bx, img.width - 1)); const safe_by = Math.max(0, Math.min(by, img.height - 1)); const safe_w = Math.max(1, Math.min(size, img.width - safe_bx)); const safe_h = Math.max(1, Math.min(size, img.height - safe_by)); const pxData = g.getImageData(safe_bx, safe_by, safe_w, safe_h).data; const vals = new Set(); for (let i = 0; i < pxData.length; i += 4) { vals.add(pxData[i] >> 4); } window.__pxCheck2 = { ok: vals.size > 3, uniqueVals: vals.size, bx, by, size }; }; img.src = h.png; })()",
+      "until": "window.__pxCheck2 !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__pxCheck2.ok === true"
+      ],
+      "report": "window.__pxCheck2"
+    },
+    {
+      "name": "default offset avoids legend (offsetX negative when in right zone, or small positive)",
+      "assert": [
+        "Math.abs([...a.annotations.values()][0].offsetX) > 20"
+      ],
+      "report": "{ offsetX: [...a.annotations.values()][0].offsetX, offsetY: [...a.annotations.values()][0].offsetY }"
+    },
+    {
+      "name": "JSON round-trip preserves image style and dataUrl",
+      "eval": "const json = a.exportAnnotationsJson(); a.clearAnnotations(); a.importAnnotationsJson(json);",
+      "assert": [
+        "a.annotations.size === 1",
+        "[...a.annotations.values()][0].style === 'image'",
+        "[...a.annotations.values()][0].imageDataUrl != null"
+      ],
+      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style, hasDataUrl: [...a.annotations.values()][0].imageDataUrl != null }"
+    }
+  ]
+}
