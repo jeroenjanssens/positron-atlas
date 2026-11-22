@@ -179,7 +179,25 @@
       onchange={(v) => atlas.setView({ glow: v })}>
       Glow <Info id="explore.glow" />
     </Checkbox>
-    {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
+    {#if atlas.dims === 3}<div class="hint muted">Glow not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
+    <!-- B2: 3D data-frame overlays -->
+    {#if atlas.dims === 3}
+      <Checkbox
+        checked={atlas.view.show3DDataBox ?? true}
+        onchange={(v) => atlas.setView({ show3DDataBox: v })}>
+        Data box <Info id="explore.show3DDataBox" />
+      </Checkbox>
+      <Checkbox
+        checked={atlas.view.show3DFloorGrid ?? false}
+        onchange={(v) => atlas.setView({ show3DFloorGrid: v })}>
+        Floor grid <Info id="explore.show3DFloorGrid" />
+      </Checkbox>
+      <Checkbox
+        checked={atlas.view.show3DGizmo ?? false}
+        onchange={(v) => atlas.setView({ show3DGizmo: v })}>
+        Orientation gizmo <Info id="explore.show3DGizmo" />
+      </Checkbox>
+    {/if}
     {#if atlas.view.glow}
       <Slider label="Strength" value={atlas.view.glowStrength ?? 0.4} min={0.05} max={1} step={0.05}
         hint="Overall opacity of the glow layer (0 = invisible, 1 = opaque)"

@@ -121,7 +121,7 @@
 </script>
 
 <Section {atlas} id="labels" title="Labels">
-  {#if atlas.dims === 3}<div class="hint muted">In 3D, labels are drawn over the points; automatic clusters, outlines and labels around the map need 2D (Map → UMAP → Dimensions). Label drag moves in the camera plane at the label's depth; offsets are stored in map (XY) coordinates.</div>{/if}
+  {#if atlas.dims === 3}<div class="hint muted">In 3D, labels are drawn over the points and automatic clusters are outlined with boxes. A dragged label moves in the camera plane at its own depth. Labels around the map need 2D (Map → UMAP → Dimensions).</div>{/if}
   <div class="select">
     <span>Label by <Info id="labels.labelBy" /></span>
     <Select value={source} ariaLabel="Label by" onchange={onLabelChange}>
@@ -160,6 +160,20 @@
       onchange={(v) => atlas.setLabelOptions({ outlines: v })}>
       Show outlines <Info id="labels.outlines" />
     </Checkbox>
+    {#if atlas.labels.outlines}
+      <div class="select">
+        <span>Outline style <Info id="labels.outlineStyle" /></span>
+        <Select
+          value={atlas.dims === 3 ? 'box' : (atlas.labels.outlineStyle ?? 'hull')}
+          disabled={atlas.dims === 3}
+          ariaLabel="Outline style"
+          onchange={(e) => atlas.setLabelOptions({ outlineStyle: (e.target as HTMLSelectElement).value as 'hull' | 'box' })}>
+          <option value="hull">Hull (2D only)</option>
+          <option value="box">Box</option>
+        </Select>
+      </div>
+      {#if atlas.dims === 3}<div class="hint muted">Box is the only outline style in 3D.</div>{/if}
+    {/if}
     <div class="btn-row">
       <button disabled={!atlas.clusterCount || atlas.clustering} onclick={() => atlas.clustersToFrame('atlas_cluster')}
         title="Write each row's cluster name into the column atlas_cluster of the DataFrame (rows in no cluster: missing)">Add clusters to DataFrame</button>

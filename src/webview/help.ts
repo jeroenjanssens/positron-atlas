@@ -1321,6 +1321,47 @@ export const HELP: Record<string, HelpEntry> = {
       'Keyboard shortcut: Ctrl+Shift+Z / Ctrl+Y (Cmd+Shift+Z on Mac).',
     cost: 'none',
   },
+
+  // ---- B2: bounding boxes (item 3) -------------------------------------------
+
+  'labels.outlineStyle': {
+    title: 'Outline style',
+    what: 'Whether to draw group boundaries as convex hull polygons ("Hull") or as axis-aligned bounding boxes ("Box").',
+    intuition:
+      'Hull polygons hug the actual shape of the cluster and work only in 2D. ' +
+      'Box outlines are axis-aligned rectangles (2D) or wireframe cubes (3D); they extend to the 2nd–98th percentile of each group so outliers do not blow the box up. ' +
+      'In 3D, box is the only option because hulls require a flat 2D projection.',
+    when: 'Use "Box" to get a quick axis-aligned extent per group, especially in 3D.',
+    cost: 'none',
+  },
+
+  'explore.show3DDataBox': {
+    title: 'Data box',
+    what: 'Shows a wireframe bounding box around the entire 3D point cloud as an orientation frame.',
+    intuition:
+      'The box outlines the extent of your data in all three dimensions, so you can see at a glance how wide the cloud is and which direction is "up". ' +
+      'It has no tick labels — UMAP coordinates are dimensionless.',
+    cost: 'none',
+  },
+
+  'explore.show3DFloorGrid': {
+    title: 'Floor grid',
+    what: 'Draws a grid on the bottom face of the 3D data box.',
+    intuition:
+      'The floor grid helps you judge the depth of clusters relative to the XY plane. ' +
+      'It is drawn at the minimum Z of the data box and has 10 intervals in each direction.',
+    when: 'Enable when you need depth cues (e.g. comparing Z positions of clusters).',
+    cost: 'none',
+  },
+
+  'explore.show3DGizmo': {
+    title: 'Orientation gizmo',
+    what: 'Shows a small X/Y/Z axis indicator in the bottom corner of the data box.',
+    intuition:
+      'The gizmo shows three coloured arrows: red = X, green = Y, blue = Z. ' +
+      'It tells you which direction you are looking after orbiting the camera.',
+    cost: 'none',
+  },
 };
 
 /** Look up a help entry by its dot-separated id.  Returns undefined when not found. */
