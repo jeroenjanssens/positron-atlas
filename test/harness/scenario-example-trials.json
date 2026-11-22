@@ -1,0 +1,45 @@
+{
+  "variable": "df",
+  "setup": "import polars as pl\nCAP = 5000\ncache = __import__('pathlib').Path.home() / '.cache/positron-atlas/datasets/trials/trials.parquet'\nif not cache.exists():\n    raise FileNotFoundError(f'Run examples/09-clinical-trials.ipynb first (expected: {cache})')\nfull = pl.read_parquet(cache)\ndf = full.sample(n=min(CAP, len(full)), seed=42)\ndel full\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "title column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.titleColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.titleColumn].name === 'title'"
+      ],
+      "report": "{ titleCol: a.describe.columns[a.tooltipOpts.titleColumn]?.name }"
+    },
+    {
+      "name": "link column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.linkColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.linkColumn].name === 'url'"
+      ],
+      "report": "{ linkCol: a.describe.columns[a.tooltipOpts.linkColumn]?.name }"
+    },
+    {
+      "name": "hover shows tooltip",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 10000
+    },
+    {
+      "name": "click pins card with trial title and link",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000,
+      "screenshot": "trials-pinned-card.png",
+      "report": "{ title: a.pinnedCard.title, row: a.pinnedCard.row, linkValue: a.pinnedCard.linkValue }"
+    }
+  ]
+}

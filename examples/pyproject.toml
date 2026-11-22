@@ -10,10 +10,24 @@ dependencies = [
 ]
 
 [dependency-groups]
+chembl = [
+    "pyarrow>=25.0.1",
+    "rdkit>=2026.9.2",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.15.3",
+]
 # Optional: enables Atlas's "Kernel (polars-umap)" and "Kernel (umap-learn)" compute modes.
 exact = [
     "polars-umap>=0.1.0",
     "umap-learn",
+]
+trials = [
+    "model2vec>=0.10.0",
+    "pyarrow>=25.0.1",
+]
+uniprot = [
+    "h5py>=3.16.0",
+    "pyarrow>=25.0.1",
 ]
 # Optional: required for the Wikipedia titles notebook (06-wikipedia-titles.ipynb).
 wikipedia = [

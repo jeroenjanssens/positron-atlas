@@ -1,0 +1,81 @@
+{
+  "variable": "df",
+  "setup": "import polars as pl\nCAP = 2000\ncache = __import__('pathlib').Path.home() / '.cache/positron-atlas/datasets/chembl/chembl.parquet'\nif not cache.exists():\n    raise FileNotFoundError(f'Run examples/07-chembl-chemical-space.ipynb first (expected: {cache})')\nfull = pl.read_parquet(cache)\ndf = full.sample(n=min(CAP, len(full)), seed=42)\ndel full\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 2000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 60000
+    },
+    {
+      "name": "title column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.titleColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.titleColumn].name === 'title'"
+      ],
+      "report": "{ titleCol: a.describe.columns[a.tooltipOpts.titleColumn]?.name }"
+    },
+    {
+      "name": "link column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.linkColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.linkColumn].name === 'url'"
+      ],
+      "report": "{ linkCol: a.describe.columns[a.tooltipOpts.linkColumn]?.name }"
+    },
+    {
+      "name": "image_url column present in describe",
+      "assert": [
+        "a.describe.columns.some(c => c.name === 'image_url')"
+      ],
+      "report": "{ imageUrlColIdx: a.describe.columns.find(c => c.name === 'image_url')?.index }"
+    },
+    {
+      "name": "hover shows tooltip",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 10000
+    },
+    {
+      "name": "click pins card with title",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000,
+      "screenshot": "chembl-pinned-card.png",
+      "report": "{ title: a.pinnedCard.title, row: a.pinnedCard.row }"
+    },
+    {
+      "name": "set image_url column and load permission for PNG thumbnails",
+      "eval": "const imgCol = a.describe.columns.find(c => c.name === 'image_url'); if (imgCol) { a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: imgCol.index }; a.loadImagesFromUrls = 'always'; }",
+      "assert": [
+        "a.loadImagesFromUrls === 'always'"
+      ]
+    },
+    {
+      "name": "re-pin to trigger image fetch",
+      "eval": "a.closePinnedCard(); const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "click to pin again",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for PNG image to load in pinned card",
+      "until": "a.pinnedCard && a.pinnedCard.imageUri && a.pinnedCard.imageUri.length > 0",
+      "timeout": 15000,
+      "screenshot": "chembl-pinned-card-with-image.png",
+      "assert": [
+        "a.pinnedCard.imageUri.length > 0"
+      ],
+      "report": "{ hasImage: !!a.pinnedCard.imageUri, uriLen: (a.pinnedCard.imageUri || '').length }"
+    }
+  ]
+}

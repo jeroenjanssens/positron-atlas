@@ -609,6 +609,873 @@ wiki.shape'''
     ])
 
 
+CHEMBL_INTRO = """\
+# ChEMBL 37 chemical space (2.4 M × 64)
+
+[ChEMBL 37](https://www.ebi.ac.uk/chembl/) is a manually curated database of bioactive
+molecules with drug-like properties maintained by EMBL-EBI.  Each row is one compound,
+represented as a 64-dimensional TruncatedSVD projection of a 2048-bit Morgan fingerprint
+(radius 2) computed with [RDKit](https://www.rdkit.org/).
+
+**Licence:** ChEMBL data is released under
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+RDKit is BSD-licensed.  scikit-learn is BSD-licensed.
+
+**Data source:** `chembl_37_chemreps.txt.gz` from the
+[ChEMBL FTP site](https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/)
+(292 MB compressed, ~2.4 M compounds).  Compound names and clinical-phase metadata
+are fetched for named compounds only via the
+[ChEMBL REST API](https://www.ebi.ac.uk/chembl/api/data/).
+Structure images use the ChEMBL image API (PNG format).
+
+**Image decision:** compound structure thumbnails use the PNG endpoint
+(`…/api/data/image/<id>.png`) rather than SVG.  PNG rasterises reliably in every
+Atlas code path — hover card *and* annotation overlay — without any special handling.
+The SVG endpoint (`…/<id>.svg`) works in the hover card but can yield zero-dimension
+thumbnails in the annotation overlay's canvas rasterisation path.
+
+**First run:** downloading takes a few minutes; fingerprint computation and SVD
+projection for all 2.4 M compounds takes roughly 5–15 minutes depending on hardware.
+The final `chembl.parquet` is cached in `~/.cache/positron-atlas/datasets/chembl/`.
+Subsequent runs skip every step that is already cached.
+
+**Quick try:** set `SAMPLE = True` to process only the first 100,000 compounds
+(under 1 minute on most machines).
+
+**What to try in Atlas:**
+- Hover a point to see the compound name, structure image (`image_url` column) and
+  a link to the ChEMBL compound page.
+- Color by `max_phase` to highlight clinical-stage compounds (phase 4 = approved drugs).
+- Color by `mw` (histogram filter) to explore molecular weight.
+- Search for a drug name such as *aspirin*, *imatinib*, or *sildenafil*.
+- Turn on cluster labels to discover structural families.
+- Annotate a cluster of approved CNS drugs or kinase inhibitors.
+"""
+
+CHEMBL_THINGS = """\
+- **Color by `max_phase`.**  Clinical phase 4 (approved drugs) forms a distinctive
+  population; phase 0 / null compounds are the vast majority.
+- **Color by `mw`** and use the histogram filter to zoom in on drug-like compounds
+  (MW 150–500).  The Lipinski "rule of five" space becomes visible.
+- **Hover** a compound: the structure image is loaded from the ChEMBL image API (PNG).
+  Set `image_url` as the **Image URL column** in the **Tooltip** tab if Atlas does not
+  auto-detect it.
+- **Cmd/Ctrl-click** (when `url` is the link column) to open the compound card on
+  the ChEMBL website.
+- **Search** for *aspirin*, *imatinib*, or *sildenafil* to find approved drugs and see
+  where they sit in chemical space.
+- **Annotate** the imatinib cluster (kinase inhibitors) or aspirin / NSAID cluster.
+"""
+
+
+def chembl_chemical_space() -> dict:
+    """Generate the ChEMBL chemical space notebook."""
+    cell_config = '''\
+# ── Configuration ──────────────────────────────────────────────────────────────
+# Set SAMPLE = True to process only the first 100,000 compounds (< 1 min).
+# Set SAMPLE = False for the full 2.4 M compounds (~5–15 min first run).
+SAMPLE = False
+
+CHEMREPS_URL = "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_37_chemreps.txt.gz"
+N_COMPONENTS = 64     # TruncatedSVD output dimensions (f0 … f63)
+CHUNK_SIZE   = 50_000 # compounds per fingerprint / projection chunk
+SVD_SAMPLE   = 200_000  # compounds used to fit TruncatedSVD
+SAMPLE_N     = 100_000  # compounds to process in SAMPLE mode'''
+
+    cell_imports = '''\
+import csv, gzip, json, time, urllib.request
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem, Descriptors
+from scipy.sparse import lil_matrix
+from sklearn.decomposition import TruncatedSVD
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+CACHE = Path.home() / ".cache" / "positron-atlas" / "datasets" / "chembl"
+CHEMREPS_PATH = CACHE / "chembl_37_chemreps.txt.gz"
+SVD_CACHE     = CACHE / "svd_components.npz"
+FEATURES_PATH = CACHE / "chembl_features.parquet"
+META_PATH     = CACHE / "chembl_meta.parquet"
+CHEMBL_PATH   = CACHE / "chembl.parquet"
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+def _download(url: str, path: Path) -> Path:
+    """Download url to path atomically; skip if already present."""
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    print(f"Downloading {url} ...")
+    urllib.request.urlretrieve(url, tmp)
+    tmp.rename(path)
+    return path
+
+
+def _mol_to_fp(mol) -> np.ndarray:
+    """Return 2048-bit Morgan (radius-2) fingerprint as uint8 array."""
+    arr = np.zeros(2048, dtype=np.uint8)
+    if mol is not None:
+        DataStructs.ConvertToNumpyArray(
+            AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048), arr,
+        )
+    return arr'''
+
+    cell_phase1 = '''\
+# ── Phase 1: download chemreps ────────────────────────────────────────────────
+if CHEMBL_PATH.exists():
+    print("chembl.parquet already cached — skipping all phases")
+elif CHEMREPS_PATH.exists():
+    print(f"chemreps already downloaded ({CHEMREPS_PATH.stat().st_size / 1e9:.2f} GB)")
+else:
+    _t0 = time.perf_counter()
+    _download(CHEMREPS_URL, CHEMREPS_PATH)
+    print(f"Downloaded in {time.perf_counter() - _t0:.0f} s  ({CHEMREPS_PATH.stat().st_size / 1e9:.2f} GB)")'''
+
+    cell_phase2 = '''\
+# ── Phase 2: fit TruncatedSVD on a sample of Morgan fingerprints ─────────────
+# TruncatedSVD (no mean-centering) is appropriate for bit matrices.
+# We build a scipy sparse matrix for the sample to keep memory under control
+# (~100 bits set per fingerprint → ~95 % sparsity).
+
+if CHEMBL_PATH.exists():
+    print("chembl.parquet already cached — skipping Phase 2")
+elif SVD_CACHE.exists():
+    _npz = np.load(SVD_CACHE)
+    _svd_components = _npz["components"]          # shape (N_COMPONENTS, 2048)
+    print(f"Loaded SVD cache: {_svd_components.shape}")
+else:
+    _n_target = min(SVD_SAMPLE, SAMPLE_N if SAMPLE else SVD_SAMPLE)
+    print(f"Phase 2: reading up to {_n_target:,} fingerprints for SVD fitting...")
+    _t0 = time.perf_counter()
+    _sample_fps: list[np.ndarray] = []
+
+    with gzip.open(CHEMREPS_PATH, "rt") as _f:
+        _reader = csv.DictReader(_f, delimiter="\t")
+        for _row in _reader:
+            if len(_sample_fps) >= _n_target:
+                break
+            _mol = Chem.MolFromSmiles(_row["canonical_smiles"] or "")
+            _sample_fps.append(_mol_to_fp(_mol))
+
+    print(f"  Read {len(_sample_fps):,} fingerprints in {time.perf_counter() - _t0:.0f} s; building sparse matrix...")
+    _t1 = time.perf_counter()
+    _sparse = lil_matrix((len(_sample_fps), 2048), dtype=np.float32)
+    for _i, _fp in enumerate(_sample_fps):
+        _nz = _fp.nonzero()[0]
+        if _nz.size:
+            _sparse[_i, _nz] = 1.0
+    _X = _sparse.tocsr()
+    del _sparse, _sample_fps
+
+    print(f"  Sparse matrix ({_X.shape}) built in {time.perf_counter() - _t1:.0f} s; fitting TruncatedSVD({N_COMPONENTS})...")
+    _svd = TruncatedSVD(n_components=N_COMPONENTS, random_state=42)
+    _svd.fit(_X)
+    del _X
+
+    _svd_components = _svd.components_.astype(np.float32)   # (64, 2048)
+    np.savez(SVD_CACHE, components=_svd_components)
+    print(f"  SVD fitted and cached in {time.perf_counter() - _t0:.0f} s — {_svd_components.shape}")'''
+
+    cell_phase3 = '''\
+# ── Phase 3: compute fingerprints and MW for all compounds, project to 64 dims ─
+# Processes CHUNK_SIZE compounds at a time; total memory stays under ~1 GB.
+
+if CHEMBL_PATH.exists():
+    print("chembl.parquet already cached — skipping Phase 3")
+elif FEATURES_PATH.exists():
+    print("Features parquet already cached")
+else:
+    print("Phase 3: fingerprinting all compounds...")
+    _t0 = time.perf_counter()
+    _all_ids: list[str] = []
+    _all_mws: list[float | None] = []
+    _all_feats_parts: list[np.ndarray] = []
+    _chunk_ids: list[str] = []
+    _chunk_mws: list[float | None] = []
+    _chunk_fps: list[np.ndarray] = []
+    _n_total = _n_invalid = 0
+
+    def _flush_chunk() -> None:
+        _X = np.stack(_chunk_fps, axis=0).astype(np.float32)
+        _all_feats_parts.append(_X @ _svd_components.T)
+        _all_ids.extend(_chunk_ids)
+        _all_mws.extend(_chunk_mws)
+        _chunk_ids.clear(); _chunk_mws.clear(); _chunk_fps.clear()
+
+    with gzip.open(CHEMREPS_PATH, "rt") as _f:
+        _reader = csv.DictReader(_f, delimiter="\t")
+        for _row in _reader:
+            if SAMPLE and _n_total >= SAMPLE_N:
+                break
+            _mol = Chem.MolFromSmiles(_row["canonical_smiles"] or "")
+            if _mol is None:
+                _n_invalid += 1
+            _chunk_ids.append(_row["chembl_id"])
+            _chunk_mws.append(round(Descriptors.MolWt(_mol), 2) if _mol else None)
+            _chunk_fps.append(_mol_to_fp(_mol))
+            _n_total += 1
+            if len(_chunk_fps) >= CHUNK_SIZE:
+                _flush_chunk()
+                _elapsed = time.perf_counter() - _t0
+                print(f"  {_n_total:,} compounds at {_n_total / _elapsed:,.0f}/s")
+
+    if _chunk_fps:
+        _flush_chunk()
+
+    _all_feats = np.concatenate(_all_feats_parts, axis=0).astype(np.float32)
+    print(
+        f"Phase 3 done: {len(_all_ids):,} compounds ({_n_invalid:,} invalid SMILES) "
+        f"in {time.perf_counter() - _t0:.0f} s"
+    )
+
+    _cols: dict = {"chembl_id": _all_ids, "mw": pa.array(_all_mws, type=pa.float32())}
+    for _i in range(N_COMPONENTS):
+        _cols[f"f{_i}"] = _all_feats[:, _i]
+    pq.write_table(pa.table(_cols), FEATURES_PATH)
+    print(f"Saved features parquet ({FEATURES_PATH.stat().st_size / 1e6:.0f} MB)")
+    del _all_feats, _all_feats_parts'''
+
+    cell_phase4 = '''\
+# ── Phase 4: fetch pref_name and max_phase for named compounds via REST API ────
+# Only compounds with a preferred name are fetched (~15,000 out of 2.4 M).
+# For the remaining compounds, the title column falls back to chembl_id.
+
+if CHEMBL_PATH.exists():
+    print("chembl.parquet already cached — skipping Phase 4")
+elif META_PATH.exists():
+    print("Metadata parquet already cached")
+else:
+    print("Phase 4: fetching named-compound metadata from ChEMBL API...")
+    _t0 = time.perf_counter()
+    _meta_ids: list[str] = []
+    _meta_names: list[str | None] = []
+    _meta_phases: list[float | None] = []
+    _offset = 0
+    _limit  = 1000
+    _total  = None
+
+    while True:
+        _url = (
+            "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
+            f"?pref_name__isnull=False&limit={_limit}&offset={_offset}"
+            "&fields=molecule_chembl_id,pref_name,max_phase"
+        )
+        _req = urllib.request.Request(_url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(_req, timeout=30) as _resp:
+            _data = json.loads(_resp.read())
+
+        for _m in _data["molecules"]:
+            _meta_ids.append(_m["molecule_chembl_id"])
+            _meta_names.append(_m.get("pref_name"))
+            _phase = _m.get("max_phase")
+            _meta_phases.append(float(_phase) if _phase is not None else None)
+
+        if _total is None:
+            _total = _data["page_meta"]["total_count"]
+            print(f"  Total named compounds: {_total:,}")
+
+        _offset += _limit
+        if _offset >= _total:
+            break
+        if _offset % 5_000 == 0:
+            print(f"  {_offset:,}/{_total:,} ...")
+
+    pq.write_table(
+        pa.table({
+            "chembl_id":  _meta_ids,
+            "pref_name":  pa.array(_meta_names, type=pa.string()),
+            "max_phase":  pa.array(_meta_phases, type=pa.float32()),
+        }),
+        META_PATH,
+    )
+    print(f"Phase 4 done: {len(_meta_ids):,} named compounds in {time.perf_counter() - _t0:.0f} s")'''
+
+    cell_phase5 = '''\
+# ── Phase 5: join features and metadata, write chembl.parquet ─────────────────
+if CHEMBL_PATH.exists():
+    print("chembl.parquet already cached — loading")
+else:
+    print("Phase 5: joining features and metadata...")
+    _feats = pl.read_parquet(FEATURES_PATH)
+    _meta  = pl.read_parquet(META_PATH)
+
+    chembl = (
+        _feats
+        .join(_meta, on="chembl_id", how="left")
+        .with_columns(
+            pl.coalesce(["pref_name", "chembl_id"]).alias("title"),
+            pl.format(
+                "https://www.ebi.ac.uk/chembl/compound_report_card/{}/",
+                pl.col("chembl_id"),
+            ).alias("url"),
+            pl.format(
+                "https://www.ebi.ac.uk/chembl/api/data/image/{}.png",
+                pl.col("chembl_id"),
+            ).alias("image_url"),
+        )
+        .drop("pref_name")
+        .select(
+            ["chembl_id", "title", "url", "image_url", "max_phase", "mw"]
+            + [f"f{i}" for i in range(N_COMPONENTS)]
+        )
+    )
+    chembl.write_parquet(CHEMBL_PATH)
+    print(f"Saved chembl.parquet ({CHEMBL_PATH.stat().st_size / 1e9:.2f} GB, {len(chembl):,} rows)")
+
+chembl = pl.read_parquet(CHEMBL_PATH)
+chembl.shape'''
+
+    return notebook([
+        md(CHEMBL_INTRO),
+        code(cell_config),
+        code(cell_imports),
+        code(cell_phase1),
+        code(cell_phase2),
+        code(cell_phase3),
+        code(cell_phase4),
+        code(cell_phase5),
+        md(HOW_TO_OPEN.format(var="chembl")),
+        md(f"## Things to try\n\n{CHEMBL_THINGS}"),
+    ])
+
+
+UNIPROT_INTRO = """\
+# UniProt human proteome — ProtT5 embeddings (20 k × 1024)
+
+[UniProt](https://www.uniprot.org/) is the central resource for protein sequence and
+functional information.  This notebook maps the human reference proteome
+(**UP000005640**, Homo sapiens) using per-protein
+[ProtT5-XL-U50](https://github.com/agemagician/ProtTrans) embeddings precomputed by
+the UniProt team and hosted on the UniProt FTP server.
+
+**Licence:** UniProt data is licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); verify at
+<https://www.uniprot.org/help/license>.  The ProtTrans models are MIT-licensed.
+
+**Data sources:**
+- Embeddings: `per-protein.h5` from
+  <https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/UP000005640_9606/>
+  (~84 MB, 20,588 proteins × 1024 dims, float16 HDF5).
+- Metadata: streamed as TSV from the UniProt REST API
+  (`https://rest.uniprot.org/uniprotkb/stream?…`).
+
+**First run:** downloading the HDF5 file takes about 1 minute; reading embeddings and
+fetching metadata adds another minute.  Results are cached in
+`~/.cache/positron-atlas/datasets/uniprot/`.
+
+**Quick try:** set `SAMPLE = True` to load only the first 2,000 proteins (seconds).
+
+**Anchor budget note:** With 1024 feature dimensions, Atlas's WebGPU UMAP can use up to
+10 M / 1024 ≈ 9,765 anchors.  Since the human proteome has ~20 k proteins, only about
+half will be exact anchors and the rest will be placed.  For a fully exact run, enable
+**Apply PCA first** (50 components) in the Atlas **Data** tab before clicking **Apply**.
+
+**What to try in Atlas:**
+- Hover a protein to see its name, gene, and family, and open it on UniProt.
+- Color by `family` to see broad structural/functional groups.
+- Color by `length` (protein length) with the histogram filter.
+- Search for *EGFR*, *TP53*, or *BRCA1* to locate known cancer proteins.
+- Enable **Apply PCA first** (50 dims) in the Data tab so UMAP runs on all 20 k proteins
+  without sampling.
+- Turn on cluster labels to discover functional clusters.
+"""
+
+UNIPROT_THINGS = """\
+- **Color by `family`.** Protein families (kinases, GPCRs, immunoglobulins, …) form
+  distinct clusters.  The legend lets you toggle families on and off.
+- **Color by `length`** and use the histogram slider to isolate short peptides or
+  large structural proteins.
+- **Search** for *EGFR*, *TP53*, *BRCA1*, or *ACTB* to find well-known proteins and
+  see their neighbours.
+- **Enable *Apply PCA first*** (50 components) in the Atlas **Data** tab before
+  clicking **Apply**. This reduces the feature space from 1024 to 50 dims so UMAP
+  runs on all 20 k proteins exactly (no anchor placement needed).
+- **Hover a point** and click **Open link** to view the UniProt entry.
+- **Add umap_x / umap_y** in the **Export** tab, then run:
+
+  ```python
+  uniprot.group_by("family").agg(pl.col("umap_x", "umap_y").mean()).sort("family")
+  ```
+"""
+
+
+def uniprot_protein_embeddings() -> dict:
+    """Generate the UniProt protein embeddings notebook."""
+    cell_config = '''\
+# ── Configuration ──────────────────────────────────────────────────────────────
+# Set SAMPLE = True to load only the first 2,000 proteins (seconds).
+# Set SAMPLE = False for the full human reference proteome (~20 k proteins).
+SAMPLE = False
+
+PROTEOME      = "UP000005640_9606"   # human reference proteome
+EMBEDDINGS_URL = (
+    "https://ftp.uniprot.org/pub/databases/uniprot/current_release"
+    "/knowledgebase/embeddings/UP000005640_9606/per-protein.h5"
+)
+META_URL = (
+    "https://rest.uniprot.org/uniprotkb/stream"
+    "?query=proteome:UP000005640&format=tsv"
+    "&fields=accession,protein_name,gene_names,organism_name,protein_families,length"
+)
+SAMPLE_N = 2_000'''
+
+    cell_imports = '''\
+import time, urllib.request
+from pathlib import Path
+
+import h5py
+import numpy as np
+import polars as pl
+
+CACHE = Path.home() / ".cache" / "positron-atlas" / "datasets" / "uniprot"
+EMBEDDINGS_PATH = CACHE / "per-protein-UP000005640_9606.h5"
+META_PATH       = CACHE / "uniprot_human_meta.tsv"
+UNIPROT_PATH    = CACHE / "uniprot.parquet"
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+def _download(url: str, path: Path) -> Path:
+    """Download url to path atomically; skip if already present."""
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".part")
+    print(f"Downloading {url} ...")
+    urllib.request.urlretrieve(url, tmp)
+    tmp.rename(path)
+    return path'''
+
+    cell_phase1 = '''\
+# ── Phase 1: download the ProtT5 HDF5 embeddings file ─────────────────────────
+if UNIPROT_PATH.exists():
+    print("uniprot.parquet already cached — skipping all phases")
+elif EMBEDDINGS_PATH.exists():
+    print(f"Embeddings already downloaded ({EMBEDDINGS_PATH.stat().st_size / 1e6:.0f} MB)")
+else:
+    _t0 = time.perf_counter()
+    _download(EMBEDDINGS_URL, EMBEDDINGS_PATH)
+    print(f"Downloaded in {time.perf_counter() - _t0:.0f} s  ({EMBEDDINGS_PATH.stat().st_size / 1e6:.0f} MB)")'''
+
+    cell_phase2 = '''\
+# ── Phase 2: stream metadata from the UniProt REST API ────────────────────────
+# Fields: accession, protein name, gene names, organism, protein families, length.
+# The stream returns a TSV with one row per protein; cached as a local file.
+
+if UNIPROT_PATH.exists():
+    print("uniprot.parquet already cached — skipping Phase 2")
+elif META_PATH.exists():
+    print(f"Metadata already cached ({META_PATH.stat().st_size / 1e3:.0f} kB)")
+else:
+    print("Phase 2: fetching metadata from UniProt REST API...")
+    _t0 = time.perf_counter()
+    _req = urllib.request.Request(META_URL, headers={"Accept": "text/plain"})
+    with urllib.request.urlopen(_req, timeout=120) as _resp:
+        _raw = _resp.read()
+    META_PATH.write_bytes(_raw)
+    print(f"Metadata saved ({META_PATH.stat().st_size / 1e3:.0f} kB) in {time.perf_counter() - _t0:.0f} s")'''
+
+    cell_phase3 = '''\
+# ── Phase 3: load embeddings + metadata, produce final DataFrame ──────────────
+if UNIPROT_PATH.exists():
+    print("uniprot.parquet already cached — loading")
+else:
+    print("Phase 3: loading embeddings and joining metadata...")
+    _t0 = time.perf_counter()
+
+    # Load embeddings from HDF5; each key is a UniProt accession.
+    with h5py.File(EMBEDDINGS_PATH, "r") as _f:
+        _accs = sorted(_f.keys())                             # sorted for reproducibility
+        if SAMPLE:
+            _accs = _accs[:SAMPLE_N]
+        _embeddings = np.stack([_f[a][:] for a in _accs]).astype(np.float32)
+
+    print(f"  Loaded {len(_accs):,} embeddings × {_embeddings.shape[1]} dims in {time.perf_counter() - _t0:.0f} s")
+
+    # Read metadata TSV; rename columns to short names.
+    _meta = (
+        pl.read_csv(META_PATH, separator="\t", infer_schema_length=10_000)
+        .rename({
+            "Entry":            "accession",
+            "Protein names":    "title",
+            "Gene Names":       "gene",
+            "Organism":         "organism",
+            "Protein families": "family",
+            "Length":           "length",
+        })
+        .with_columns(
+            # Keep only the first (recommended) protein name: text before " (".
+            pl.col("title").str.replace(r"\\s*\\(.*", "").alias("title"),
+            # Keep only the first gene name.
+            pl.col("gene").str.splitn(" ", 2).list.first().alias("gene"),
+            # Shorten organism name: "Homo sapiens (Human)" → "Homo sapiens".
+            pl.col("organism").str.replace(r"\\s*\\(.*", "").alias("organism"),
+            # Keep only the first protein family.
+            pl.col("family").str.splitn(",", 2).list.first().alias("family"),
+            pl.col("length").cast(pl.Int32),
+        )
+    )
+
+    # Build embedding columns (e0 … e1023).
+    _n_dims = _embeddings.shape[1]
+    _emb_df = pl.from_numpy(_embeddings, schema=[f"e{i}" for i in range(_n_dims)])
+
+    # Assemble final DataFrame: metadata columns + URL + embedding columns.
+    _ids_df = pl.DataFrame({"accession": _accs})
+    uniprot = (
+        _ids_df
+        .join(_meta, on="accession", how="left")
+        .with_columns(
+            pl.format("https://www.uniprot.org/uniprotkb/{}/entry", pl.col("accession")).alias("url"),
+        )
+        .select(["accession", "title", "gene", "family", "organism", "length", "url"])
+        .hstack(_emb_df)
+    )
+
+    uniprot.write_parquet(UNIPROT_PATH)
+    print(f"Saved uniprot.parquet ({UNIPROT_PATH.stat().st_size / 1e6:.0f} MB, {len(uniprot):,} rows) in {time.perf_counter() - _t0:.0f} s")
+
+uniprot = pl.read_parquet(UNIPROT_PATH)
+uniprot.shape'''
+
+    return notebook([
+        md(UNIPROT_INTRO),
+        code(cell_config),
+        code(cell_imports),
+        code(cell_phase1),
+        code(cell_phase2),
+        code(cell_phase3),
+        md(HOW_TO_OPEN.format(var="uniprot")),
+        md(f"## Things to try\n\n{UNIPROT_THINGS}"),
+    ])
+
+
+TRIALS_INTRO = """\
+# ClinicalTrials.gov (612 k studies × 64)
+
+[ClinicalTrials.gov](https://clinicaltrials.gov/) is a database of privately and
+publicly funded clinical studies.  This notebook downloads study metadata via the
+[ClinicalTrials.gov API v2](https://clinicaltrials.gov/data-api/api), embeds the brief
+title of each study with the
+[`minishlab/potion-base-8M`](https://huggingface.co/minishlab/potion-base-8M)
+static embedding model (English, 256 dims), and reduces to 64 dims with PCA —
+exactly as the Wikipedia notebook does for article titles.
+
+**Terms of use:** ClinicalTrials.gov data are in the public domain; see the
+[NLM copyright and disclaimer notice](https://www.nlm.nih.gov/copyright.html) and the
+[ClinicalTrials.gov terms and conditions](https://clinicaltrials.gov/about-site/terms-conditions).
+Commercial redistribution of the raw data may require a data licence; always consult
+the current terms before redistributing.
+
+**Data source:** ClinicalTrials.gov API v2 — paginated JSON, `pageSize=1000`, fields:
+NCTId, BriefTitle, Phase, OverallStatus, LeadSponsorClass, Conditions, StartDate,
+EnrollmentCount.  Pages are cached in `~/.cache/positron-atlas/datasets/trials/pages/`.
+Full download is ~612 k studies across ~613 pages.
+
+**Embedding model:** `minishlab/potion-base-8M` (model2vec, English, MIT licence).
+
+**First run:** downloading all pages takes roughly 15–30 minutes (rate-limited); the
+embedding + PCA step adds 5–10 minutes.  Results are cached in
+`~/.cache/positron-atlas/datasets/trials/trials.parquet`.
+Subsequent runs skip every step that is already cached.
+
+**Quick try:** set `SAMPLE = True` to download only the first 100 pages (~100 k studies,
+a few minutes).
+
+**What to try in Atlas:**
+- Hover a study to see its title and open it on ClinicalTrials.gov.
+- Color by `phase` to see the clinical-trial landscape.
+- Color by `sponsor_class` (INDUSTRY vs NIH vs OTHER) to see funding patterns.
+- Use the histogram filter on `start_date` to explore when trials started.
+- Filter on `enrollment` to focus on large trials.
+- Search for *COVID-19*, *diabetes*, or *Alzheimer* to find specific disease areas.
+- Annotate clusters corresponding to oncology or cardiovascular trials.
+"""
+
+TRIALS_THINGS = """\
+- **Color by `phase`.**  Phase 3 and 4 trials cluster together; Phase 1 (first-in-human)
+  sits in a broad, dispersed region.
+- **Color by `sponsor_class`.**  Industry-sponsored and NIH-funded trials have distinct
+  spatial patterns.
+- **Histogram filter on `start_date`.**  Slide the range to watch the clinical-trial
+  landscape evolve over time.  The COVID-19 surge in 2020–2021 becomes visible.
+- **Histogram filter on `enrollment`.**  Set a minimum of 1,000 to focus on large trials.
+- **Search** for *COVID-19*, *diabetes*, or *breast cancer* to find disease clusters.
+  Try *vaccine*, *placebo*, or *randomized* for trial-design keywords.
+- **Turn on cluster labels** to discover disease areas.
+- **Annotate** the COVID-19 vaccine cluster (2020 trials) or the large oncology region.
+"""
+
+
+def clinical_trials() -> dict:
+    """Generate the ClinicalTrials.gov notebook."""
+    cell_config = '''\
+# ── Configuration ──────────────────────────────────────────────────────────────
+# Set SAMPLE = True to download only 100 pages (~100 k studies, a few minutes).
+# Set SAMPLE = False for the full ~612 k studies (~30 min first run).
+SAMPLE = False
+
+PAGE_SIZE    = 1000     # studies per API page
+SAMPLE_PAGES = 100      # pages to download in SAMPLE mode
+N_COMPONENTS = 64       # PCA output dimensions (f0 … f63)
+BATCH_SIZE   = 4096     # titles per embedding batch
+PCA_SAMPLE   = 100_000  # titles used to fit PCA
+REQUEST_DELAY = 0.1     # seconds between API requests (be polite)'''
+
+    cell_imports = '''\
+import json, time, urllib.error, urllib.request
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+from model2vec import StaticModel
+
+CACHE     = Path.home() / ".cache" / "positron-atlas" / "datasets" / "trials"
+PAGES_DIR = CACHE / "pages"
+TRIALS_PARQUET = CACHE / "trials.parquet"
+PCA_CACHE      = CACHE / "pca_components.npz"
+PAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+_API_BASE = "https://clinicaltrials.gov/api/v2/studies"
+_FIELDS   = (
+    "NCTId,BriefTitle,Phase,OverallStatus,LeadSponsorClass,"
+    "ConditionBrowseModule,StartDate,EnrollmentCount"
+)
+
+
+def _page_path(n: int) -> Path:
+    return PAGES_DIR / f"page_{n:06d}.json"
+
+
+def _extract_study(study: dict) -> dict:
+    """Extract flat fields from a v2 study object."""
+    proto  = study.get("protocolSection", {})
+    ident  = proto.get("identificationModule", {})
+    status = proto.get("statusModule", {})
+    design = proto.get("designModule", {})
+    sponsor = proto.get("sponsorCollaboratorsModule", {})
+    conds  = proto.get("conditionsModule", {})
+
+    phases = design.get("phases", [])
+    phase  = phases[0].replace("PHASE", "Phase ") if phases else None
+
+    sponsor_class = (sponsor.get("leadSponsor") or {}).get("class")
+
+    # conditions come from either conditionsModule or the browse mesh
+    cond_list = conds.get("conditions", [])
+    if not cond_list:
+        cond_list = [
+            m.get("meshTerm", "")
+            for m in (study.get("derivedSection", {})
+                      .get("conditionBrowseModule", {})
+                      .get("meshes", []))
+        ]
+    condition = cond_list[0] if cond_list else None
+
+    start_struct = status.get("startDateStruct", {})
+    start_date   = start_struct.get("date")           # "YYYY-MM" or "YYYY-MM-DD"
+    if start_date and len(start_date) == 7:
+        start_date += "-01"                            # normalise to full date
+
+    enroll_info  = design.get("enrollmentInfo") or {}
+    enrollment   = enroll_info.get("count")
+
+    return {
+        "nct_id":        ident.get("nctId", ""),
+        "title":         ident.get("briefTitle", ""),
+        "phase":         phase,
+        "status":        status.get("overallStatus"),
+        "sponsor_class": sponsor_class,
+        "conditions":    condition,
+        "start_date":    start_date,
+        "enrollment":    enrollment,
+    }
+
+
+def _embed_batched(model: StaticModel, titles: list[str]) -> np.ndarray:
+    """Embed titles in BATCH_SIZE chunks; return float32 (n, dim) array."""
+    out = []
+    for i in range(0, len(titles), BATCH_SIZE):
+        out.append(model.encode(titles[i : i + BATCH_SIZE]))
+    return np.concatenate(out, axis=0).astype(np.float32)'''
+
+    cell_phase1 = '''\
+# ── Phase 1: paginate the API, caching each page as JSON ──────────────────────
+# Resume-safe: pages already on disk are skipped; the next page token is read
+# from the last cached page.
+
+if TRIALS_PARQUET.exists():
+    print("trials.parquet already cached — skipping Phase 1")
+else:
+    _existing = sorted(PAGES_DIR.glob("page_*.json"))
+    _n_start  = len(_existing)
+    if _n_start:
+        _last_data  = json.loads(_existing[-1].read_text())
+        _page_token = _last_data.get("nextPageToken")
+        print(f"Resuming from page {_n_start} (token: {_page_token!r})")
+    else:
+        _page_token = None
+
+    _page_num     = _n_start
+    _total_so_far = sum(len(json.loads(p.read_text()).get("studies", [])) for p in _existing)
+    _t0           = time.perf_counter()
+
+    while True:
+        if SAMPLE and _page_num >= SAMPLE_PAGES:
+            break
+        if _page_token is None and _page_num > 0:
+            break
+
+        _url = f"{_API_BASE}?pageSize={PAGE_SIZE}&fields={_FIELDS}"
+        if _page_token:
+            _url += f"&pageToken={_page_token}"
+
+        for _attempt in range(5):
+            try:
+                with urllib.request.urlopen(_url, timeout=30) as _resp:
+                    _data = json.loads(_resp.read())
+                break
+            except (urllib.error.URLError, OSError) as _e:
+                _wait = 2 ** _attempt
+                print(f"  Retry {_attempt + 1}/5 after {_wait}s ({_e})")
+                time.sleep(_wait)
+        else:
+            raise RuntimeError("API unavailable after 5 retries")
+
+        _page_path(_page_num).write_text(json.dumps(_data))
+        _n = len(_data.get("studies", []))
+        _total_so_far += _n
+        _page_num += 1
+
+        if _page_num % 50 == 0 or _n < PAGE_SIZE:
+            _elapsed = time.perf_counter() - _t0
+            print(f"  Page {_page_num}: {_total_so_far:,} studies total ({_elapsed:.0f} s)")
+
+        _page_token = _data.get("nextPageToken")
+        if _page_token is None:
+            break
+        time.sleep(REQUEST_DELAY)
+
+    print(f"Phase 1 done: {_page_num} pages, {_total_so_far:,} studies")'''
+
+    cell_phase2 = '''\
+# ── Phase 2: load model once; fit PCA on a sample of titles ───────────────────
+if TRIALS_PARQUET.exists():
+    print("trials.parquet already cached — skipping Phase 2")
+else:
+    _all_pages = sorted(PAGES_DIR.glob("page_*.json"))
+    if not _all_pages:
+        raise RuntimeError("No pages cached; run Phase 1 first.")
+
+    print("Phase 2: loading model...")
+    _t0 = time.perf_counter()
+    model = StaticModel.from_pretrained("minishlab/potion-base-8M")
+    print(f"  Model loaded in {time.perf_counter() - _t0:.1f} s (dim={model.dim})")
+
+    if PCA_CACHE.exists():
+        _npz = np.load(PCA_CACHE)
+        _pca_mean, _pca_components = _npz["mean"], _npz["components"]
+        print(f"Loaded PCA cache: {_pca_components.shape}")
+    else:
+        # Collect up to PCA_SAMPLE titles for PCA fitting.
+        _sample_titles: list[str] = []
+        for _p in _all_pages:
+            _d = json.loads(_p.read_text())
+            for _s in _d.get("studies", []):
+                _t = (_s.get("protocolSection", {})
+                        .get("identificationModule", {})
+                        .get("briefTitle", ""))
+                if _t:
+                    _sample_titles.append(_t)
+            if len(_sample_titles) >= PCA_SAMPLE:
+                break
+
+        _rng = np.random.default_rng(42)
+        _idx = _rng.choice(len(_sample_titles), min(PCA_SAMPLE, len(_sample_titles)), replace=False)
+        _sample = [_sample_titles[int(i)] for i in sorted(_idx)]
+        del _sample_titles
+
+        print(f"  Embedding {len(_sample):,} titles for PCA fitting...")
+        _t1 = time.perf_counter()
+        _sample_embs = _embed_batched(model, _sample)
+        _rate = len(_sample) / (time.perf_counter() - _t1)
+        print(f"  Embedded in {time.perf_counter() - _t1:.1f} s ({_rate:,.0f} titles/s)")
+
+        _pca_mean = _sample_embs.mean(axis=0)
+        _C = (_sample_embs - _pca_mean).astype(np.float32)
+        _cov = (_C.T @ _C) / (len(_C) - 1)
+        _evals, _evecs = np.linalg.eigh(_cov.astype(np.float64))
+        _order = np.argsort(_evals)[::-1]
+        _pca_components = _evecs[:, _order[:N_COMPONENTS]].T.astype(np.float32)
+        del _C, _cov, _evals, _evecs, _sample_embs
+
+        np.savez(PCA_CACHE, mean=_pca_mean, components=_pca_components)
+        print(f"  PCA fitted and cached ({_pca_components.shape})")'''
+
+    cell_phase3 = '''\
+# ── Phase 3: embed all titles, project, assemble DataFrame ────────────────────
+if TRIALS_PARQUET.exists():
+    print("trials.parquet already cached — loading")
+else:
+    print("Phase 3: embedding all study titles and assembling DataFrame...")
+    _t0 = time.perf_counter()
+    _all_pages = sorted(PAGES_DIR.glob("page_*.json"))
+
+    _rows: list[dict] = []
+    _titles: list[str] = []
+
+    for _p in _all_pages:
+        _d = json.loads(_p.read_text())
+        for _s in _d.get("studies", []):
+            _r = _extract_study(_s)
+            _rows.append(_r)
+            _titles.append(_r["title"])
+
+    print(f"  Loaded {len(_rows):,} studies; embedding titles...")
+    _t1 = time.perf_counter()
+    _embs = _embed_batched(model, _titles)
+    _proj = ((_embs - _pca_mean) @ _pca_components.T).astype(np.float32)
+    _rate = len(_titles) / (time.perf_counter() - _t1)
+    print(f"  Embedded in {time.perf_counter() - _t1:.1f} s ({_rate:,.0f} titles/s)")
+
+    _df = pl.DataFrame({
+        "nct_id":        [r["nct_id"]        for r in _rows],
+        "title":         [r["title"]         for r in _rows],
+        "phase":         [r["phase"]         for r in _rows],
+        "status":        [r["status"]        for r in _rows],
+        "sponsor_class": [r["sponsor_class"] for r in _rows],
+        "conditions":    [r["conditions"]    for r in _rows],
+        "start_date":    pl.Series([r["start_date"] for r in _rows]).cast(pl.Date, strict=False),
+        "enrollment":    pl.Series([r["enrollment"]  for r in _rows], dtype=pl.Int32),
+    }).with_columns(
+        pl.format("https://clinicaltrials.gov/study/{}", pl.col("nct_id")).alias("url"),
+    )
+
+    _feat_df = pl.from_numpy(_proj, schema=[f"f{i}" for i in range(N_COMPONENTS)])
+    trials = _df.hstack(_feat_df)
+
+    trials.write_parquet(TRIALS_PARQUET)
+    print(f"Saved trials.parquet ({TRIALS_PARQUET.stat().st_size / 1e6:.0f} MB, {len(trials):,} rows) in {time.perf_counter() - _t0:.0f} s")
+
+trials = pl.read_parquet(TRIALS_PARQUET)
+trials.shape'''
+
+    return notebook([
+        md(TRIALS_INTRO),
+        code(cell_config),
+        code(cell_imports),
+        code(cell_phase1),
+        code(cell_phase2),
+        code(cell_phase3),
+        md(HOW_TO_OPEN.format(var="trials")),
+        md(f"## Things to try\n\n{TRIALS_THINGS}"),
+    ])
+
+
 README = """\
 # Example notebooks
 
@@ -621,6 +1488,9 @@ Real high-dimensional datasets to explore with Positron Atlas. Each notebook dow
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 | [05-higgs.ipynb](05-higgs.ipynb) | Higgs boson search ([UCI HIGGS](https://archive.ics.uci.edu/dataset/280/higgs)) | 11,000,000 × 28 | polars |
 | [06-wikipedia-titles.ipynb](06-wikipedia-titles.ipynb) | Wikipedia titles en+de+fr ([wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia)) | 11.8 M × 64 | polars |
+| [07-chembl-chemical-space.ipynb](07-chembl-chemical-space.ipynb) | ChEMBL 37 chemical space ([ChEMBL](https://www.ebi.ac.uk/chembl/)) | 2.4 M × 64 | polars |
+| [08-uniprot-protein-embeddings.ipynb](08-uniprot-protein-embeddings.ipynb) | UniProt human proteome ProtT5 ([UniProt](https://www.uniprot.org/)) | ~20 k × 1024 | polars |
+| [09-clinical-trials.ipynb](09-clinical-trials.ipynb) | ClinicalTrials.gov studies ([ClinicalTrials.gov](https://clinicaltrials.gov/)) | ~612 k × 64 | polars |
 
 ## Setup
 
@@ -631,6 +1501,9 @@ cd examples
 uv sync                      # creates examples/.venv
 uv sync --group exact        # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
 uv sync --group wikipedia    # optional: also install model2vec and pyarrow for the Wikipedia notebook
+uv sync --group chembl       # optional: also install rdkit, scikit-learn, scipy, pyarrow for the ChEMBL notebook
+uv sync --group uniprot      # optional: also install h5py and pyarrow for the UniProt notebook
+uv sync --group trials       # optional: also install model2vec and pyarrow for the ClinicalTrials notebook
 ```
 
 In Positron, open a notebook and select the `examples/.venv` interpreter (**Python 3.x (uv: positron-atlas-examples)**) from the interpreter picker in the top right.
@@ -667,6 +1540,9 @@ def main() -> None:
         "03-covertype.ipynb": COVTYPE,
         "05-higgs.ipynb": HIGGS,
         "06-wikipedia-titles.ipynb": wikipedia_titles(),
+        "07-chembl-chemical-space.ipynb": chembl_chemical_space(),
+        "08-uniprot-protein-embeddings.ipynb": uniprot_protein_embeddings(),
+        "09-clinical-trials.ipynb": clinical_trials(),
     }
     for name, nb in nbs.items():
         (OUT / name).write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")

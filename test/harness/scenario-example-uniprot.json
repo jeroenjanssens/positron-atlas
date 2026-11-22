@@ -1,0 +1,46 @@
+{
+  "variable": "df",
+  "setup": "import polars as pl\ncache = __import__('pathlib').Path.home() / '.cache/positron-atlas/datasets/uniprot/uniprot.parquet'\nif not cache.exists():\n    raise FileNotFoundError(f'Run examples/08-uniprot-protein-embeddings.ipynb first (expected: {cache})')\ndf = pl.read_parquet(cache)\n",
+  "settings": {
+    "pcaEnabled": true,
+    "pcaDims": 20,
+    "maxAnchorsCpu": 2000
+  },
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 90000
+    },
+    {
+      "name": "title column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.titleColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.titleColumn].name === 'title'"
+      ],
+      "report": "{ titleCol: a.describe.columns[a.tooltipOpts.titleColumn]?.name, nRows: a.describe.nRows }"
+    },
+    {
+      "name": "link column auto-detected",
+      "assert": [
+        "typeof a.tooltipOpts.linkColumn === 'number'",
+        "a.describe.columns[a.tooltipOpts.linkColumn].name === 'url'"
+      ],
+      "report": "{ linkCol: a.describe.columns[a.tooltipOpts.linkColumn]?.name }"
+    },
+    {
+      "name": "hover shows tooltip",
+      "eval": "const xy = a['anchorXY']; a['onPointer']({ x: 400, y: 300, world: [xy[0], xy[1]] })",
+      "until": "a.tooltip !== null",
+      "timeout": 10000
+    },
+    {
+      "name": "click pins card with protein title and link",
+      "eval": "a['onClick']({ metaKey: false, ctrlKey: false })",
+      "until": "a.pinnedCard !== null",
+      "timeout": 5000,
+      "screenshot": "uniprot-pinned-card.png",
+      "report": "{ title: a.pinnedCard.title, row: a.pinnedCard.row, linkValue: a.pinnedCard.linkValue }"
+    }
+  ]
+}

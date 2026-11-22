@@ -9,6 +9,9 @@ Real high-dimensional datasets to explore with Positron Atlas. Each notebook dow
 | [03-covertype.ipynb](03-covertype.ipynb) | Forest cover types ([UCI Covertype](https://archive.ics.uci.edu/dataset/31/covertype)) | 581,012 × 10 | polars |
 | [05-higgs.ipynb](05-higgs.ipynb) | Higgs boson search ([UCI HIGGS](https://archive.ics.uci.edu/dataset/280/higgs)) | 11,000,000 × 28 | polars |
 | [06-wikipedia-titles.ipynb](06-wikipedia-titles.ipynb) | Wikipedia titles en+de+fr ([wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia)) | 11.8 M × 64 | polars |
+| [07-chembl-chemical-space.ipynb](07-chembl-chemical-space.ipynb) | ChEMBL 37 chemical space ([ChEMBL](https://www.ebi.ac.uk/chembl/)) | 2.4 M × 64 | polars |
+| [08-uniprot-protein-embeddings.ipynb](08-uniprot-protein-embeddings.ipynb) | UniProt human proteome ProtT5 ([UniProt](https://www.uniprot.org/)) | ~20 k × 1024 | polars |
+| [09-clinical-trials.ipynb](09-clinical-trials.ipynb) | ClinicalTrials.gov studies ([ClinicalTrials.gov](https://clinicaltrials.gov/)) | ~612 k × 64 | polars |
 
 ## Setup
 
@@ -19,6 +22,9 @@ cd examples
 uv sync                      # creates examples/.venv
 uv sync --group exact        # optional: also install umap-learn for Atlas's "Kernel (umap-learn)" mode
 uv sync --group wikipedia    # optional: also install model2vec and pyarrow for the Wikipedia notebook
+uv sync --group chembl       # optional: also install rdkit, scikit-learn, scipy, pyarrow for the ChEMBL notebook
+uv sync --group uniprot      # optional: also install h5py and pyarrow for the UniProt notebook
+uv sync --group trials       # optional: also install model2vec and pyarrow for the ClinicalTrials notebook
 ```
 
 In Positron, open a notebook and select the `examples/.venv` interpreter (**Python 3.x (uv: positron-atlas-examples)**) from the interpreter picker in the top right.
