@@ -363,8 +363,11 @@ Details are in the research notes of 2026-11-22.
   - [x] UI: "Add DataFrame…" button in the layer list; × button to remove point-overlay layers. *(B3, 2026-11-22: `src/webview/components/LayerList.svelte`)*
   - [x] Overlay PointSets rendered after the base PointSets; fixed RGBA palette per overlay layer. *(B3, 2026-11-22: `src/webview/atlas/overlay.ts`, `src/webview/atlas/render.ts`)*
   - [x] Hover cards show the layer name. *(B3, 2026-11-22: `src/webview/atlas/hover.ts` — overlay tooltip shows `${layerName} · row ${posIdx}`; full column values after 30 ms debounce via kernel `overlay_rows`)*
-  - [ ] Legend per layer; search and filters can target a layer.
-  - [ ] Export: PNG (all visible layers); HTML viewer (layers as separate point sets); "New DataFrame from selection" includes the layer.
+  - [x] Legend per layer: colored swatch + SVG symbol icon per overlay in the sidebar legend. *(B3, 2026-11-22: `src/webview/components/Legend.svelte`)*
+  - [ ] Search and filters can target a layer.
+  - [x] HTML viewer includes overlay point sets (concatenated into the blob; `BlobHeader.overlays[]`; overlay legend in viewer). *(B3, 2026-11-22: `src/shared/viewerBlob.ts`, `src/webview/atlas/exportHtml.ts`, `src/viewer/ViewerApp.svelte`)*
+  - [x] "New DataFrame from selection" includes overlay rows (lasso selects overlay points; `overlay_selection_frame` kernel function). *(B3, 2026-11-22: `src/webview/atlas/selection.ts`, `src/extension/atlasPanel.ts`, `python/positron_atlas_kernel.py`)*
+  - [ ] PNG export includes all visible layers.
   - [x] Tests: Python (transforms identical to base; placement of an overlay that equals base rows lands on the same positions; missing columns, pre-prepare errors). *(B3, 2026-11-22: `python/tests/test_overlay.py`)*
   - [x] Tests: harness (overlay layer drawn, hidden, reordered: pixel assertions). *(B3, 2026-11-22: `test/harness/scenario-overlay.json` — 13 steps: add overlay → pixel count increase → hide → pixel count decrease → restore → reorder → hover → remove → pixel count back to base)*
 
@@ -424,8 +427,10 @@ Details are in the research notes of 2026-11-22.
   - [x] SDF symbol atlas or deck.gl `IconLayer` with symbol codes (binary attribute); keep `ScatterplotLayer` for the circle-only fast path.
   - [x] Fixed symbol per overlay layer (`overlaySymbolCode`, stored in `LayerState.symbol`, rendered via `IconLayer`).
   - [x] Vitest for `symbolName`, `overlaySymbolCode`, `N_SYMBOLS` (11 tests).
-  - [ ] Legend for symbols; hover card mentions the symbol category; PNG and HTML export.
-  - [ ] Harness: pixel check that two categories render different shapes.
+  - [x] Legend for symbols (overlay legend shows SVG symbol icon per layer). *(B3, 2026-11-22: `src/webview/components/Legend.svelte`)*
+  - [x] HTML export includes overlay symbol codes in `BlobHeader.overlays[].symbol`. *(B3, 2026-11-22: `src/webview/atlas/exportHtml.ts`)*
+  - [ ] Hover card mentions the symbol category; PNG export.
+  - [x] Harness: overlay export scenario verifies two overlays get different symbol codes; pixel count increases with each layer. *(B3, 2026-11-22: `test/harness/scenario-overlay-export.json`)*
 
 ---
 
