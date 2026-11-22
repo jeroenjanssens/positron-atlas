@@ -337,12 +337,13 @@ input:focus, select:focus, button:focus-visible { outline: 1px solid var(--accen
 .hint { font-size: 0.85em; color: var(--vscode-editorWarning-foreground, #cca700); }
 .hint.muted { color: var(--muted); }
 
-button { background: var(--btn-bg); color: var(--btn-fg); border: none; padding: 4px 10px; border-radius: 2px; cursor: pointer; font: inherit; text-align: center; }
+button { background: var(--btn-bg); color: var(--btn-fg); border: 1px solid var(--vscode-button-border, transparent); padding: 3px 10px; border-radius: 2px; cursor: pointer; font: inherit; text-align: center; }
 button:hover:not(:disabled) { background: var(--btn-hover); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--primary-bg); color: var(--primary-fg); }
 button.primary:hover:not(:disabled) { background: var(--primary-hover); }
-button.link { background: none; color: var(--vscode-textLink-foreground, #3794ff); padding: 0; }
+button.link { background: none; color: var(--vscode-textLink-foreground, #3794ff); padding: 0; border: none; }
+button.icon, button.icon-btn, button.collapse { border: none; }
 button.icon { padding: 0 6px; font-size: 1.2em; }
 .buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 /* Button + adjacent Info ⓘ icon sit side by side in a flex row */
