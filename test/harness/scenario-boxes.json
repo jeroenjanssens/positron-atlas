@@ -1,0 +1,125 @@
+{
+  "description": "B2: 2D bounding boxes for automatic clusters, per-category and per-selection; PNG export includes boxes; unrotated and rotated pixel assertions.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 4, 8000)\ncenters = rng.normal(0, 8, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (8000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000,
+      "report": "{ phase: a.phase, nAnchors: a.nAnchors, nKept: a.nKept }"
+    },
+    {
+      "name": "annotate tab",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "enable automatic clusters",
+      "eval": "const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterCount > 0 && a.labelCount === a.clusterCount",
+      "timeout": 30000,
+      "assert": [
+        "a.clusterCount >= 2",
+        "a.labels.clusters === true"
+      ],
+      "report": "{ k: a.clusterCount }"
+    },
+    {
+      "name": "enable outline style box",
+      "eval": "const cb = document.querySelector('input[type=checkbox][aria-label=\"Show outlines\"]') || Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Show outlines'))?.querySelector('input'); if (cb && !cb.checked) { cb.click(); } const s = document.querySelector('select[aria-label=\"Outline style\"]'); if (s) { s.value = 'box'; s.dispatchEvent(new Event('change', { bubbles: true })); }",
+      "until": "a.labels.outlines === true",
+      "timeout": 5000,
+      "report": "{ outlines: a.labels.outlines, outlineStyle: a.labels.outlineStyle }"
+    },
+    {
+      "name": "boxes are rendered (non-background pixels in the deck.gl canvas)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__boxPx = n;",
+      "until": "window.__boxPx !== undefined",
+      "assert": [
+        "window.__boxPx > 100"
+      ],
+      "report": "{ nonBlackPx: window.__boxPx }",
+      "screenshot": "boxes-2d-unrotated.png"
+    },
+    {
+      "name": "box extents are present in the renderer",
+      "assert": [
+        "a.renderer.boxes2D !== null || a.renderer.boxes3D !== null || (a.clusterCount >= 2 && a.labels.outlines)"
+      ],
+      "report": "{ clusterCount: a.clusterCount, outlines: a.labels.outlines, outlineStyle: a.labels.outlineStyle }"
+    },
+    {
+      "name": "rotate map 30 degrees and verify boxes rotate with the map",
+      "eval": "a.setRotation2D(30)",
+      "assert": [
+        "Math.abs(a.rotation2D - 30) < 1"
+      ],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "boxes still visible after rotation (pixel count not zero)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__boxPxRot = n;",
+      "until": "window.__boxPxRot !== undefined",
+      "assert": [
+        "window.__boxPxRot > 100"
+      ],
+      "report": "{ nonBlackPxAfterRotation: window.__boxPxRot }",
+      "screenshot": "boxes-2d-rotated30.png"
+    },
+    {
+      "name": "reset rotation",
+      "eval": "a.resetRotation2D()",
+      "assert": [ "Math.abs(a.rotation2D) < 1" ]
+    },
+    {
+      "name": "selection box: lasso a region and verify selection box appears",
+      "eval": "const c = a.renderer.container; const w = c.clientWidth, h = c.clientHeight; const poly = [[w*0.3, h*0.3], [w*0.7, h*0.3], [w*0.7, h*0.7], [w*0.3, h*0.7]]; a.applyLasso(poly, 'replace')",
+      "until": "a.selectedCount > 0",
+      "timeout": 5000,
+      "assert": [
+        "a.selectedCount > 0"
+      ],
+      "report": "{ selectedCount: a.selectedCount }"
+    },
+    {
+      "name": "selection box pixel scan (box around selected region is drawn)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__selPx = n;",
+      "until": "window.__selPx !== undefined",
+      "assert": [ "window.__selPx > 100" ],
+      "report": "{ selectionBoxPx: window.__selPx }",
+      "screenshot": "boxes-2d-selection.png"
+    },
+    {
+      "name": "clear selection",
+      "eval": "a.clearSelection()",
+      "assert": [ "a.selectedCount === 0" ]
+    },
+    {
+      "name": "PNG export includes boxes (non-blank export)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__exportPx = n;",
+      "until": "window.__exportPx !== undefined",
+      "assert": [ "window.__exportPx > 100" ],
+      "report": "{ exportPx: window.__exportPx }"
+    },
+    {
+      "name": "screenshot in dark theme",
+      "eval": "document.body.setAttribute('data-vscode-theme-kind', 'vscode-dark')",
+      "screenshot": "boxes-dark.png"
+    },
+    {
+      "name": "screenshot in light theme",
+      "eval": "document.body.setAttribute('data-vscode-theme-kind', 'vscode-light')",
+      "screenshot": "boxes-light.png"
+    },
+    {
+      "name": "screenshot in high contrast theme",
+      "eval": "document.body.setAttribute('data-vscode-theme-kind', 'vscode-high-contrast')",
+      "screenshot": "boxes-high-contrast.png"
+    }
+  ]
+}

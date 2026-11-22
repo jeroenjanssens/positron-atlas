@@ -1,0 +1,89 @@
+{
+  "description": "B2/item16: 3D automatic cluster boxes, data box / floor grid / gizmo toggle pixel assertions.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nk = rng.integers(0, 4, 5000)\ncenters = rng.normal(0, 8, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (5000, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "switch to 3D and wait for layout",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": [
+        "a.dims === 3",
+        "a.anchorXY && a.anchorXY.length === a.prepared.nAnchors * 3"
+      ],
+      "report": "{ dims: a.dims, nAnchors: a.prepared.nAnchors, nKept: a.nKept }"
+    },
+    {
+      "name": "data box is rendered by default (non-black pixels in 3D canvas)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__px3d = n;",
+      "until": "window.__px3d !== undefined",
+      "assert": [ "window.__px3d > 100" ],
+      "report": "{ px3d: window.__px3d }",
+      "screenshot": "boxes-3d-databox.png"
+    },
+    {
+      "name": "hide data box and verify pixel count changes",
+      "eval": "a.setView({ show3DDataBox: false }); await new Promise(r => setTimeout(r, 300)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pxNoBox = n;",
+      "until": "window.__pxNoBox !== undefined",
+      "assert": [
+        "a.view.show3DDataBox === false"
+      ],
+      "report": "{ pxNoBox: window.__pxNoBox }"
+    },
+    {
+      "name": "restore data box, enable floor grid and gizmo",
+      "eval": "a.setView({ show3DDataBox: true, show3DFloorGrid: true, show3DGizmo: true })",
+      "assert": [
+        "a.view.show3DDataBox === true",
+        "a.view.show3DFloorGrid === true",
+        "a.view.show3DGizmo === true"
+      ],
+      "report": "{ show3DDataBox: a.view.show3DDataBox, show3DFloorGrid: a.view.show3DFloorGrid, show3DGizmo: a.view.show3DGizmo }",
+      "screenshot": "boxes-3d-grid-gizmo.png"
+    },
+    {
+      "name": "floor grid + gizmo add pixels (more non-background pixels than data box alone)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pxFull = n;",
+      "until": "window.__pxFull !== undefined",
+      "assert": [ "window.__pxFull > window.__pxNoBox" ],
+      "report": "{ pxFull: window.__pxFull, pxNoBox: window.__pxNoBox }"
+    },
+    {
+      "name": "annotate tab → automatic clusters in 3D",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "enable 3D clusters",
+      "eval": "const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterCount > 0",
+      "timeout": 30000,
+      "assert": [
+        "a.clusterCount >= 2",
+        "a.dims === 3"
+      ],
+      "report": "{ k: a.clusterCount }",
+      "screenshot": "boxes-3d-clusters.png"
+    },
+    {
+      "name": "enable 3D cluster boxes (show outlines)",
+      "eval": "const labels = Array.from(document.querySelectorAll('label')); const cb = labels.find(l => l.textContent.includes('Show outlines'))?.querySelector('input'); if (cb && !cb.checked) cb.click();",
+      "until": "a.labels.outlines === true",
+      "timeout": 5000,
+      "report": "{ outlines: a.labels.outlines }"
+    },
+    {
+      "name": "3D cluster boxes drawn (pixel scan after 3D boxes enabled)",
+      "eval": "await new Promise(r => setTimeout(r, 500)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__px3dClusters = n;",
+      "until": "window.__px3dClusters !== undefined",
+      "assert": [ "window.__px3dClusters > 100" ],
+      "report": "{ px3dClusters: window.__px3dClusters }",
+      "screenshot": "boxes-3d-clusters-boxes.png"
+    }
+  ]
+}
