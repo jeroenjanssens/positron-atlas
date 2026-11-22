@@ -1449,8 +1449,8 @@ else:
         "status":        [r["status"]        for r in _rows],
         "sponsor_class": [r["sponsor_class"] for r in _rows],
         "conditions":    [r["conditions"]    for r in _rows],
-        "start_date":    pl.Series([r["start_date"] for r in _rows]).cast(pl.Date, strict=False),
-        "enrollment":    pl.Series([r["enrollment"]  for r in _rows], dtype=pl.Int32),
+        "start_date":    pl.Series([r["start_date"] for r in _rows]).str.to_date(format="%Y-%m-%d", strict=False),
+        "enrollment":    pl.Series([r["enrollment"]  for r in _rows]).cast(pl.Int32, strict=False),
     }).with_columns(
         pl.format("https://clinicaltrials.gov/study/{}", pl.col("nct_id")).alias("url"),
     )
