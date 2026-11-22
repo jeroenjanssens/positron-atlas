@@ -1,0 +1,11 @@
+{
+  "description": "3D projection key in real Positron: with the map focused in 3D, pressing 5 switches between perspective and orthographic.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 4, 3000)\ndf = pd.DataFrame(rng.normal(0, 1, (3000, 8)) + k[:, None] * 4, columns=[f'x{i}' for i in range(8)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "steps": [
+    {"name": "switch to 3D", "eval": "a.setDims(3)", "until": "a.dims === 3 && a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')", "timeout": 60000},
+    {"name": "focus the map", "clickMap": true, "until": "document.hasFocus()", "timeout": 5000, "report": "{ ortho: a.renderer.isOrtho3D }"},
+    {"name": "5 switches to orthographic", "key": "5", "code": "Digit5", "until": "a.renderer.isOrtho3D === true", "timeout": 4000},
+    {"name": "5 again switches back to perspective", "key": "5", "code": "Digit5", "until": "a.renderer.isOrtho3D === false", "timeout": 4000}
+  ]
+}

@@ -424,7 +424,7 @@ export class ScatterRenderer {
 
   /** World coordinates of a point in CSS pixels relative to the plot. */
   unproject(x: number, y: number): [number, number] {
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     if (vp) {
       const [wx, wy] = vp.unproject([x, y]);
       return [wx, wy];
@@ -453,7 +453,7 @@ export class ScatterRenderer {
    * targetWorldZ (optional) the world Z of the annotation being dragged (3D only).
    */
   screenDeltaToWorld(x0: number, y0: number, dx: number, dy: number, targetWorldZ?: number): [number, number] {
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     if (vp && this.dims === 3 && targetWorldZ !== undefined) {
       // In 3D perspective mode: unproject at the annotation's depth so the XY delta
       // is in the correct plane (not the near-plane).
@@ -477,7 +477,7 @@ export class ScatterRenderer {
    *  Returns null when the viewport is not ready.
    *  wz is optional; in 2D it is ignored; in 3D it is used for the perspective projection. */
   projectWorld(wx: number, wy: number, wz = 0): [number, number] | null {
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     if (vp) {
       const coords: [number, number] | [number, number, number] = this.dims === 3 ? [wx, wy, wz] : [wx, wy];
       const [sx, sy] = vp.project(coords);
@@ -500,7 +500,7 @@ export class ScatterRenderer {
    */
   projectWorldDepth(wx: number, wy: number, wz = 0): number {
     if (this.dims !== 3) return 0;
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     if (!vp) return 0;
     // vp.project returns [sx, sy, depth] in deck.gl
     const proj = vp.project([wx, wy, wz]);
@@ -720,7 +720,7 @@ export class ScatterRenderer {
    * when there is one, so it follows deck.gl's own rotation convention.
    */
   private worldPerScreenPixel(sx: number, sy: number, scale: number): [number, number] {
-    const vp = (this.deck as any)?.getViewports?.()[0];
+    const vp = this.viewport();
     if (vp && this.dims === 2) {
       const vpScale = Math.pow(2, vp.zoom);
       const o = vp.unproject([vp.width / 2, vp.height / 2]);
@@ -1364,8 +1364,18 @@ export class ScatterRenderer {
    * Project all 3D points to screen space via the current OrbitViewport.
    * Returns a flat Float32Array of [sx0, sy0, sx1, sy1, ...], or null when the viewport is not ready.
    */
+  /**
+   * The current viewport, or undefined before deck.gl has initialized (getViewports
+   * asserts then; callers such as the viewer's per-frame 3D hit index run that early).
+   */
+  private viewport(): any {
+    const deck = this.deck as any;
+    if (!deck?.viewManager) return undefined;
+    return deck.getViewports()[0];
+  }
+
   projectAll3D(xyz: Float32Array, n: number): Float32Array | null {
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     if (!vp) return null;
     const out = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) {
@@ -1448,7 +1458,7 @@ export class ScatterRenderer {
    * Works in both 2D and 3D.
    */
   panByFraction(fracX: number, fracY: number): void {
-    const vp = (this.deck as any).getViewports?.()[0];
+    const vp = this.viewport();
     const vs = this.viewState as OrbitViewState;
     if (vp) {
       const cx = this.container.clientWidth / 2;

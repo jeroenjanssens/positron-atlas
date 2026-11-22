@@ -216,7 +216,7 @@ try {
       const vPage = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
       const vErrors = [];
       const vConsole = [];
-      vPage.on('pageerror', (e) => vErrors.push(String(e)));
+      vPage.on('pageerror', (e) => vErrors.push(e.stack ? String(e.stack).split('\n').slice(0, 6).join(' | ') : String(e)));
       vPage.on('console', (m) => vConsole.push(`${m.type()}: ${m.text()}`));
       try {
         const loadTs = Date.now();

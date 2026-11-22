@@ -2,6 +2,7 @@
  * Rendering: setView, render, fitView, plotBackground.
  */
 
+import { on3DViewChange } from './view3d';
 import type { Atlas } from '../atlas.svelte';
 import type { FilterAttribute, PointSet } from '../render/renderer';
 import { bounds, bounds3D } from '../render/hitIndex';
@@ -190,6 +191,9 @@ export function render(atlas: Atlas): void {
   // is needed); in those states the existing screen positions remain valid and
   // on3DViewChange handles the camera-movement case.
   if (nd === 3 && (atlas.projection === 'running' || atlas.projection === 'stale')) atlas._3dScreenXY = null;
+  // Settled but without a screen-space index (e.g. an anchors-only 3D layout that just
+  // finished): build one, or hover and lasso don't work until the camera moves.
+  else if (nd === 3 && atlas._3dScreenXY === null) on3DViewChange(atlas);
 
   // B2: update the 3D data bounding box / floor grid / gizmo.
   if (nd === 3) {

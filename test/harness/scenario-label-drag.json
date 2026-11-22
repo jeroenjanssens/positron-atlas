@@ -144,7 +144,7 @@
     {
       "name": "3D: switch to 3D UMAP and wait for layout",
       "eval": "a.setDims(3)",
-      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "until": "a.dims === 3 && a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')",
       "timeout": 120000,
       "assert": [
         "a.dims === 3",

@@ -9,7 +9,7 @@
     {
       "name": "switch to 3D and wait for layout",
       "eval": "a.setDims(3)",
-      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "until": "a.dims === 3 && a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')",
       "timeout": 120000,
       "assert": "a.dims === 3"
     },
@@ -47,6 +47,15 @@
       ]
     },
     {
+      "name": "projection changes what is drawn: equal lengths near and far differ in perspective, match in orthographic",
+      "eval": "window.__rPersp = (() => { const xy = a.anchorXY, n = a.prepared.nAnchors; let zmin = 1e9, zmax = -1e9, imin = 0, imax = 0; for (let i = 0; i < n; i++) { const z = xy[3*i+2]; if (z < zmin) { zmin = z; imin = i; } if (z > zmax) { zmax = z; imax = i; } } const len = (i) => { const p = a.renderer.projectWorld(xy[3*i], xy[3*i+1], xy[3*i+2]), q = a.renderer.projectWorld(xy[3*i] + 1, xy[3*i+1], xy[3*i+2]); return Math.hypot(q[0] - p[0], q[1] - p[1]); }; return len(imin) / len(imax); })(); a.setView({ orthographic3D: true }); await new Promise((r) => setTimeout(r, 300)); window.__rOrtho = (() => { const xy = a.anchorXY, n = a.prepared.nAnchors; let zmin = 1e9, zmax = -1e9, imin = 0, imax = 0; for (let i = 0; i < n; i++) { const z = xy[3*i+2]; if (z < zmin) { zmin = z; imin = i; } if (z > zmax) { zmax = z; imax = i; } } const len = (i) => { const p = a.renderer.projectWorld(xy[3*i], xy[3*i+1], xy[3*i+2]), q = a.renderer.projectWorld(xy[3*i] + 1, xy[3*i+1], xy[3*i+2]); return Math.hypot(q[0] - p[0], q[1] - p[1]); }; return len(imin) / len(imax); })(); a.setView({ orthographic3D: false }); await new Promise((r) => setTimeout(r, 300));",
+      "assert": [
+        "Math.abs(window.__rOrtho - 1) < 0.02",
+        "Math.abs(window.__rPersp - 1) > 0.05"
+      ],
+      "report": "{ perspective: window.__rPersp, orthographic: window.__rOrtho }"
+    },
+    {
       "name": "depth fade is off by default",
       "assert": "!a.view.depthFade"
     },
@@ -57,6 +66,12 @@
       "assert": "a.view.depthFade === true",
       "report": "{ depthFade: a.view.depthFade }",
       "screenshot": "3d-depth-fade.png"
+    },
+    {
+      "name": "depth fade changes the drawn pixels (far points dimmer)",
+      "eval": "a.setView({ depthFade: false }); await new Promise((r) => setTimeout(r, 300)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let s = 0; for (let k = 0; k < d.length; k += 4) s += d[k] + d[k + 1] + d[k + 2]; window.__bOff = s; a.setView({ depthFade: true }); await new Promise((r) => setTimeout(r, 300)); { const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let s = 0; for (let k = 0; k < d.length; k += 4) s += d[k] + d[k + 1] + d[k + 2]; window.__bOn = s; }",
+      "assert": "window.__bOn < window.__bOff * 0.95",
+      "report": "{ off: window.__bOff, on: window.__bOn }"
     },
     {
       "name": "disable depth fade",

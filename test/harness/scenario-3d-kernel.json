@@ -20,7 +20,7 @@
     {
       "name": "switch to 3D (browser layout first)",
       "eval": "a.setDims(3)",
-      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "until": "a.dims === 3 && a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')",
       "timeout": 300000
     },
     {

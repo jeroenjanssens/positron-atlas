@@ -140,6 +140,8 @@ export function onWorker(atlas: Atlas, m: WorkerOut): void {
       break;
     case 'done':
       atlas.anchorXY = m.embedding;
+      // The anchors moved: a 3D screen-space hit index built during the run is stale.
+      if (atlas.dims === 3) atlas._3dScreenXY = null;
       atlas.autoFit = true;
       atlas.paused = false;
       if (m.seconds) {
