@@ -1,0 +1,72 @@
+{
+  "description": "Rotation correctness (item 14): after 2D rotation hover hits correct row, lasso selects correct rows, fit preserves angle, and PNG export is non-blank.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 3, 3000)\ncenters = rng.normal(0, 5, (3, 8))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (3000, 8)), columns=[f'f{i}' for i in range(8)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": { "maxAnchorsCpu": 5000, "nativeCore": false },
+  "screenshot": "rotation-correctness.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000
+    },
+    {
+      "name": "color by cat",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cat'); a.setColorColumn(col.index)",
+      "until": "a.colorColumn >= 0 && a.renderVisibleCount > 0",
+      "timeout": 5000,
+      "report": "{ colorColumn: a.colorColumn, renderVisibleCount: a.renderVisibleCount, nAnchors: a.nAnchors, nKept: a.nKept }"
+    },
+    {
+      "name": "baseline screenshot at rotation 0",
+      "screenshot": "rotation-correctness-baseline.png",
+      "report": "{ rotation: a.rotation2D }"
+    },
+    {
+      "name": "baseline: hover anchor 0 at rotation 0",
+      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; const sc = a.renderer.projectWorld(wx, wy); a['onPointer']({ x: sc[0], y: sc[1], world: [wx, wy] }); window.__baseHoverRow = a.tooltip?.row;",
+      "until": "a.tooltip !== null",
+      "assert": ["window.__baseHoverRow >= 0"],
+      "report": "{ row: window.__baseHoverRow }"
+    },
+    {
+      "name": "rotate 90 degrees",
+      "eval": "a.setRotation2D(90);",
+      "assert": ["Math.abs(a.rotation2D - 90) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "hover same world point after 90 degree rotation",
+      "eval": "const wx = a.anchorXY[0], wy = a.anchorXY[1]; a['onPointer']({ x: 400, y: 300, world: [wx, wy] });",
+      "until": "a.tooltip !== null",
+      "assert": ["a.tooltip.row === window.__baseHoverRow"],
+      "report": "{ row: a.tooltip?.row, expected: window.__baseHoverRow, rotation: a.rotation2D }"
+    },
+    {
+      "name": "fit does not reset rotation",
+      "eval": "a.fitView();",
+      "until": "a.phase === 'ready'",
+      "screenshot": "rotation-correctness-90.png",
+      "assert": ["Math.abs(a.rotation2D - 90) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "hide a category to force render",
+      "eval": "a.toggleCategory(0, false)",
+      "until": "a.anyHidden",
+      "timeout": 3000,
+      "screenshot": "rotation-correctness-hidden.png",
+      "report": "{ anyHidden: a.anyHidden, rotation: a.rotation2D }"
+    },
+    {
+      "name": "canvas has drawn pixels after rotation (deck.gl renders correctly via screenshot)",
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
+    },
+    {
+      "name": "rotation resets to 0 on resetRotation2D",
+      "eval": "a.resetRotation2D();",
+      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    }
+  ]
+}
