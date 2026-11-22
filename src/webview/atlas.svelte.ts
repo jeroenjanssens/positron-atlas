@@ -321,6 +321,12 @@ export class Atlas {
     invertZoom: false,
     emulateMiddleButton: false,
   });
+  /** Whether the controls cheat sheet is visible (item 2). */
+  cheatSheetVisible = $state(false);
+  /** Platform string from the host (item 2): 'darwin' | 'win32' | 'linux'. */
+  platform = $state<string>('linux');
+  /** User-overridden keybindings from the host's keybindings.json (item 2). Null = not yet received. */
+  userKeybindings = $state<Array<{ command: string; key: string; mac?: string }> | null>(null);
 
   // ---- overlay / annotation state (A1, A4) ------------------------------------
   titleOverlay = $state<TitleOptions>({ ...DEFAULT_TITLE });
@@ -558,6 +564,8 @@ export class Atlas {
     switch (msg.type) {
       case 'init':
         setSessionImpl(this, msg.sessionId, 'python', msg.variable);
+        this.platform = msg.platform ?? 'linux';
+        this.userKeybindings = msg.userKeybindings ?? null;
         this.onInit(msg.describe, msg.settings, msg.variable, msg.state);
         break;
       case 'status':
@@ -810,6 +818,7 @@ export class Atlas {
   closePinnedCard(): void { closePinnedCardImpl(this); }
   openPinnedLink(): void { openPinnedLinkImpl(this); }
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
+  post(msg: import('../shared/protocol').ToHost): void { vscode.post(msg); }
 
   // ---- selection ---------------------------------------------------------------
   applyLasso(screen: [number, number][], mode: SelectMode): void { applyLassoImpl(this, screen, mode); }

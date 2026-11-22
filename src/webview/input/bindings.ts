@@ -29,6 +29,7 @@ export type ActionId =
   | 'view.rotateLeft'
   | 'view.rotateRight'
   | 'view.resetRotation'
+  | 'view.showControls'
   | 'tool.pan'
   | 'tool.lasso'
   | 'tool.annotate'
@@ -152,6 +153,14 @@ export const BINDINGS: BindingEntry[] = [
     label: 'Pan down',
     key: 'arrowdown',
     section: 'navigate',
+    context: 'both',
+  },
+  // ---- Cheat sheet ---------------------------------------------------------------
+  {
+    actionId: 'view.showControls',
+    label: 'Show controls',
+    key: '?',
+    section: 'misc',
     context: 'both',
   },
   // ---- Navigate: 2D rotation -----------------------------------------------------

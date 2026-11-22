@@ -151,6 +151,9 @@ export class InputDispatcher {
       case 'view.toggle3D':
         a.setDims(a.dims === 2 ? 3 : 2);
         break;
+      case 'view.showControls':
+        a.cheatSheetVisible = !a.cheatSheetVisible;
+        break;
       case 'edit.undo':
         a.undo();
         break;
@@ -229,6 +232,10 @@ export class InputDispatcher {
         break;
       case 'n':
         this.dispatch('view.resetRotation');
+        e.preventDefault();
+        break;
+      case '?':
+        this.dispatch('view.showControls');
         e.preventDefault();
         break;
       case '1':

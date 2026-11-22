@@ -5,6 +5,7 @@ import { compositeOverlay } from './composite';
 import { ensureFont } from '../fonts';
 import type { AnnotationData, NavigationSettings, TitleOptions } from '../../shared/protocol';
 import type { AroundLabel } from '../labels/around';
+import { NavController } from './controller';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
 export interface OverlayState {
@@ -184,8 +185,8 @@ export class ScatterRenderer {
   private viewChangeCallback: ((zoom: number) => void) | null = null;
 
   // ---- Navigation settings (item 1) ---
-  /** Custom wheel handler installed when invertZoom or scrollGesture=pan is active. Null = default deck.gl handling. */
-  private navWheelHandler: ((e: WheelEvent) => void) | null = null;
+  /** Custom pointer + wheel handler for preset-specific navigation. */
+  private navController: NavController | null = null;
 
   private allVisible(n: number): Float32Array {
     if (this.ones.length < n) this.ones = new Float32Array(Math.max(n, this.ones.length * 2)).fill(1);
@@ -1031,57 +1032,45 @@ export class ScatterRenderer {
    * removed so deck.gl handles the wheel natively.
    */
   setNavSettings(settings: NavigationSettings, dims: 2 | 3): void {
-    // ── controller drag mode ──────────────────────────────────────────────────
+    // ── deck.gl controller props ──────────────────────────────────────────────
+    // 2D: left-drag pans (dragMode:'pan'), right-drag rotates via alternateMode.
+    // 3D: left-drag orbits (dragMode:'rotate'), right-drag pans via alternateMode.
+    // scrollZoom is disabled when scrollGesture=pan (NavController handles the wheel).
     const dragMode: 'pan' | 'rotate' = dims === 3 ? 'rotate' : 'pan';
     this.deck.setProps({
       controller: {
         scrollZoom: settings.scrollGesture === 'pan'
-          ? false           // disabled; wheel interceptor handles panning
+          ? false
           : { speed: 0.01, smooth: false },
         doubleClickZoom: dims === 2,
         dragMode,
       } as any,
     });
 
-    // ── wheel interceptor for invertZoom and scrollGesture='pan' ─────────────
-    const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
-    if (this.navWheelHandler) {
-      canvas?.removeEventListener('wheel', this.navWheelHandler);
-      this.navWheelHandler = null;
+    // ── NavController: preset-specific pointer and wheel behaviour ───────────
+    if (this.navController) {
+      this.navController.update(settings, dims);
+    } else {
+      this.navController = new NavController(
+        {
+          getDeck: () => this.deck,
+          getViewState: () => this.viewState as OrbitViewState,
+          setViewState: (vs: OrbitViewState) => {
+            this.viewState = vs;
+            this.deck.setProps({ viewState: vs as any });
+          },
+          container: this.container,
+        },
+        settings,
+        dims,
+      );
     }
+  }
 
-    const needsInterceptor = settings.invertZoom || settings.scrollGesture === 'pan';
-    if (needsInterceptor && canvas) {
-      this.navWheelHandler = (e: WheelEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const vs = this.viewState as OrbitViewState;
-        if (settings.scrollGesture === 'pan') {
-          // Scroll pans: deltaX → horizontal pan, deltaY → vertical pan.
-          const panScale = 0.002 / Math.pow(2, vs.zoom as number);
-          const dx = e.deltaX * panScale;
-          const dy = e.deltaY * panScale;
-          const target = vs.target as [number, number, number];
-          const next: OrbitViewState = {
-            ...vs,
-            target: [target[0] + dx, target[1] - dy, target[2]] as [number, number, number],
-          };
-          this.viewState = next;
-          this.deck.setProps({ viewState: next as any });
-        } else {
-          // invertZoom: flip the direction of scroll-to-zoom.
-          const delta = -(e.deltaY || e.deltaX);
-          const speed = 0.01;
-          let scale = 2 / (1 + Math.exp(-Math.abs(delta * speed)));
-          if (delta < 0 && scale !== 0) scale = 1 / scale;
-          const zoom = (vs.zoom as number) + Math.log2(scale);
-          const next: OrbitViewState = { ...vs, zoom };
-          this.viewState = next;
-          this.deck.setProps({ viewState: next as any });
-        }
-      };
-      canvas.addEventListener('wheel', this.navWheelHandler, { passive: false });
-    }
+  /** Destroy the NavController (called when the renderer is torn down). */
+  destroyNavController(): void {
+    this.navController?.destroy();
+    this.navController = null;
   }
 
   /** Find the world position of a point by its index in the latest point set. */
@@ -1219,12 +1208,9 @@ export class ScatterRenderer {
   }
 
   destroy(): void {
-    // Clean up nav wheel interceptor before finalizing.
-    if (this.navWheelHandler) {
-      const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
-      canvas?.removeEventListener('wheel', this.navWheelHandler);
-      this.navWheelHandler = null;
-    }
+    // Clean up NavController before finalizing.
+    this.navController?.destroy();
+    this.navController = null;
     this.deck.finalize();
   }
 }
