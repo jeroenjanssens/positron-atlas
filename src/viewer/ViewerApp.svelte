@@ -247,6 +247,10 @@
       get hiddenCount() { return hiddenCodes.size; },
       get legendCategories() { return header.legend && header.legend.kind === 'categorical' ? header.legend.categories.length : 0; },
       get annotationCount() { return header.annotations.length; },
+      /** B3: Number of overlay layers in the export. */
+      get overlayCount() { return header.overlays?.length ?? 0; },
+      /** B3: Total points including overlay points. */
+      get totalPoints() { return nPoints; },
       /** CSS hex colors for each legend category (matches per-point rgba). */
       get clusterColors() { return header.legend && header.legend.kind === 'categorical' ? header.legend.colors : []; },
       /**
@@ -460,6 +464,20 @@
       {#if hiddenCodes.size > 0}
         <button class="legend-show-all" onclick={showAll}>Show all</button>
       {/if}
+    </div>
+  {/if}
+
+  <!-- B3: Overlay legend (shows each visible overlay layer) -->
+  {#if header.overlays && header.overlays.length > 0}
+    <div class="legend overlay-legend">
+      <div class="legend-title">Overlays</div>
+      {#each header.overlays as ov}
+        <div class="legend-item" title="{ov.count.toLocaleString()} rows — {ov.name}">
+          <span class="legend-sw" style="background:{ov.color}"></span>
+          {ov.name}
+          <span class="ov-count"> ({ov.count.toLocaleString()})</span>
+        </div>
+      {/each}
     </div>
   {/if}
 
@@ -682,6 +700,17 @@
     font-size: 0.9em;
     padding: 3px 0;
     margin-top: 3px;
+  }
+  /* B3: overlay legend stacks below the main legend on the right. */
+  .overlay-legend {
+    top: auto;
+    bottom: 12px;
+  }
+  .overlay-legend .legend-item { cursor: default; }
+  .ov-count {
+    color: var(--fg);
+    opacity: 0.6;
+    font-size: 0.85em;
   }
 
   .title-overlay {

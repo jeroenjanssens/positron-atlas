@@ -130,6 +130,23 @@ export interface BlobHeader {
   sample?: { n: number; total: number; pct: number };
   /** 2D map rotation angle in degrees (0 = north-up). Absent = 0. */
   rotation2D?: number;
+  /**
+   * B3: Overlay point sets appended after the base points.
+   * The xy/rgba sections include both base (indices 0..nBase-1) and overlay points.
+   * Each entry describes one overlay layer's slice.
+   */
+  overlays?: {
+    /** Source variable name. */
+    name: string;
+    /** CSS hex color of this overlay (e.g. "#ff7f0e"). */
+    color: string;
+    /** Symbol code (0=circle, 1=square, …). */
+    symbol: number;
+    /** Start index in the xy/rgba arrays. */
+    start: number;
+    /** Number of points in this overlay. */
+    count: number;
+  }[];
   /** B2: 2D axis-aligned bounding-box overlays. */
   boxes?: BlobBox2D[];
 }

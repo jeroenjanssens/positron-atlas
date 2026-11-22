@@ -56,6 +56,11 @@ interface PendingExport {
   variable: string;
 }
 
+/** Convert an RGBA byte tuple to a CSS hex color string. */
+function rgbaToCssHex(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
 // ---- module-level pending state ---------------------------------------------
 
 let _pendingExport: PendingExport | null = null;
@@ -198,14 +203,14 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
     return;
   }
 
-  const nPoints = Math.min(rawXY.length / 2, rawRgba.length / 4);
+  const nBase = Math.min(rawXY.length / 2, rawRgba.length / 4);
 
   const rawCodes =
     atlas.colorValues instanceof Uint16Array && !atlas.colorByCluster
-      ? atlas.colorValues.subarray(0, nPoints)
+      ? atlas.colorValues.subarray(0, nBase)
       : null;
 
-  const rawRadii = atlas.sizeValues ? atlas.sizeValues.subarray(0, nPoints) : null;
+  const rawRadii = atlas.sizeValues ? atlas.sizeValues.subarray(0, nBase) : null;
 
   const colNames = atlas.describe?.columns ?? [];
   const tooltipColDescs = opts.tooltipColumns
@@ -217,13 +222,59 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       isTitle: ci === atlas.tooltipOpts?.titleColumn,
     }));
 
+  // B3: collect visible overlay point sets and append them after the base points.
+  const overlayDescs: NonNullable<import('../../shared/viewerBlob').BlobHeader['overlays']> = [];
+  const overlayXYParts: Float32Array[] = [];
+  const overlayRGBAParts: Uint8Array[] = [];
+  let nTotal = nBase;
+  for (const layer of atlas.layers) {
+    if (layer.kind !== 'point-overlay' || !layer.visible) continue;
+    const ovXY = atlas.overlayXY.get(layer.id);
+    const ovRGBA = atlas.overlayColors.get(layer.id);
+    const nKept = atlas.overlayNKept.get(layer.id) ?? 0;
+    const nFilled = atlas.overlayFilled.get(layer.id) ?? 0;
+    if (!ovXY || !ovRGBA || nFilled === 0) continue;
+    const nd = atlas.dims;
+    const count = nFilled;
+    // Convert overlay RGBA to CSS hex (all same color; use first point).
+    const color = rgbaToCssHex(ovRGBA[0], ovRGBA[1], ovRGBA[2]);
+    overlayDescs.push({ name: layer.sourceName ?? layer.name, color, symbol: layer.symbol ?? 0, start: nTotal, count });
+    overlayXYParts.push(ovXY.slice(0, count * nd));
+    overlayRGBAParts.push(ovRGBA.slice(0, count * 4));
+    nTotal += count;
+  }
+
+  // Build combined XY and RGBA arrays (base + overlays).
+  const nd = atlas.dims;
+  let combinedXY: Float32Array;
+  let combinedRGBA: Uint8Array;
+  if (nd === 2 && overlayXYParts.length > 0) {
+    combinedXY = new Float32Array(nTotal * 2);
+    combinedRGBA = new Uint8Array(nTotal * 4);
+    combinedXY.set(rawXY.subarray(0, nBase * 2), 0);
+    combinedRGBA.set(rawRgba.subarray(0, nBase * 4), 0);
+    let pos2 = nBase * 2, pos4 = nBase * 4;
+    for (let i = 0; i < overlayXYParts.length; i++) {
+      combinedXY.set(overlayXYParts[i], pos2);
+      combinedRGBA.set(overlayRGBAParts[i], pos4);
+      pos2 += overlayXYParts[i].length;
+      pos4 += overlayRGBAParts[i].length;
+    }
+  } else {
+    combinedXY = rawXY.slice(0, nBase * Math.max(nd, 2));
+    combinedRGBA = rawRgba.slice(0, nBase * 4);
+    nTotal = nBase; // 3D overlays not yet supported in export
+  }
+
+  const nPoints = nTotal;
+
   // Store visual data for assembly step
   _pendingExport = {
     nPoints,
     bg: plotBackground(atlas),
     // copy so the data isn't stale if atlas changes before assembly
-    xy: rawXY.slice(0, nPoints * 2),
-    rgba: rawRgba.slice(0, nPoints * 4),
+    xy: combinedXY,
+    rgba: combinedRGBA,
     codes: rawCodes ? rawCodes.slice() : null,
     radii: rawRadii ? rawRadii.slice() : null,
     headerBase: {
@@ -241,6 +292,8 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       rotation2D: atlas.rotation2D !== 0 ? atlas.rotation2D : undefined,
       // B2: 2D group bounding-box overlays.
       boxes: buildBoxes(atlas).length ? buildBoxes(atlas) : undefined,
+      // B3: overlay descriptors (viewer uses these for the legend and future filtering).
+      overlays: overlayDescs.length > 0 ? overlayDescs : undefined,
     },
     variable: atlas.variable,
   };
@@ -313,9 +366,15 @@ export function estimateExportBytes(
 ): number {
   const rawXY = atlas.allXY ?? atlas.anchorXY;
   if (!rawXY) return 0;
-  const n = rawXY.length / 2;
+  let n = rawXY.length / 2;
+  // B3: include visible overlay point counts.
+  for (const layer of atlas.layers) {
+    if (layer.kind === 'point-overlay' && layer.visible) {
+      n += atlas.overlayFilled.get(layer.id) ?? 0;
+    }
+  }
   const pointBytes = n * (8 + 4 + (atlas.colorValues instanceof Uint16Array ? 2 : 0));
-  const textBytes = n * opts.tooltipColumns.length * Math.min(opts.maxChars, 40);
+  const textBytes = (rawXY.length / 2) * opts.tooltipColumns.length * Math.min(opts.maxChars, 40);
   const overhead = 50_000 + (atlas.renderer?.labels.length ?? 0) * 200 + atlas.annotations.size * 500;
   return pointBytes + textBytes + overhead;
 }
