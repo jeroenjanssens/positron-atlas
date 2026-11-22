@@ -31,9 +31,24 @@
         "a.allXY.length === a.nKept * 2",
         "a.anchorXY !== null",
         "a.anchorXY.length > 0",
-        "a.allXY.every(Number.isFinite)"
+        "a.allXY.every(Number.isFinite)",
+        "a.allXY.some(v => v !== 0)",
+        "a.anchorXY[0] === a.allXY[a.anchorPos[0] * 2]"
       ],
-      "report": "{ phase: a.phase, nKept: a.nKept, coordsMode: a.prepared.coordsMode, dims: a.prepared.dims, allXYLen: a.allXY ? a.allXY.length : null }"
+      "report": "{ phase: a.phase, nKept: a.nKept, coordsMode: a.prepared.coordsMode, dims: a.prepared.dims, allXYLen: a.allXY ? a.allXY.length : null, anchorXY0: a.anchorXY ? +a.anchorXY[0].toFixed(3) : null, allXYAtAnchor0: a.allXY && a.anchorPos ? +a.allXY[a.anchorPos[0] * 2].toFixed(3) : null }",
+      "screenshot": "coords-2d-02.png",
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.4 }
+    },
+    {
+      "name": "verify allXY data range (non-trivial spread from input columns)",
+      "eval": "(function() { const xy = a.allXY; const nd = 2; const n = xy.length / nd; let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; for (let i = 0; i < n; i++) { const x = xy[i * nd], y = xy[i * nd + 1]; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; } window.__xySpreadX = maxX - minX; window.__xySpreadY = maxY - minY; })()",
+      "until": "window.__xySpreadX !== undefined",
+      "timeout": 1000,
+      "assert": [
+        "window.__xySpreadX > 5",
+        "window.__xySpreadY > 5"
+      ],
+      "report": "{ xSpread: +window.__xySpreadX.toFixed(2), ySpread: +window.__xySpreadY.toFixed(2) }"
     },
     {
       "name": "color by cluster",

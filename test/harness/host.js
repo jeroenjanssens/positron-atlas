@@ -156,20 +156,10 @@
         projectionCurrent = false;
         const cfg = settings();
         await call('prepare', jobId, JSON.stringify({ ...m.options, native: cfg.nativeCore, neighborCacheMB: cfg.neighborCacheMB }));
-        const seenPrepare = new Set();
         const s = await waitForJob(
           jobId,
           (st) => {
             post({ type: 'status', task: 'prepare', status: st });
-            // coords mode: stream xy outputs as they become available
-            if (st.result && st.result.coordsMode) {
-              for (const o of st.outputs) {
-                if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
-                  seenPrepare.add(o.file);
-                  post({ type: 'xyChunk', file: fileRef(o), total: st.result.nKept || 0 });
-                }
-              }
-            }
           },
           gen,
         );
@@ -178,11 +168,11 @@
           const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos');
           const result = s.result;
           post({ type: 'prepared', result, anchors: fileRef(anchors), anchorPos: fileRef(anchorPos) });
-          // coords mode: stream any remaining xy outputs then signal projection done
+          // coords mode: stream xy outputs after 'prepared' so the webview has
+          // allocated allXY first, then signal projection done.
           if (result && result.coordsMode) {
             for (const o of s.outputs) {
-              if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
-                seenPrepare.add(o.file);
+              if (o.kind === 'xy') {
                 post({ type: 'xyChunk', file: fileRef(o), total: result.nKept || 0 });
               }
             }

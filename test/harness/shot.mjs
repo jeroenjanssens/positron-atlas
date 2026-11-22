@@ -67,6 +67,26 @@ function countNonBgPixels(png, bgHex, threshold = 25) {
   return n;
 }
 
+/** Return { xFrac, yFrac } – bounding-box of non-background pixels as fractions of w/h. */
+function spreadBoundsOfNonBg(png, bgHex, threshold = 25) {
+  const bgR = parseInt(bgHex.slice(1, 3), 16) || 0;
+  const bgG = parseInt(bgHex.slice(3, 5), 16) || 0;
+  const bgB = parseInt(bgHex.slice(5, 7), 16) || 0;
+  const { w, h, channels, data } = png;
+  let minX = w, maxX = 0, minY = h, maxY = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * channels;
+      if (Math.abs(data[i] - bgR) > threshold || Math.abs(data[i + 1] - bgG) > threshold || Math.abs(data[i + 2] - bgB) > threshold) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (minX > maxX || minY > maxY) return { xFrac: 0, yFrac: 0 };
+  return { xFrac: (maxX - minX) / w, yFrac: (maxY - minY) / h };
+}
+
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
 
@@ -189,6 +209,18 @@ try {
       for (const expr of [].concat(step.assert)) {
         if (!(await check(expr))) throw new Error(`step ${step.name}: assertion failed: ${expr}`);
       }
+    }
+    // checkSpread: take a screenshot and verify the bounding box of non-background pixels
+    // covers at least minFraction of the plot width and height (default 0.4 = 40%).
+    if (step.checkSpread) {
+      const { background, threshold = 25, minFraction = 0.4, settle = 600 } = step.checkSpread;
+      await sleep(settle);
+      const shotBuf = await page.screenshot({ type: 'png' });
+      const png = parsePngToRgba(shotBuf);
+      const spread = spreadBoundsOfNonBg(png, background, threshold);
+      console.log(`  spread: x=${(spread.xFrac * 100).toFixed(0)}% y=${(spread.yFrac * 100).toFixed(0)}% (minFraction=${(minFraction * 100).toFixed(0)}%, threshold=${threshold})`);
+      if (spread.xFrac < minFraction) throw new Error(`step ${step.name}: checkSpread x spread ${(spread.xFrac * 100).toFixed(0)}% < ${(minFraction * 100).toFixed(0)}%`);
+      if (spread.yFrac < minFraction) throw new Error(`step ${step.name}: checkSpread y spread ${(spread.yFrac * 100).toFixed(0)}% < ${(minFraction * 100).toFixed(0)}%`);
     }
     console.log(`[${elapsed()}] step ok: ${step.name} (${((Date.now() - ts) / 1000).toFixed(1)}s)`);
     if (step.screenshot) {

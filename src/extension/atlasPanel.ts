@@ -265,20 +265,10 @@ export class AtlasPanel {
           native: settings.nativeCore,
           neighborCacheMB: settings.neighborCacheMB,
         }));
-        const seenPrepare = new Set<string>();
         const s = await this.bridge.waitForJob(
           job,
           (st) => {
             this.post({ type: 'status', task: 'prepare', status: st });
-            // coords mode: stream xy outputs as they become available
-            if ((st.result as PrepareResult | undefined)?.coordsMode) {
-              for (const o of st.outputs) {
-                if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
-                  seenPrepare.add(o.file);
-                  this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: (st.result as PrepareResult)?.nKept ?? 0 });
-                }
-              }
-            }
           },
           token,
         );
@@ -287,11 +277,11 @@ export class AtlasPanel {
           const anchorPos = s.outputs.find((o) => o.kind === 'anchorPos')!;
           const result = s.result as PrepareResult;
           this.post({ type: 'prepared', result, anchors: this.fileRef(anchors), anchorPos: this.fileRef(anchorPos) });
-          // coords mode: stream any remaining xy outputs then signal projection done
+          // coords mode: stream xy outputs after 'prepared' so the webview has
+          // allocated allXY first, then signal projection done.
           if (result.coordsMode) {
             for (const o of s.outputs) {
-              if (o.kind === 'xy' && !seenPrepare.has(o.file)) {
-                seenPrepare.add(o.file);
+              if (o.kind === 'xy') {
                 this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: result.nKept });
               }
             }
