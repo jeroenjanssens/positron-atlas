@@ -10,6 +10,11 @@ import type { Atlas } from '../atlas.svelte';
 import type { AnnotationData, TitleOptions } from '../../shared/protocol';
 import { vscode } from '../vscode';
 
+/** B5: push current annotations to the renderer so the deck.gl leader-lines layer updates. */
+function syncRenderer(atlas: Atlas): void {
+  atlas.renderer?.setAnnotations(atlas.annotations);
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -106,12 +111,31 @@ function postImageRequestForAnnotation(atlas: Atlas, prepIdx: number, values: [s
 
 /** Look up the world-space coordinates of a prepared-row index. */
 function worldCoordsFor(atlas: Atlas, prepIdx: number): [number, number] | null {
+  const nd = atlas.dims === 3 ? 3 : 2;
   if (atlas.allXY && prepIdx < atlas.placedRows) {
-    return [atlas.allXY[2 * prepIdx], atlas.allXY[2 * prepIdx + 1]];
+    return [atlas.allXY[nd * prepIdx], atlas.allXY[nd * prepIdx + 1]];
   }
   if (atlas.anchorXY) {
     // For anchor-only mode: prepIdx is the anchor index.
-    return [atlas.anchorXY[2 * prepIdx], atlas.anchorXY[2 * prepIdx + 1]];
+    return [atlas.anchorXY[nd * prepIdx], atlas.anchorXY[nd * prepIdx + 1]];
+  }
+  return null;
+}
+
+/** Returns [x, y, z] in 3D mode, or [x, y, 0] in 2D mode. */
+function worldCoords3DFor(atlas: Atlas, prepIdx: number): [number, number, number] | null {
+  const nd = atlas.dims === 3 ? 3 : 2;
+  if (atlas.allXY && prepIdx < atlas.placedRows) {
+    const x = atlas.allXY[nd * prepIdx];
+    const y = atlas.allXY[nd * prepIdx + 1];
+    const z = nd === 3 ? atlas.allXY[nd * prepIdx + 2] : 0;
+    return [x, y, z];
+  }
+  if (atlas.anchorXY) {
+    const x = atlas.anchorXY[nd * prepIdx];
+    const y = atlas.anchorXY[nd * prepIdx + 1];
+    const z = nd === 3 ? atlas.anchorXY[nd * prepIdx + 2] : 0;
+    return [x, y, z];
   }
   return null;
 }
@@ -158,7 +182,7 @@ function pointColor(atlas: Atlas, prepIdx: number): string {
  * Uses data from atlas.pendingHover / atlas.tooltip.
  * Returns the new annotation id, or null if no point is active.
  */
-export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX: number, worldY: number, text: string): AnnotationData | null {
+export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX: number, worldY: number, text: string, worldZ?: number): AnnotationData | null {
   const key = rowKey(atlas, row);
   const id = `ann-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -177,6 +201,7 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
     style,
     worldX,
     worldY,
+    ...(worldZ !== undefined && worldZ !== 0 ? { worldZ } : {}),
     offsetX: ox,
     offsetY: oy,
     offsetVersion: 'v2map',  // B5: offsets are in map (world) coordinates
@@ -186,6 +211,7 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
   const next = new Map(atlas.annotations);
   next.set(id, ann);
   atlas.annotations = next;
+  syncRenderer(atlas);
 
   // For image-style annotations: kick off an async fetch.
   if (style === 'image') {
@@ -204,11 +230,13 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
       const m = new Map(atlas.annotations);
       m.delete(id);
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
     redo: () => {
       const m = new Map(atlas.annotations);
       m.set(id, ann);
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
   });
 
@@ -221,6 +249,7 @@ export function removeAnnotation(atlas: Atlas, id: string): void {
   const next = new Map(atlas.annotations);
   next.delete(id);
   atlas.annotations = next;
+  syncRenderer(atlas);
   if (ann) {
     const label = ann.text ? `Remove annotation "${ann.text}"` : 'Remove annotation';
     atlas.recordHistory({
@@ -229,11 +258,13 @@ export function removeAnnotation(atlas: Atlas, id: string): void {
         const m = new Map(atlas.annotations);
         m.set(id, ann);
         atlas.annotations = m;
+        syncRenderer(atlas);
       },
       redo: () => {
         const m = new Map(atlas.annotations);
         m.delete(id);
         atlas.annotations = m;
+        syncRenderer(atlas);
       },
     });
   }
@@ -243,11 +274,12 @@ export function removeAnnotation(atlas: Atlas, id: string): void {
 export function clearAnnotations(atlas: Atlas): void {
   const before = new Map(atlas.annotations);
   atlas.annotations = new Map();
+  syncRenderer(atlas);
   if (before.size > 0) {
     atlas.recordHistory({
       label: 'Clear all annotations',
-      undo: () => { atlas.annotations = new Map(before); },
-      redo: () => { atlas.annotations = new Map(); },
+      undo: () => { atlas.annotations = new Map(before); syncRenderer(atlas); },
+      redo: () => { atlas.annotations = new Map(); syncRenderer(atlas); },
     });
   }
 }
@@ -264,6 +296,7 @@ export function updateAnnotationPixels(
   const next = new Map(atlas.annotations);
   next.set(annId, { ...ann, imagePixels: pixels, imageShape: imageShape ?? undefined });
   atlas.annotations = next;
+  syncRenderer(atlas);
 }
 
 /** Update the data-URL thumbnail of an image-URL annotation. */
@@ -273,6 +306,7 @@ export function updateAnnotationImageDataUrl(atlas: Atlas, annId: string, dataUr
   const next = new Map(atlas.annotations);
   next.set(annId, { ...ann, imageDataUrl: dataUrl });
   atlas.annotations = next;
+  syncRenderer(atlas);
 }
 
 /**
@@ -346,6 +380,7 @@ export function updateAnnotationOffset(atlas: Atlas, id: string, offsetX: number
   const next = new Map(atlas.annotations);
   next.set(id, { ...ann, offsetX, offsetY, offsetVersion: 'v2map' });
   atlas.annotations = next;
+  syncRenderer(atlas);
 }
 
 /** Update the text of an annotation. */
@@ -356,6 +391,7 @@ export function updateAnnotationText(atlas: Atlas, id: string, text: string): vo
   const next = new Map(atlas.annotations);
   next.set(id, { ...ann, text });
   atlas.annotations = next;
+  syncRenderer(atlas);
   atlas.recordHistory({
     label: 'Edit annotation text',
     undo: () => {
@@ -364,6 +400,7 @@ export function updateAnnotationText(atlas: Atlas, id: string, text: string): vo
       const m = new Map(atlas.annotations);
       m.set(id, { ...a, text: oldText });
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
     redo: () => {
       const a = atlas.annotations.get(id);
@@ -371,6 +408,7 @@ export function updateAnnotationText(atlas: Atlas, id: string, text: string): vo
       const m = new Map(atlas.annotations);
       m.set(id, { ...a, text });
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
     coalesceKey: `ann-text:${id}`,
   });
@@ -384,6 +422,7 @@ export function updateAnnotationStyle(atlas: Atlas, id: string, style: Annotatio
   const next = new Map(atlas.annotations);
   next.set(id, { ...ann, style });
   atlas.annotations = next;
+  syncRenderer(atlas);
   atlas.recordHistory({
     label: 'Change annotation style',
     undo: () => {
@@ -392,6 +431,7 @@ export function updateAnnotationStyle(atlas: Atlas, id: string, style: Annotatio
       const m = new Map(atlas.annotations);
       m.set(id, { ...a, style: oldStyle });
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
     redo: () => {
       const a = atlas.annotations.get(id);
@@ -399,6 +439,7 @@ export function updateAnnotationStyle(atlas: Atlas, id: string, style: Annotatio
       const m = new Map(atlas.annotations);
       m.set(id, { ...a, style });
       atlas.annotations = m;
+      syncRenderer(atlas);
     },
   });
 }
@@ -444,10 +485,11 @@ export function importAnnotationsJson(atlas: Atlas, json: string): void {
     }
   }
   atlas.annotations = next;
+  syncRenderer(atlas);
   atlas.recordHistory({
     label: 'Import annotations',
-    undo: () => { atlas.annotations = new Map(before); },
-    redo: () => { atlas.annotations = new Map(next); },
+    undo: () => { atlas.annotations = new Map(before); syncRenderer(atlas); },
+    redo: () => { atlas.annotations = new Map(next); syncRenderer(atlas); },
   });
 }
 
@@ -464,9 +506,9 @@ export function handleAnnotateClick(atlas: Atlas, titleText: string): Annotation
   if (!ph || ph.prepIdx === undefined) return null;
   const prepIdx = ph.prepIdx;
   const row = atlas.hit?.map(prepIdx) ?? prepIdx;
-  const coords = worldCoordsFor(atlas, prepIdx);
-  if (!coords) return null;
-  const [wx, wy] = coords;
+  const coords3d = worldCoords3DFor(atlas, prepIdx);
+  if (!coords3d) return null;
+  const [wx, wy, wz] = coords3d;
 
   // Prefer the hover title (from texts store) or fall back to "Row N".
   let text = titleText;
@@ -476,7 +518,7 @@ export function handleAnnotateClick(atlas: Atlas, titleText: string): Annotation
   if (!text) {
     text = `Row ${row}`;
   }
-  return addAnnotation(atlas, prepIdx, row, wx, wy, text);
+  return addAnnotation(atlas, prepIdx, row, wx, wy, text, atlas.dims === 3 ? wz : undefined);
 }
 
 /** Create an annotation from the pinned hover card data.

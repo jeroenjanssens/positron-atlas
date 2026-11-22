@@ -40,7 +40,8 @@
       "eval": "a.ui.tab='annotate'",
       "settle": 600,
       "assert": [
-        "document.body.textContent.includes('In 3D, labels are drawn over the points')"
+        "document.body.textContent.includes('In 3D, labels are drawn over the points')",
+        "document.body.textContent.includes('In 3D: callout boxes are HTML overlays at projected positions')"
       ]
     },
     {

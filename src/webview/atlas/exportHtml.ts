@@ -140,6 +140,7 @@ function buildAnnotations(atlas: Atlas): BlobAnnotation[] {
       worldY: ann.worldY,
       offsetX: ann.offsetX,
       offsetY: ann.offsetY,
+      offsetVersion: ann.offsetVersion,
       color: ann.color,
       imageDataUrl: ann.imageDataUrl || undefined,
     });

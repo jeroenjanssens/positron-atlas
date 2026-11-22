@@ -65,8 +65,14 @@ export interface BlobAnnotation {
   style: 'plain' | 'badge' | 'image';
   worldX: number;
   worldY: number;
+  /** World z coordinate (3D mode only; absent or 0 in 2D). */
+  worldZ?: number;
+  /** Map-coordinate x offset (world units, B5): box anchor = projectWorld(worldX + offsetX, worldY + offsetY). */
   offsetX: number;
+  /** Map-coordinate y offset (world units, B5); y is up in world space. */
   offsetY: number;
+  /** Version marker; 'v2map' = world-unit offsets. Absent = legacy screen px. */
+  offsetVersion?: 'v2map';
   color?: string;
   imageDataUrl?: string;
 }

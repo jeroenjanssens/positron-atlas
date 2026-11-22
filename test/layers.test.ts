@@ -181,7 +181,7 @@ describe('deckLayerDescriptors', () => {
   it('returns only deck.gl layers sorted by order', () => {
     const layers = createInitialLayers();
     const descs = deckLayerDescriptors(layers);
-    expect(descs.map((d) => d.id)).toEqual(['base', 'outlines', 'labels']);
+    expect(descs.map((d) => d.id)).toEqual(['base', 'outlines', 'labels', 'leader-lines']);
     // All deck.gl ids are in DECK_LAYER_IDS
     for (const d of descs) expect(DECK_LAYER_IDS.has(d.id)).toBe(true);
   });

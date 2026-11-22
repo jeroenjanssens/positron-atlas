@@ -18,18 +18,26 @@
 
   let { atlas }: { atlas: Atlas } = $props();
 
-  // Screen positions of each annotation anchor point (the annotated dot).
-  // Keyed by annotation id.
-  let positions = $state<Map<string, [number, number]>>(new Map());
+  /**
+   * Per-annotation screen positions, updated every frame by the RAF loop.
+   * anchor = screen pos of the annotated point; box = screen pos of the callout box top-left.
+   * Storing BOTH in $state ensures Svelte re-renders with current viewport on every frame,
+   * including after pan, zoom and rotation (B5).
+   */
+  interface AnnPos { anchor: [number, number]; box: [number, number] }
+  let positions = $state<Map<string, AnnPos>>(new Map());
 
   let rafId = 0;
 
   function updatePositions() {
     if (!atlas.renderer) return;
-    const next = new Map<string, [number, number]>();
+    const next = new Map<string, AnnPos>();
     for (const ann of atlas.annotations.values()) {
-      const pt = atlas.renderer.projectWorld(ann.worldX, ann.worldY);
-      if (pt) next.set(ann.id, pt);
+      // B5: anchor and box positions derived from world coordinates each frame.
+      const anchor = atlas.renderer.projectWorld(ann.worldX, ann.worldY, ann.worldZ ?? 0);
+      if (!anchor) continue;
+      const box = atlas.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, ann.worldZ ?? 0) ?? anchor;
+      next.set(ann.id, { anchor, box });
     }
     positions = next;
     rafId = requestAnimationFrame(updatePositions);
@@ -136,27 +144,32 @@
   }
 
   /**
-   * Build the CSS position for the callout box (B5: map-coordinate offsets).
-   * The box anchor is projectWorld(worldX + offsetX, worldY + offsetY).
+   * Depth fade: in 3D, boxes whose anchor is "behind" the data cloud (depth > 0.5)
+   * are faded to show they're occluded. Returns 1 (fully opaque) in 2D.
+   * Reads from cached positions (updated every RAF frame via $state).
    */
-  function boxScreenPos(ann: AnnotationData): [number, number] | null {
-    if (!atlas.renderer) return null;
-    return atlas.renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY);
+  function depthOpacity(ann: AnnotationData): number {
+    if (!atlas.renderer || atlas.dims !== 3 || !ann.worldZ) return 1;
+    const depth = atlas.renderer.projectWorldDepth(ann.worldX, ann.worldY, ann.worldZ);
+    // depth in [0,1]; > 0.5 is behind; we fade linearly from 1 at 0.4 to 0.2 at 0.9.
+    if (depth <= 0.4) return 1;
+    if (depth >= 0.9) return 0.2;
+    return 1 - 0.8 * (depth - 0.4) / 0.5;
   }
 
-  function boxPos(ann: AnnotationData): { left: string; top: string } | null {
-    const pt = boxScreenPos(ann);
-    if (!pt) return null;
-    return { left: `${pt[0]}px`, top: `${pt[1]}px` };
-  }
-
-  // Leader line endpoints: from screen anchor (the annotated point) to box center (approximate).
-  function leaderLine(ann: AnnotationData): { x1: number; y1: number; x2: number; y2: number } | null {
-    const anchor = positions.get(ann.id);
-    const bp = boxScreenPos(ann);
-    if (!anchor || !bp) return null;
-    // Box center estimate: ~40px right, ~14px down from box top-left.
-    return { x1: anchor[0], y1: anchor[1], x2: bp[0] + 40, y2: bp[1] + 14 };
+  /**
+   * Off-screen fade: returns 0 when the annotated point is well outside the canvas.
+   * Reads anchor from positions ($state), so this expression is reactive.
+   */
+  function offScreenOpacity(ann: AnnotationData): number {
+    if (!atlas.renderer) return 1;
+    const { width: W, height: H } = atlas.renderer.canvasSize;
+    const pos = positions.get(ann.id);
+    if (!pos) return 0;
+    const [ax, ay] = pos.anchor;
+    const margin = 60;
+    if (ax < -margin || ax > W + margin || ay < -margin || ay > H + margin) return 0;
+    return 1;
   }
 
   const annotationList = $derived([...atlas.annotations.values()]);
@@ -165,42 +178,22 @@
   const annLayer = $derived(getLayer(atlas.layers, 'annotations'));
   const annVisible = $derived(annLayer?.visible ?? true);
   const annOpacity = $derived(annLayer?.opacity ?? 1);
-  const leaderZIndex = $derived(htmlOverlayZIndex(atlas.layers, 'annotations'));
-  const calloutZIndex = $derived(leaderZIndex + 1);
+  const calloutZIndex = $derived(htmlOverlayZIndex(atlas.layers, 'annotations'));
 </script>
 
-<!-- SVG layer for leader lines (below callout boxes). A2: hidden when layer invisible. -->
+<!-- Callout boxes (A2: z-index and opacity from layer registry).
+     Leader lines are drawn as a deck.gl LineLayer in map space (leaderLines.ts, B5)
+     so they orbit and depth-sort correctly in both 2D and 3D. -->
 {#if annotationList.length && annVisible}
-  <svg class="leader-svg" aria-hidden="true" style="z-index: {leaderZIndex}; opacity: {annOpacity}">
-    {#each annotationList as ann (ann.id)}
-      {@const ll = leaderLine(ann)}
-      {#if ll}
-        <line
-          x1={ll.x1} y1={ll.y1}
-          x2={ll.x2} y2={ll.y2}
-          class="leader"
-          stroke={ann.style === 'badge' && ann.color ? ann.color : 'var(--vscode-editor-foreground, #ccc)'}
-          stroke-opacity="0.8"
-          stroke-width="1.5"
-          stroke-dasharray="4 3"
-        />
-        <circle cx={ll.x1} cy={ll.y1} r="3"
-          fill={ann.style === 'badge' && ann.color ? ann.color : 'var(--vscode-editor-foreground, #ccc)'}
-          opacity="0.9" />
-      {/if}
-    {/each}
-  </svg>
-
-  <!-- Callout boxes (A2: z-index and opacity from layer registry) -->
   {#each annotationList as ann (ann.id)}
-    {@const bp = boxPos(ann)}
-    {#if bp}
+    {@const pos = positions.get(ann.id)}
+    {#if pos}
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="callout"
         class:badge={ann.style === 'badge'}
         class:draggable={editingId !== ann.id}
-        style="left:{bp.left}; top:{bp.top}; z-index:{calloutZIndex}; opacity:{annOpacity}; {ann.style === 'badge' && ann.color ? `--badge-color: ${ann.color};` : ''}"
+        style="left:{pos.box[0]}px; top:{pos.box[1]}px; z-index:{calloutZIndex}; opacity:{annOpacity * depthOpacity(ann) * offScreenOpacity(ann)}; {ann.style === 'badge' && ann.color ? `--badge-color: ${ann.color};` : ''}"
         role="note"
         aria-label="Annotation: {ann.style === 'image' ? 'Image row ' + ann.row : (ann.text || 'Row ' + ann.row)}"
         onmousedown={(e) => onBoxMouseDown(e, ann)}
@@ -251,15 +244,6 @@
 {/if}
 
 <style>
-  .leader-svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    overflow: visible;
-    /* z-index set inline via layer registry */
-  }
   .callout {
     position: absolute;
     /* z-index set inline via layer registry */

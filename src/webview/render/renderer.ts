@@ -1,6 +1,7 @@
 import { Deck, OrbitView, type OrbitViewState } from '@deck.gl/core';
-import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { LineLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
+import { buildLeaderLinesLayer } from '../atlas/leaderLines';
 import { compositeOverlay } from './composite';
 import { ensureFont } from '../fonts';
 import type { AnnotationData, NavigationSettings, TitleOptions } from '../../shared/protocol';
@@ -164,6 +165,8 @@ export class ScatterRenderer {
     { id: 'outlines', visible: true, opacity: 1 },
     { id: 'labels', visible: true, opacity: 1 },
   ];
+  /** B5: current annotations for the leader-lines deck.gl layer. */
+  private annotations: Map<string, AnnotationData> = new Map();
   private readonly collision = new CollisionFilterExtension();
   private readonly dataFilter = new DataFilterExtension({ filterSize: 1 });
   /** Prepared-row index of the hovered point (for the ring), or -1. */
@@ -377,11 +380,13 @@ export class ScatterRenderer {
   }
 
   /** Project world coordinates to CSS-pixel screen coordinates (inverse of unproject).
-   *  Returns null when the viewport is not ready. */
-  projectWorld(wx: number, wy: number): [number, number] | null {
+   *  Returns null when the viewport is not ready.
+   *  wz is optional; in 2D it is ignored; in 3D it is used for the perspective projection. */
+  projectWorld(wx: number, wy: number, wz = 0): [number, number] | null {
     const vp = (this.deck as any).getViewports?.()[0];
     if (vp) {
-      const [sx, sy] = vp.project([wx, wy]);
+      const coords: [number, number] | [number, number, number] = this.dims === 3 ? [wx, wy, wz] : [wx, wy];
+      const [sx, sy] = vp.project(coords);
       return [sx, sy];
     }
     // Fallback: orthographic view centered on target.
@@ -392,6 +397,25 @@ export class ScatterRenderer {
     const sx = (wx - t[0]) * scale + w / 2;
     const sy = -(wy - t[1]) * scale + h / 2;
     return [sx, sy];
+  }
+
+  /**
+   * Project a 3D world position and return the CSS depth (normalized z in [0,1]).
+   * Values > 0.5 are behind the view center — used for depth fade.
+   * Returns 0 when not in 3D mode or viewport not ready.
+   */
+  projectWorldDepth(wx: number, wy: number, wz = 0): number {
+    if (this.dims !== 3) return 0;
+    const vp = (this.deck as any).getViewports?.()[0];
+    if (!vp) return 0;
+    // vp.project returns [sx, sy, depth] in deck.gl
+    const proj = vp.project([wx, wy, wz]);
+    return proj[2] ?? 0;
+  }
+
+  /** B5: return the canvas dimensions in CSS pixels for off-screen clamping. */
+  get canvasSize(): { width: number; height: number } {
+    return { width: this.container.clientWidth, height: this.container.clientHeight };
   }
 
   setStyle(style: Partial<RenderStyle>): void {
@@ -432,6 +456,12 @@ export class ScatterRenderer {
    */
   setOverlayDescriptors(descs: OverlayDescriptor[]): void {
     this.overlayDescs = descs;
+    this.render();
+  }
+
+  /** B5: update annotation data used for the leader-lines deck.gl layer. */
+  setAnnotations(annotations: Map<string, AnnotationData>): void {
+    this.annotations = annotations;
     this.render();
   }
 
@@ -772,6 +802,10 @@ export class ScatterRenderer {
         pushOutlinesLayer(desc.opacity);
       } else if (desc.id === 'labels') {
         pushLabelsLayers(desc.opacity);
+      } else if (desc.id === 'leader-lines' && this.annotations.size > 0) {
+        // B5: leader lines as deck.gl LineLayer so they orbit correctly in 3D.
+        const lineWidth = 1.5;
+        layers.push(buildLeaderLinesLayer(this.annotations, is3D, desc.opacity, lineWidth) as any);
       }
       // 'glow', 'annotations', 'around-labels' are HTML overlays – not deck.gl layers.
     }
@@ -1176,11 +1210,13 @@ export class ScatterRenderer {
     }
 
     // Build annotation screen positions for compositing.
+    // B5: box position = projectWorld(worldX + offsetX, worldY + offsetY) (world-unit offsets).
     const dpr = window.devicePixelRatio || 1;
     const annotationsWithPos = [...overlay.annotations.values()].flatMap((ann) => {
       const pt = this.projectWorld(ann.worldX, ann.worldY);
       if (!pt) return [];
-      return [{ ann, screenX: pt[0], screenY: pt[1] }];
+      const boxPt = this.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY) ?? pt;
+      return [{ ann, screenX: pt[0], screenY: pt[1], boxX: boxPt[0], boxY: boxPt[1] }];
     });
 
     await compositeOverlay(g, {

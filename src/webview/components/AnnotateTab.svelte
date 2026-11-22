@@ -415,7 +415,7 @@
 
 <!-- Point annotations (A4) -->
 <Section {atlas} id="pointAnnotations" title="Annotations">
-  {#if atlas.dims === 3}<div class="hint muted">Not available in 3D: switch Map → UMAP → Dimensions to 2D.</div>{/if}
+  {#if atlas.dims === 3}<div class="hint muted">In 3D: callout boxes are HTML overlays at projected positions with depth fade; offsets move in the XY plane at the point's depth. Dragging resets when you switch back to 2D (offsets are stored in XY map coordinates only).</div>{/if}
   <div class="hint muted">
     <Info id="pointAnnotations.list" />
     Use the <span class="codicon codicon-pin" aria-label="pin" style="font-size:12px;vertical-align:-1px;"></span> Annotate tool in the toolbar to click a point and add a callout, or click <strong>Annotate</strong> on the hover card.

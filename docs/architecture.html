@@ -579,7 +579,7 @@ const STEPS = [
   { from: 'W', to: 'K', via: 'H', text: 'search · sizes · histogram / histValues', sub: 'match indices, sizes and histogram values as files (search runs locally once titles are loaded)' },
   { from: 'W', to: 'H', text: 'webviewFocused / webviewBlurred', sub: 'the host sets the positronAtlas.webviewFocused context key' },
   { from: 'H', to: 'W', text: 'command(id) for a keyboard shortcut', sub: 'focused tab only · fit, zoom, rotate, undo, …' },
-  { note: 'W', text: ['Legend, histogram and search filters', 'combine on the GPU; labels, badges, title', 'and point annotations are drawn over the map;', 'the PNG export composites all of it'] },
+  { note: 'W', text: ['Legend, histogram and search filters', 'combine on the GPU; labels, badges, title', 'and point annotations (B5: offsets in world', 'coords; leader lines via deck.gl LineLayer)', 'are drawn over the map; PNG export composites all'] },
 
   { phase: 'Python API (optional)' },
   { from: 'K', to: 'H', text: 'comm open positron.atlas (atlas.open(df))', sub: 'the host opens a tab for the frame' },

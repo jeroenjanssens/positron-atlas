@@ -11,7 +11,8 @@
  *   'outlines'      – PolygonLayer inside deck.gl (cluster boundary rings)
  *   'labels'        – TextLayers inside deck.gl (cluster / column labels + badges)
  *   'glow'          – HTML canvas overlay (A12 blurred halo, z-index ~20)
- *   'annotations'   – HTML overlay (callout boxes + SVG leader lines, A4, z-index ~21)
+ *   'leader-lines'  – deck.gl LineLayer in map space (callout leaders, B5, orbits correctly in 3D)
+ *   'annotations'   – HTML overlay (callout boxes, A4, z-index ~21)
  *   'around-labels' – HTML overlay (labels ring + leaders, A11, z-index ~22)
  *
  * System layers (not persisted, always rendered, non-reorderable):
@@ -45,7 +46,7 @@ export interface LayerState {
 // ---------------------------------------------------------------------------
 
 /** Layer ids that are rendered as deck.gl layers (WebGL canvas). */
-export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels']);
+export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels', 'leader-lines']);
 
 /** Layer ids that are rendered as HTML canvas/SVG overlays. */
 export const HTML_LAYER_IDS = new Set(['glow', 'annotations', 'around-labels']);
@@ -92,6 +93,15 @@ export function createInitialLayers(): LayerState[] {
       opacity: 1,
       blending: 'normal',
       order: 30,
+    },
+    {
+      id: 'leader-lines',
+      kind: 'overlay-frame',
+      name: 'Leader lines',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 35,
     },
     {
       id: 'annotations',

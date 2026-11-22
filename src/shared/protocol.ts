@@ -320,6 +320,8 @@ export interface AnnotationData {
   worldX: number;
   /** World y coordinate of the annotated point. */
   worldY: number;
+  /** World z coordinate of the annotated point (3D mode only; absent or 0 in 2D). */
+  worldZ?: number;
   /**
    * Map-coordinate (world-unit) x offset from the annotated point to the callout box anchor.
    * Q12 (B5): box position = projectWorld(worldX + offsetX, worldY + offsetY).

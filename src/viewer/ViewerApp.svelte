@@ -208,15 +208,21 @@
   }
 
   // ---- annotations ----
-  let annotationPositions = $state(new Map<string, [number, number]>());
+  // anchor = projectWorld(worldX, worldY); box = projectWorld(worldX + offsetX, worldY + offsetY) (B5 world-unit offsets).
+  let annotationPositions = $state(new Map<string, { anchor: [number, number]; box: [number, number] }>());
   let annRafId = 0;
 
   function updateAnnotationPositions(): void {
     if (!renderer) return;
-    const next = new Map<string, [number, number]>();
+    const next = new Map<string, { anchor: [number, number]; box: [number, number] }>();
     for (const ann of header.annotations) {
-      const pt = renderer.projectWorld(ann.worldX, ann.worldY);
-      if (pt) next.set(ann.id, pt);
+      const anchor = renderer.projectWorld(ann.worldX, ann.worldY);
+      if (!anchor) continue;
+      // B5: box anchor = worldX + offsetX, worldY + offsetY (world-unit offsets).
+      // Legacy blobs (offsetVersion absent) may have screen-pixel offsets; they are small
+      // in world units so they still display near the point (not ideal, but non-breaking).
+      const box = renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY) ?? anchor;
+      next.set(ann.id, { anchor, box });
     }
     annotationPositions = next;
     annRafId = requestAnimationFrame(updateAnnotationPositions);
@@ -522,10 +528,8 @@
       {#each header.annotations as ann}
         {@const pos = annotationPositions.get(ann.id)}
         {#if pos}
-          {@const bx = pos[0] + ann.offsetX}
-          {@const by = pos[1] + ann.offsetY}
-          <!-- Leader line -->
-          <line x1={pos[0]} y1={pos[1]} x2={bx + 60} y2={by + 12}
+          <!-- B5: leader from anchor point to box top-left (world-coordinate offsets). -->
+          <line x1={pos.anchor[0]} y1={pos.anchor[1]} x2={pos.box[0] + 60} y2={pos.box[1] + 12}
             stroke={ann.color || '#cccccc'} stroke-width="1" stroke-dasharray="4 3" opacity="0.7" />
         {/if}
       {/each}
@@ -536,7 +540,7 @@
         <div
           class="annotation-box"
           class:badge={ann.style === 'badge'}
-          style="left:{pos[0] + ann.offsetX}px;top:{pos[1] + ann.offsetY}px;{ann.style === 'badge' && ann.color ? `border-color:${ann.color};` : ''}"
+          style="left:{pos.box[0]}px;top:{pos.box[1]}px;{ann.style === 'badge' && ann.color ? `border-color:${ann.color};` : ''}"
         >
           {#if ann.style === 'image' && ann.imageDataUrl}
             <img src={ann.imageDataUrl} alt="Annotation" style="max-width:120px;max-height:120px;display:block;" />

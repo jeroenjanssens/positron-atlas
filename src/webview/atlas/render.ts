@@ -117,6 +117,8 @@ export function render(atlas: Atlas): void {
     )];
   }
   atlas.renderer.setPointSets(sets, filters);
+  // B5: push annotations to renderer for the leader-lines deck.gl layer.
+  atlas.renderer.setAnnotations(atlas.annotations);
   // Re-apply any active search highlight after the point sets change (A7).
   if (atlas.searchMask && atlas.searchQuery) {
     const col = searchColumn(atlas);

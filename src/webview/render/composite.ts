@@ -18,8 +18,8 @@ export interface CompositeOptions {
   dpr?: number;
   /** Title overlay settings. */
   title?: TitleOptions;
-  /** Annotations with their current screen positions. */
-  annotations?: Array<{ ann: AnnotationData; screenX: number; screenY: number }>;
+  /** Annotations with their anchor and box screen positions (B5: box position pre-projected). */
+  annotations?: Array<{ ann: AnnotationData; screenX: number; screenY: number; boxX: number; boxY: number }>;
   /** A11 around-the-map labels with screen positions (computed by computeAroundLabels). */
   aroundLabels?: AroundLabel[];
   /** A11 leader line settings. */
@@ -94,11 +94,12 @@ export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: Comp
   const anns = opts.annotations ?? [];
   if (!anns.length) return;
 
-  for (const { ann, screenX, screenY } of anns) {
+  for (const { ann, screenX, screenY, boxX, boxY } of anns) {
     const ax = screenX * dpr;
     const ay = screenY * dpr;
-    const bx = (screenX + ann.offsetX) * dpr;
-    const by = (screenY + ann.offsetY) * dpr;
+    // B5: box position is pre-projected in world coords (worldX + offsetX, worldY + offsetY).
+    const bx = boxX * dpr;
+    const by = boxY * dpr;
 
     const badgeColor = (ann.style === 'badge' && ann.color) ? ann.color : null;
     const lineColor = badgeColor ?? 'rgba(200,200,200,0.8)';

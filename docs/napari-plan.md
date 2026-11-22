@@ -37,7 +37,7 @@ Effort is S (≤ 1 day), M (a few days) or L (a week or more). Facts about other
     - "Open the selection in the Data Explorer".
     - 3D view options: perspective or orthographic, depth fade.
 14. **Rotate the 2D map.** Right-drag (or keys) rotates the 2D view, with a compass to show and reset the angle. Labels stay upright.
-15. **Labels and annotations in map coordinates.** Dragged labels, callouts, leader lines, badges, shapes and boxes keep their place on the map when you pan, zoom, rotate (2D) or orbit (3D). Point annotations and label dragging also work in 3D.
+15. ✅ **Labels and annotations in map coordinates.** Dragged labels, callouts, leader lines, badges, shapes and boxes keep their place on the map when you pan, zoom, rotate (2D) or orbit (3D). Point annotations and label dragging also work in 3D. — *Done in B5: label drag offsets and annotation box offsets stored in world (map) coordinates; legacy screen-pixel offsets reset to defaults on import; leader lines rendered as a deck.gl LineLayer so they orbit in 3D; callout boxes fade when their anchor is off-screen or occluded (3D depth fade); HTML viewer and PNG export use the same projected world offsets.*
 16. **Follow-ups** from the first plan: 3D support for clusters and the HTML viewer, inverting image-URL thumbnails, caching cosine neighbours, R support (still left out).
 
 ---
