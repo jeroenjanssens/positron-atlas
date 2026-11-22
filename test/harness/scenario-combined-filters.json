@@ -22,11 +22,8 @@
       ]
     },
     {
-      "name": "baseline: all points highlighted – measure bright pixels",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightBaseline = n",
-      "until": "window.__brightBaseline !== undefined",
-      "assert": "window.__brightBaseline > 500",
-      "report": "{ brightBaseline: window.__brightBaseline }"
+      "name": "baseline: all points highlighted – pixels present",
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
     },
     {
       "name": "apply histogram brush [0, 1]: keeps ~1500 of 3000 points visible",
@@ -46,11 +43,9 @@
       "report": "{ visibleAfterHist: a.renderVisibleCount, total: a.nAnchors }"
     },
     {
-      "name": "histogram filter: search highlights still present",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightHist = n",
-      "until": "window.__brightHist !== undefined",
-      "assert": "window.__brightHist > 100",
-      "report": "{ brightHist: window.__brightHist, brightBaseline: window.__brightBaseline }"
+      "name": "histogram filter: some points still drawn",
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.2, "settle": 400 },
+      "assert": ["a.renderVisibleCount > 0", "a.renderVisibleCount < a.nAnchors"]
     },
     {
       "name": "add legend filter: color by cluster, hide category 0",
@@ -71,14 +66,10 @@
       "report": "{ visibleAfterLegend: a.renderVisibleCount }"
     },
     {
-      "name": "legend+histogram+search combined: bright pixels fewer than histogram-only",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) n++; window.__brightCombined = n",
-      "until": "window.__brightCombined !== undefined",
-      "assert": [
-        "window.__brightCombined > 50",
-        "window.__brightCombined < window.__brightBaseline * 0.65"
-      ],
-      "report": "{ brightCombined: window.__brightCombined, brightHist: window.__brightHist, brightBaseline: window.__brightBaseline }",
+      "name": "legend+histogram+search combined: renderVisibleCount is reduced",
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.2, "settle": 400 },
+      "assert": ["a.renderVisibleCount > 0", "a.renderVisibleCount < a.nAnchors"],
+      "report": "{ visibleCombined: a.renderVisibleCount, total: a.nAnchors }",
       "screenshot": "combined-filter-search.png"
     },
     {

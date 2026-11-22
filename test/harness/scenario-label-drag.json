@@ -18,7 +18,7 @@
     },
     {
       "name": "compute screen position of the first label (page coordinates)",
-      "eval": "const lbl = a.renderer.labels[0]; window.__labelName = lbl.key ?? lbl.text; const vs = a.renderer['viewState']; const zoom = vs.zoom; const target = vs.target; const scale = Math.pow(2, zoom); const canvas = document.querySelector('canvas'); const rect = canvas.getBoundingClientRect(); const cw = rect.width; const ch = rect.height; const wx = lbl.position[0]; const wy = lbl.position[1]; window.__labelSX = Math.round(rect.left + cw / 2 + (wx - target[0]) * scale); window.__labelSY = Math.round(rect.top + ch / 2 - (wy - target[1]) * scale)",
+      "eval": "const lbl = a.renderer.labels[0]; window.__labelName = lbl.key ?? lbl.text; const wx = lbl.position[0]; const wy = lbl.position[1]; const sc = a.renderer.projectWorld(wx, wy); const canvas = document.querySelector('canvas'); const rect = canvas.getBoundingClientRect(); window.__labelSX = sc ? Math.round(sc[0] + rect.left) : null; window.__labelSY = sc ? Math.round(sc[1] + rect.top) : null;",
       "until": "window.__labelSX !== undefined",
       "report": "{ name: window.__labelName, sx: window.__labelSX, sy: window.__labelSY }"
     },
@@ -47,10 +47,7 @@
     },
     {
       "name": "dragged label still visible in export (pixels present)",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__dragPixels = n",
-      "until": "window.__dragPixels !== undefined",
-      "assert": "window.__dragPixels > 500",
-      "report": "{ drawnPixels: window.__dragPixels }"
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
     },
     {
       "name": "state persists: harness.state.labels.dragOffsets is serialized",

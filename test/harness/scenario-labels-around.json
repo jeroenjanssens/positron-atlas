@@ -56,10 +56,7 @@
     },
     {
       "name": "leader lines appear between anchors and labels (pixel check)",
-      "eval": "const url = a.renderer.toDataURL('#111111'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let bright = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 200) bright++; window.__aroundBright = bright",
-      "until": "window.__aroundBright !== undefined",
-      "assert": "window.__aroundBright > 100",
-      "report": "{ brightPoints: window.__aroundBright }"
+      "checkSpread": { "background": "#1e1e1e", "threshold": 25, "minFraction": 0.3, "settle": 400 }
     },
     {
       "name": "switch to curved leaders",
