@@ -2,12 +2,6 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import * as zlib from 'node:zlib';
-import { promisify } from 'node:util';
-import { packBlob } from '../shared/viewerBlob';
-import type { BlobHeader } from '../shared/viewerBlob';
-
-const gzipAsync = promisify(zlib.gzip);
 import { KernelBridge, KernelError } from './kernelBridge';
 import type { PositronApi } from './positron';
 import { bytesFromPayload } from './binaryUtil';
@@ -74,6 +68,8 @@ export class AtlasPanel {
   private projectionCurrent = false;
   private imageResolver: ImageResolver | undefined;
   private imagePermission: 'always' | 'never' | 'ask' = 'ask';
+  /** URI for the in-progress HTML export; set by handleExportHtml, consumed by handleExportHtmlReady. */
+  private pendingExportUri: vscode.Uri | undefined;
 
   static create(ctx: AtlasContext, target: OpenTarget): AtlasPanel {
     const fontManager = new FontManager(ctx.extension, ctx.log);
@@ -666,6 +662,10 @@ export class AtlasPanel {
         await this.handleExportHtml(m);
         break;
       }
+      case 'exportHtmlReady': {
+        await this.handleExportHtmlReady(m);
+        break;
+      }
       // --- Full-screen toggle (N5 / F1) ---
       case 'fullscreen': {
         // In Positron, maximize the editor panel (hides the sidebar and status bar).
@@ -718,7 +718,12 @@ export class AtlasPanel {
     }
   }
 
-  /** Handle the exportHtml message: fetch text data from kernel, assemble blob, write HTML. */
+  /**
+   * Handle `exportHtml` (X2, step 1/2 on host side):
+   *   1. Show save dialog → store pending URI.
+   *   2. Fetch tooltip text from kernel.
+   *   3. Post `exportHtmlAssembly` back to the webview (which packs, gzips, builds HTML).
+   */
   private async handleExportHtml(m: Extract<import('../shared/protocol').ToHost, { type: 'exportHtml' }>): Promise<void> {
     const job = this.requireJob();
 
@@ -731,6 +736,7 @@ export class AtlasPanel {
     if (!uri) {
       return;
     }
+    this.pendingExportUri = uri;
 
     // 2. Fetch tooltip text from kernel for each requested column
     type TextSection = { column: number; utf8: Buffer; offsets: Buffer };
@@ -755,16 +761,8 @@ export class AtlasPanel {
       }
     }
 
-    // 3. Assemble the blob
+    // 3. Build combined text arrays
     const nPoints = m.nPoints;
-    const xy = new Float32Array(bytesFromPayload(m.positions).buffer);
-    const rgba = bytesFromPayload(m.rgba);
-    const codes = m.codes ? new Uint16Array(bytesFromPayload(m.codes).buffer) : null;
-    const radii = m.radii ? new Float32Array(bytesFromPayload(m.radii).buffer) : null;
-
-    // Build combined text arrays: interleave columns
-    // textUtf8: concatenation of all column texts
-    // textOffsets: u32[(n+1)*nCols] offsets
     let textUtf8: Uint8Array | null = null;
     let textOffsets: Uint32Array | null = null;
     if (textSections.length > 0 && m.tooltipColumns.length > 0) {
@@ -773,19 +771,16 @@ export class AtlasPanel {
       textOffsets = new Uint32Array(nCols * offsetsPerCol);
       const utf8Parts: Buffer[] = [];
       let globalOffset = 0;
-
       for (let ci = 0; ci < nCols; ci++) {
         const colIdx = m.tooltipColumns[ci].index;
         const sec = textSections.find((s) => s.column === colIdx);
         const colOffsets = new Uint32Array(offsetsPerCol);
         if (sec) {
-          // sec.offsets is u32[count+1], count = number of prepared rows
           const srcOffsets = new Uint32Array(sec.offsets.buffer, sec.offsets.byteOffset, sec.offsets.byteLength / 4);
           const colBase = Math.min(srcOffsets.length - 1, nPoints);
           for (let i = 0; i <= colBase; i++) {
             colOffsets[i] = globalOffset + (i < srcOffsets.length ? srcOffsets[i] : srcOffsets[srcOffsets.length - 1]);
           }
-          // Fill remaining if srcOffsets shorter than nPoints
           const lastSrc = srcOffsets.length > 0 ? srcOffsets[Math.min(nPoints, srcOffsets.length - 1)] : 0;
           for (let i = colBase + 1; i <= nPoints; i++) {
             colOffsets[i] = globalOffset + lastSrc;
@@ -793,12 +788,10 @@ export class AtlasPanel {
           globalOffset += sec.utf8.length;
           utf8Parts.push(sec.utf8);
         } else {
-          // No data for this column: all offsets the same
           colOffsets.fill(globalOffset);
         }
         textOffsets.set(colOffsets, ci * offsetsPerCol);
       }
-
       const totalLen = utf8Parts.reduce((s, b) => s + b.length, 0);
       const combined = new Uint8Array(totalLen);
       let pos = 0;
@@ -806,49 +799,30 @@ export class AtlasPanel {
       textUtf8 = combined;
     }
 
-    const header: BlobHeader = {
-      v: 1,
-      n: nPoints,
-      bg: m.bg,
-      sections: { xy: [0, 0], rgba: [0, 0], codes: null, radii: null, textUtf8: null, textOffsets: null }, // filled by packBlob
-      tooltipCols: m.tooltipColumns.map((c) => ({ name: c.name, isLink: c.isLink, isTitle: c.isTitle })),
-      legend: JSON.parse(m.legend),
-      labels: JSON.parse(m.labels),
-      annotations: JSON.parse(m.annotations),
-      title: JSON.parse(m.title),
-      fontCss: m.fontCss,
-      sample: { n: m.sampled, total: m.total, pct: m.samplePct },
-    };
+    // 4. Resolve the viewer bundle URI (webview-accessible vscode-resource: URI)
+    const viewerJsUri = this.panel.webview
+      .asWebviewUri(vscode.Uri.joinPath(this.ctx.extension.extensionUri, 'dist', 'viewer', 'viewer.js'))
+      .toString();
 
-    const rawBlob = packBlob({
-      header,
-      xy: xy.subarray(0, nPoints * 2),
-      rgba: rgba.subarray(0, nPoints * 4),
-      codes,
-      radii,
-      textUtf8,
-      textOffsets,
-    });
+    // 5. Send assembly data to webview; it will pack + gzip + post exportHtmlReady
+    this.post({ type: 'exportHtmlAssembly', viewerJsUri, textUtf8, textOffsets });
+  }
 
-    // 4. Gzip the blob
-    const gzipped = await gzipAsync(rawBlob);
-
-    // 5. Read the viewer JS (built by npm run build:viewer)
-    const viewerPath = vscode.Uri.joinPath(this.ctx.extension.extensionUri, 'dist', 'viewer', 'viewer.js');
-    let viewerJs = '';
-    try {
-      viewerJs = (await vscode.workspace.fs.readFile(viewerPath)).toString();
-    } catch {
-      this.ctx.log.warn('[exportHtml] dist/viewer/viewer.js not found; HTML will not be functional.');
+  /**
+   * Handle `exportHtmlReady` (X2, step 2/2 on host side):
+   * Write the assembled HTML bytes to the file chosen earlier, then notify.
+   */
+  private async handleExportHtmlReady(
+    m: Extract<import('../shared/protocol').ToHost, { type: 'exportHtmlReady' }>,
+  ): Promise<void> {
+    const uri = this.pendingExportUri;
+    this.pendingExportUri = undefined;
+    if (!uri) {
+      this.ctx.log.warn('[exportHtml] exportHtmlReady received but no pending save URI');
+      return;
     }
-
-    // 6. Base64 encode the gzipped blob
-    const b64 = Buffer.from(gzipped).toString('base64');
-
-    // 7. Write HTML file
-    const html = buildViewerHtml(viewerJs, b64, m.variable);
-    await vscode.workspace.fs.writeFile(uri, Buffer.from(html, 'utf-8'));
-
+    const bytes = m.htmlBytes instanceof Uint8Array ? m.htmlBytes : new Uint8Array(m.htmlBytes);
+    await vscode.workspace.fs.writeFile(uri, bytes);
     this.post({ type: 'htmlExportSaved', path: uri.fsPath });
     const open = await vscode.window.showInformationMessage(
       `HTML export saved to ${path.basename(uri.fsPath)}`,
@@ -910,30 +884,3 @@ export function isStatus(x: unknown): x is JobStatus {
 
 export { bytesFromPayload };
 
-/** Build the self-contained HTML string for an exported Atlas map. */
-export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, title: string): string {
-  // Escape </script> in the viewer JS (should not normally appear, but be safe).
-  const safeJs = viewerJs.replace(/<\/script>/gi, '<\\/script>');
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Atlas: ${escapeHtml(title)}</title>
-<style>
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #1e1e1e; overflow: hidden; }
-#app { width: 100%; height: 100%; }
-</style>
-</head>
-<body>
-<div id="app"></div>
-<script id="atlas-data" type="application/octet-stream">${gzippedBlobBase64}</script>
-<script type="module">${safeJs}</script>
-</body>
-</html>`;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

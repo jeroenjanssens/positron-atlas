@@ -417,96 +417,84 @@
         post({ type: 'fontCatalog', families });
         break;
       }
-      // --- HTML export (X2) ---
+      // --- HTML export (X2) step 1/2: fetch kernel text, send assembly data to webview ---
       case 'exportHtml': {
-        // In the harness: pack the blob using browser APIs and POST to /write.
-        // We skip kernel texts and just pack visual data only.
+        // Store the pending export filename so exportHtmlReady can write it.
+        harness._pendingExportName = `atlas_export_${Date.now()}.html`;
+        harness._pendingNPoints = m.nPoints;
         try {
-          const nPoints = m.nPoints;
-          // m.positions / m.rgba / m.codes / m.radii arrive as Uint8Array byte views.
-          // Use them directly as raw bytes; no reinterpretation needed for blob packing.
-          function toU8(v) {
-            if (!v) return null;
-            if (v instanceof Uint8Array) return v;
-            // ArrayBuffer or other array-like: wrap
-            return new Uint8Array(v.buffer ?? v, v.byteOffset ?? 0, v.byteLength ?? v.length);
+          // Fetch text for each tooltip column from the kernel (same as the real host).
+          const textSections = [];
+          for (const col of m.tooltipColumns) {
+            try {
+              const r = await call('texts', jobId, col.index, m.maxChars);
+              if (r && r.ok !== false && r.utf8File && r.offsetsFile) {
+                const [utf8Res, offsetsRes] = await Promise.all([
+                  fetch(`/job/${jobDir}/${r.utf8File}`).then(x => x.arrayBuffer()),
+                  fetch(`/job/${jobDir}/${r.offsetsFile}`).then(x => x.arrayBuffer()),
+                ]);
+                textSections.push({ column: col.index, utf8: new Uint8Array(utf8Res), offsets: new Uint32Array(offsetsRes) });
+              }
+            } catch (e) {
+              harness.log.push(`texts for col ${col.index}: ${e.message}`);
+            }
           }
-          const xyBytes = toU8(m.positions);
-          const rgbaBytes = toU8(m.rgba);
-          const codesBytes = toU8(m.codes);
-          const radiiBytes = toU8(m.radii);
 
-          // Inline blob packing (mirrors packBlob in src/shared/viewerBlob.ts)
-          const enc = new TextEncoder();
-          const sections = [xyBytes, rgbaBytes];
-          const offsets = [0];
-          for (const s of sections) offsets.push(offsets[offsets.length - 1] + s.byteLength);
-          const xyRef = [offsets[0], xyBytes.byteLength];
-          const rgbaRef = [offsets[1], rgbaBytes.byteLength];
-          let codesRef = null, radiiRef = null;
-          if (codesBytes) {
-            codesRef = [offsets[offsets.length - 1], codesBytes.byteLength];
-            offsets.push(offsets[offsets.length - 1] + codesBytes.byteLength);
-            sections.push(codesBytes);
+          // Build combined textUtf8 / textOffsets (mirrors atlasPanel.ts)
+          let textUtf8 = null, textOffsets = null;
+          if (textSections.length > 0) {
+            const nCols = m.tooltipColumns.length;
+            const nPoints = m.nPoints;
+            const offsetsPerCol = nPoints + 1;
+            textOffsets = new Uint32Array(nCols * offsetsPerCol);
+            const utf8Parts = [];
+            let globalOffset = 0;
+            for (let ci = 0; ci < nCols; ci++) {
+              const colIdx = m.tooltipColumns[ci].index;
+              const sec = textSections.find(s => s.column === colIdx);
+              const colOffsets = new Uint32Array(offsetsPerCol);
+              if (sec) {
+                const srcOffsets = sec.offsets; // already Uint32Array
+                const colBase = Math.min(srcOffsets.length - 1, nPoints);
+                for (let i = 0; i <= colBase; i++) {
+                  colOffsets[i] = globalOffset + (i < srcOffsets.length ? srcOffsets[i] : srcOffsets[srcOffsets.length - 1]);
+                }
+                const lastSrc = srcOffsets.length > 0 ? srcOffsets[Math.min(nPoints, srcOffsets.length - 1)] : 0;
+                for (let i = colBase + 1; i <= nPoints; i++) colOffsets[i] = globalOffset + lastSrc;
+                globalOffset += sec.utf8.byteLength;
+                utf8Parts.push(sec.utf8);
+              } else {
+                colOffsets.fill(globalOffset);
+              }
+              textOffsets.set(colOffsets, ci * offsetsPerCol);
+            }
+            const totalLen = utf8Parts.reduce((s, u) => s + u.byteLength, 0);
+            const combined = new Uint8Array(totalLen);
+            let pos = 0;
+            for (const u of utf8Parts) { combined.set(u, pos); pos += u.byteLength; }
+            textUtf8 = combined;
           }
-          if (radiiBytes) {
-            radiiRef = [offsets[offsets.length - 1], radiiBytes.byteLength];
-            sections.push(radiiBytes);
-          }
-          const header = {
-            v: 1, n: nPoints, bg: m.bg,
-            sections: { xy: xyRef, rgba: rgbaRef, codes: codesRef, radii: radiiRef, textUtf8: null, textOffsets: null },
-            tooltipCols: m.tooltipColumns.map(c => ({ name: c.name, isLink: c.isLink, isTitle: c.isTitle })),
-            legend: JSON.parse(m.legend), labels: JSON.parse(m.labels),
-            annotations: JSON.parse(m.annotations), title: JSON.parse(m.title),
-            fontCss: m.fontCss, sample: { n: m.sampled, total: m.total, pct: m.samplePct },
-          };
-          const headerJson = enc.encode(JSON.stringify(header));
-          const totalSectionBytes = sections.reduce((s, a) => s + a.byteLength, 0);
-          const total = 12 + headerJson.byteLength + totalSectionBytes;
-          const rawBlob = new Uint8Array(total);
-          const dv = new DataView(rawBlob.buffer);
-          rawBlob[0]=0x41; rawBlob[1]=0x54; rawBlob[2]=0x4c; rawBlob[3]=0x53; // ATLS
-          dv.setUint32(4, 1, true); // version
-          dv.setUint32(8, headerJson.byteLength, true);
-          rawBlob.set(headerJson, 12);
-          let pos = 12 + headerJson.byteLength;
-          for (const s of sections) { rawBlob.set(s, pos); pos += s.byteLength; }
 
-          // Gzip using browser CompressionStream
-          const cs = new CompressionStream('gzip');
-          const writer = cs.writable.getWriter();
-          writer.write(rawBlob);
-          writer.close();
-          const chunks = [];
-          const reader = cs.readable.getReader();
-          for (;;) { const {done, value} = await reader.read(); if (done) break; chunks.push(value); }
-          const gzTotal = chunks.reduce((s, c) => s + c.byteLength, 0);
-          const gzipped = new Uint8Array(gzTotal);
-          let gpos = 0;
-          for (const c of chunks) { gzipped.set(c, gpos); gpos += c.byteLength; }
-
-          // Base64 encode
-          let b64 = '';
-          const step = 0x8000;
-          for (let i = 0; i < gzipped.length; i += step) {
-            b64 += String.fromCharCode(...gzipped.subarray(i, i + step));
-          }
-          b64 = btoa(b64);
-
-          // Minimal viewer placeholder (harness doesn't use the real viewer.js)
-          const viewerJs = `console.log('Atlas viewer: harness export, ${nPoints} points');`;
-          const varLabel = m.variable ?? info.variable ?? 'export';
-          const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Atlas: ${varLabel}</title></head><body><script id="atlas-data" type="application/octet-stream">${b64}<\/script><script type="module">${viewerJs}<\/script></body></html>`;
-
-          const outName = `atlas_export_${Date.now()}.html`;
-          const absPath = await writeJobFile(outName, new TextEncoder().encode(html));
-
-          harness.log.push(`htmlExported: path=${absPath}, size=${html.length}`);
-          harness.htmlExport = { ok: true, path: absPath, size: html.length, nPoints };
+          post({ type: 'exportHtmlAssembly', viewerJsUri: '/viewer-dist/viewer.js', textUtf8, textOffsets });
+        } catch (e) {
+          harness.log.push(`exportHtml error: ${e.message}`);
+          harness.htmlExport = { ok: false, error: e.message };
+          post({ type: 'htmlExportSaved', path: '' });
+        }
+        break;
+      }
+      // --- HTML export (X2) step 2/2: receive assembled bytes, write to job dir ---
+      case 'exportHtmlReady': {
+        try {
+          const outName = harness._pendingExportName ?? `atlas_export_${Date.now()}.html`;
+          const nPoints = harness._pendingNPoints ?? 0;
+          const bytes = m.htmlBytes instanceof Uint8Array ? m.htmlBytes : new Uint8Array(m.htmlBytes);
+          const absPath = await writeJobFile(outName, bytes);
+          harness.log.push(`htmlExported: path=${absPath}, size=${bytes.length}, nPoints=${nPoints}`);
+          harness.htmlExport = { ok: true, path: absPath, url: `/job/${jobDir}/${outName}`, size: bytes.length, nPoints };
           post({ type: 'htmlExportSaved', path: absPath });
         } catch (e) {
-          harness.log.push(`htmlExport error: ${e.message}`);
+          harness.log.push(`exportHtmlReady error: ${e.message}`);
           harness.htmlExport = { ok: false, error: e.message };
           post({ type: 'htmlExportSaved', path: '' });
         }

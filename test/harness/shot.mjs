@@ -138,6 +138,83 @@ try {
       await page.screenshot({ path: `${out}/${step.screenshot}` });
       console.log(`screenshot: ${out}/${step.screenshot}`);
     }
+
+    // openPage: open the exported HTML in a new Chromium page and run sub-steps there.
+    // step.openPage is a JS expr evaluated in the main page that returns a URL path.
+    if (step.openPage) {
+      const urlPath = await page.evaluate(`(() => { const a = window.__atlas; const h = window.__harness; return (${step.openPage}); })()`);
+      const viewerUrl = `http://127.0.0.1:${port}${urlPath}`;
+      const vPage = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
+      const vErrors = [];
+      const vConsole = [];
+      vPage.on('pageerror', (e) => vErrors.push(String(e)));
+      vPage.on('console', (m) => vConsole.push(`${m.type()}: ${m.text()}`));
+      try {
+        const loadTs = Date.now();
+        await vPage.goto(viewerUrl);
+        // Wait for __viewer to be set (viewer onMount) with timeout
+        const viewerTimeout = step.openPageTimeout ?? 20_000;
+        while (!(await vPage.evaluate('!!(window.__viewer && window.__viewer.nPoints > 0)').catch(() => false))) {
+          if (vErrors.length) throw new Error(`viewer page error: ${vErrors.join('\n')}`);
+          if (Date.now() - loadTs > viewerTimeout) throw new Error('viewer page load timeout');
+          await sleep(200);
+        }
+        const loadMs = Date.now() - loadTs;
+        console.log(`  viewer loaded in ${loadMs}ms`);
+        await sleep(step.settle ?? 800); // let deck.gl render
+        // Run sub-steps in the viewer page
+        const vEvalIn = (code) => vPage.evaluate(`(async () => { const v = window.__viewer; ${code} })()`);
+        const vCheck = (code) => vPage.evaluate(`(() => { const v = window.__viewer; return !!(${code}); })()`);
+        for (const ss of step.openPageSteps ?? []) {
+          const sts = Date.now();
+          if (ss.eval) await vEvalIn(ss.eval);
+          if (ss.click) await vPage.click(ss.click);
+          if (ss.fill) {
+            const [sel, val] = ss.fill;
+            await vPage.fill(sel, val);
+          }
+          if (ss.press) await vPage.keyboard.press(ss.press);
+          if (ss.mousemove) {
+            const [mx, my] = typeof ss.mousemove === 'string'
+              ? await vPage.evaluate(ss.mousemove)
+              : ss.mousemove;
+            await vPage.mouse.move(mx, my);
+          }
+          if (ss.until) {
+            while (!(await vCheck(ss.until).catch(() => false))) {
+              if (vErrors.length) throw new Error(`viewer sub-step ${ss.name}: page error: ${vErrors.join('\n')}`);
+              if (Date.now() - sts > (ss.timeout ?? 10_000)) throw new Error(`viewer sub-step ${ss.name} timed out`);
+              await sleep(100);
+            }
+          }
+          if (ss.assert) {
+            for (const expr of [].concat(ss.assert)) {
+              if (!(await vCheck(expr).catch(() => false))) throw new Error(`viewer sub-step ${ss.name}: assertion failed: ${expr}`);
+            }
+          }
+          if (ss.report) {
+            const r = await vPage.evaluate(`(() => { const v = window.__viewer; return JSON.stringify(${ss.report}); })()`);
+            console.log(`    viewer ${ss.name}: ${r}`);
+          }
+          console.log(`[${elapsed()}] viewer step ok: ${ss.name} (${((Date.now() - sts) / 1000).toFixed(1)}s)`);
+          if (ss.screenshot) {
+            await sleep(ss.settle ?? 400);
+            await vPage.screenshot({ path: `${out}/${ss.screenshot}` });
+            console.log(`screenshot: ${out}/${ss.screenshot}`);
+          }
+        }
+        if (step.openPageScreenshot) {
+          await sleep(step.settle ?? 400);
+          await vPage.screenshot({ path: `${out}/${step.openPageScreenshot}` });
+          console.log(`screenshot: ${out}/${step.openPageScreenshot}`);
+        }
+        if (vErrors.length) throw new Error(`viewer page errors: ${vErrors.join('\n')}`);
+        console.log(`  viewer console (${vConsole.length} lines):`);
+        vConsole.slice(0, 5).forEach((l) => console.log(`    ${l}`));
+      } finally {
+        await vPage.close();
+      }
+    }
   }
   ok = true;
 } catch (e) {

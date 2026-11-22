@@ -39,6 +39,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "test" / "harness"
 DIST = ROOT / "dist" / "webview"
+VIEWER_DIST = ROOT / "dist" / "viewer"
 MEDIA = ROOT / "media"
 
 
@@ -134,6 +135,8 @@ def main() -> None:
             p = url.path
             if p in ("/", "/index.html"):
                 self.send_file(HARNESS / "index.html")
+            elif p.startswith("/viewer-dist/"):
+                self.send_file(safe_join(VIEWER_DIST, p[len("/viewer-dist/") :]))
             elif p.startswith("/dist/"):
                 self.send_file(safe_join(DIST, p[len("/dist/") :]))
             elif p.startswith("/harness/"):

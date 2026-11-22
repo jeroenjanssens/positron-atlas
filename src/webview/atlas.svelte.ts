@@ -144,6 +144,7 @@ import {
 } from './atlas/actions.svelte';
 import {
   exportHtml as exportHtmlImpl,
+  assembleHtmlExport,
   estimateExportBytes as estimateExportBytesImpl,
   type HtmlExportOptions,
 } from './atlas/exportHtml';
@@ -565,6 +566,14 @@ export class Atlas {
         break;
       case 'datamapplotSaved':
         this.flash(`Saved to ${msg.path}`);
+        break;
+      case 'exportHtmlAssembly':
+        // Assemble the final HTML in the webview (packing, gzip, base64, HTML string)
+        // then post exportHtmlReady back to the host.
+        assembleHtmlExport(msg).catch((e: unknown) => {
+          this.flash(`HTML export failed: ${e instanceof Error ? e.message : String(e)}`);
+          this.htmlExportOpen = false;
+        });
         break;
       case 'htmlExportSaved':
         this.htmlExportOpen = false;

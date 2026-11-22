@@ -325,6 +325,46 @@ export async function gunzipBytes(data: Uint8Array): Promise<Uint8Array> {
   return readAll(ds.readable);
 }
 
+// ---------------------------------------------------------------------------
+// HTML template
+// ---------------------------------------------------------------------------
+
+/** Escape HTML special characters for safe use in an HTML attribute or text node. */
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Assemble the final self-contained HTML string from the viewer JS bundle and
+ * the gzip+base64 encoded blob.
+ */
+export function buildViewerHtml(viewerJs: string, gzippedBlobBase64: string, title: string): string {
+  // Prevent </script> from closing the script tag prematurely.
+  const safeJs = viewerJs.replace(/<\/script>/gi, '<\\/script>');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas: ${escapeHtml(title)}</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #1e1e1e; overflow: hidden; }
+#app { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script id="atlas-data" type="application/octet-stream">${gzippedBlobBase64}</script>
+<script type="module">${safeJs}</script>
+</body>
+</html>`;
+}
+
+// ---------------------------------------------------------------------------
+// Base64 helpers
+// ---------------------------------------------------------------------------
+
 /** Encode Uint8Array to base64 string. */
 export function uint8ToBase64(data: Uint8Array): string {
   let s = '';

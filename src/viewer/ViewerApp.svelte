@@ -227,6 +227,33 @@
     const appEl = document.getElementById('app');
     if (appEl) appEl.style.background = bg;
 
+    // Expose state for harness testing
+    (window as unknown as Record<string, unknown>).__viewer = {
+      get nPoints() { return nPoints; },
+      get bg() { return bg; },
+      get showTooltip() { return showTooltip; },
+      get tooltipTitle() { return tooltipTitle; },
+      get tooltipFields() { return tooltipFields; },
+      get searchQuery() { return searchQuery; },
+      get searchCount() { return searchResults?.size ?? 0; },
+      get hasSearch() { return searchResults !== null; },
+      get hiddenCount() { return hiddenCodes.size; },
+      get legendCategories() { return header.legend && header.legend.kind === 'categorical' ? header.legend.categories.length : 0; },
+      get annotationCount() { return header.annotations.length; },
+      /**
+       * Trigger hover for point at row index `idx` (default: 0).
+       * Passes the point's world coordinates so the HitIndex finds the right point.
+       * Used by the harness to smoke-test tooltip rendering without deck.gl events.
+       */
+      triggerHover(idx = 0): number {
+        if (idx < 0 || idx >= nPoints) return -1;
+        const wx = blob.xy[idx * 2];
+        const wy = blob.xy[idx * 2 + 1];
+        onPointer({ x: 400, y: 300, world: [wx, wy] as [number, number] });
+        return idx;
+      },
+    };
+
     renderer = new ScatterRenderer(container);
     renderer.setStyle({ pointSize: 3, opacity: 0.8, mode: 'points' });
     renderer.onPointer(onPointer);

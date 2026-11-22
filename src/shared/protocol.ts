@@ -366,7 +366,23 @@ export type ToWebview =
   /** DataMapPlot export saved to a file (D3/D12). */
   | { type: 'datamapplotSaved'; path: string }
   /** HTML export saved to a file (X2). path = '' on harness (written to job dir). */
-  | { type: 'htmlExportSaved'; path: string };
+  | { type: 'htmlExportSaved'; path: string }
+  /**
+   * Sent by the host in response to `exportHtml` (X2).
+   * Contains kernel-fetched text and the URI the webview should fetch for the viewer bundle.
+   */
+  | {
+      type: 'exportHtmlAssembly';
+      /**
+       * URI for the viewer JS bundle.
+       * In Positron this is a vscode-resource: URI; in the harness it is `/viewer-dist/viewer.js`.
+       */
+      viewerJsUri: string;
+      /** Concatenated UTF-8 text for all tooltip columns (or null when no text requested). */
+      textUtf8: Uint8Array | null;
+      /** u32[(nPoints+1)*nCols] offsets into textUtf8 (or null). */
+      textOffsets: Uint32Array | null;
+    };
 
 /** Entry in the font catalogue sent to the webview. */
 export interface FontCatalogEntry {
@@ -438,41 +454,35 @@ export type ToHost =
       /** Category → hex color when colorColumn === labelColumn (categorical). */
       labelColorMap?: Record<string, string>;
     }
-  /** Export the map as a self-contained HTML file (X2). */
+  /**
+   * Export the map as a self-contained HTML file (X2).
+   *
+   * Visual arrays stay in the webview; only metadata goes to the host so it can
+   * fetch kernel text and return a viewer-bundle URI.  The host responds with
+   * `exportHtmlAssembly` (ToWebview), and the webview assembles + posts back
+   * `exportHtmlReady` with the final bytes.
+   */
   | {
       type: 'exportHtml';
-      /** Number of points in the positions/rgba/codes/radii arrays. */
+      /** Number of data points (used for text fetch). */
       nPoints: number;
-      /** Plot background hex color. */
-      bg: string;
-      /** f32[nPoints*2] interleaved xy. */
-      positions: Uint8Array;
-      /** u8[nPoints*4] RGBA per point. */
-      rgba: Uint8Array;
-      /** u16[nPoints] category codes for legend filter, or null. */
-      codes: Uint8Array | null;
-      /** f32[nPoints] per-point radii, or null for uniform. */
-      radii: Uint8Array | null;
-      /** Category code indices that are hidden (for pre-filtering in export). */
-      hiddenCodes: number[];
-      /** JSON-encoded BlobLegend. */
-      legend: string;
-      /** JSON-encoded BlobLabel[]. */
-      labels: string;
-      /** JSON-encoded BlobAnnotation[]. */
-      annotations: string;
-      /** JSON-encoded BlobTitle. */
-      title: string;
-      /** @font-face CSS strings with embedded data-URL sources. */
-      fontCss: string[];
-      /** Columns to embed as tooltip text. */
+      /** DataFrame variable name (for the save-dialog default path). */
+      variable: string;
+      /** Columns to embed as tooltip text (index + display name). */
       tooltipColumns: { index: number; name: string; isLink?: boolean; isTitle?: boolean }[];
       /** Max characters per tooltip cell. */
       maxChars: number;
-      /** DataFrame variable name (for default save path). */
-      variable: string;
       /** Sampling info for the blob header. */
       samplePct: number;
       total: number;
       sampled: number;
+    }
+  /**
+   * Sent by the webview once the HTML bytes are assembled (X2).
+   * The host writes these bytes to the file chosen in the save dialog.
+   */
+  | {
+      type: 'exportHtmlReady';
+      /** Complete HTML file as UTF-8 bytes. */
+      htmlBytes: Uint8Array;
     };

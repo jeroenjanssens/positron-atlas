@@ -1,23 +1,65 @@
 /**
  * HTML export (X2): packs the current atlas visual state and dispatches to the host.
  *
- * The host receives the visual arrays + options, fetches tooltip texts from the
- * kernel, assembles the full gzipped blob, and writes the self-contained HTML file.
+ * Flow:
+ *   1. exportHtml()     — saves visual arrays in _pendingExport, posts slim exportHtml to host.
+ *   2. Host fetches kernel text, resolves viewer bundle URI, posts exportHtmlAssembly.
+ *   3. assembleHtmlExport() — fetches viewer.js, packs blob, gzips, builds HTML, posts exportHtmlReady.
+ *   4. Host writes the bytes and posts htmlExportSaved.
  */
 
 import type { Atlas } from '../atlas.svelte';
-import { vscode, typedArrayToBytes } from '../vscode';
+import { vscode } from '../vscode';
 import { plotBackground } from './render';
 import { getLoadedFontCss } from '../fonts';
-import type { BlobAnnotation, BlobLabel, BlobLegend, BlobTitle } from '../../shared/viewerBlob';
+import type {
+  BlobAnnotation,
+  BlobHeader,
+  BlobLabel,
+  BlobLegend,
+  BlobTitle,
+} from '../../shared/viewerBlob';
+import {
+  buildViewerHtml,
+  gzipBytes,
+  packBlob,
+  uint8ToBase64,
+} from '../../shared/viewerBlob';
 import { NOISE_COLOR, OTHER_COLOR, NULL_COLOR } from '../color/colormaps';
+import type { ToWebview } from '../../shared/protocol';
 
-// ---- state exposed to the ExportTab UI ---------------------------------------
+// ---- types ------------------------------------------------------------------
 
-/** Current export status (null = idle, 'packing' = in progress, 'done' = finished). */
-export type HtmlExportStatus = null | 'packing' | 'done' | 'error';
+export interface HtmlExportOptions {
+  /** Tooltip column indices to embed text for. */
+  tooltipColumns: number[];
+  /** Column index that is the link (URL), or -1. */
+  linkColumn: number;
+  /** Max chars per cell for text columns. */
+  maxChars: number;
+  /** Whether to embed image data-URLs for image annotations. */
+  embedImages: boolean;
+  /** Sampling percentage (1–100); only affects how many points appear in the export. */
+  samplePct: number;
+}
 
-// ---- helpers -----------------------------------------------------------------
+/** Visual data stored locally while we wait for the host to respond with text + viewer URI. */
+interface PendingExport {
+  nPoints: number;
+  bg: string;
+  xy: Float32Array;
+  rgba: Uint8Array;
+  codes: Uint16Array | null;
+  radii: Float32Array | null;
+  headerBase: Omit<BlobHeader, 'sections'>;
+  variable: string;
+}
+
+// ---- module-level pending state ---------------------------------------------
+
+let _pendingExport: PendingExport | null = null;
+
+// ---- helpers ----------------------------------------------------------------
 
 function buildLegend(atlas: Atlas): BlobLegend {
   if (atlas.colorByCluster && atlas.cluster && atlas.clusterPalette) {
@@ -31,7 +73,6 @@ function buildLegend(atlas: Atlas): BlobLegend {
       colors.push(palette[i % palette.length]);
       cnts.push(counts[i] ?? 0);
     }
-    // Add noise category
     categories.push('Unlabelled');
     colors.push(NOISE_COLOR);
     cnts.push(counts.slice(k).reduce((a, b) => a + b, 0));
@@ -53,7 +94,6 @@ function buildLegend(atlas: Atlas): BlobLegend {
     };
   }
 
-  // categorical
   const categories: string[] = [];
   const colors: string[] = [];
   const counts: number[] = [];
@@ -120,24 +160,11 @@ function buildTitle(atlas: Atlas): BlobTitle {
   };
 }
 
-// ---- public API --------------------------------------------------------------
-
-export interface HtmlExportOptions {
-  /** Tooltip column indices to embed text for. */
-  tooltipColumns: number[];
-  /** Column index that is the link (URL), or -1. */
-  linkColumn: number;
-  /** Max chars per cell for text columns. */
-  maxChars: number;
-  /** Whether to embed image data-URLs for image annotations. */
-  embedImages: boolean;
-  /** Sampling percentage (1–100); only affects how many points appear in the export. */
-  samplePct: number;
-}
+// ---- public API -------------------------------------------------------------
 
 /**
- * Pack the current atlas state into visual arrays and dispatch `exportHtml` to the host.
- * The host assembles the full blob (adding kernel text data), gzips it, and writes the HTML.
+ * Step 1: Save visual data locally and post a slim `exportHtml` message to the host.
+ * The host will respond with `exportHtmlAssembly`; call `assembleHtmlExport` then.
  */
 export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
   if (!atlas.prepared || (!atlas.colorsAll && !atlas.colorsAnchors)) {
@@ -145,7 +172,6 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
     return;
   }
 
-  // Pick XY and RGBA from the best available source (all rows > anchors-only).
   const rawXY = atlas.allXY ?? atlas.anchorXY;
   const rawRgba = atlas.colorsAll ?? atlas.colorsAnchors;
   if (!rawXY || !rawRgba) {
@@ -155,31 +181,15 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
 
   const nPoints = Math.min(rawXY.length / 2, rawRgba.length / 4);
 
-  // Category codes for legend filter (u16[n] or null).
-  const rawCodes = (atlas.colorValues instanceof Uint16Array && !atlas.colorByCluster)
-    ? atlas.colorValues.subarray(0, nPoints)
-    : null;
+  const rawCodes =
+    atlas.colorValues instanceof Uint16Array && !atlas.colorByCluster
+      ? atlas.colorValues.subarray(0, nPoints)
+      : null;
 
-  // Per-point radii (f32[n] or null).
   const rawRadii = atlas.sizeValues ? atlas.sizeValues.subarray(0, nPoints) : null;
 
-  const legend = buildLegend(atlas);
-  const labels = buildLabels(atlas);
-  const annotations = buildAnnotations(atlas);
-  const title = buildTitle(atlas);
-  const fontCss = getLoadedFontCss();
-  const bg = plotBackground(atlas);
-
-  // Build hidden-category mask: a u16 set of hidden code values (for the host to apply).
-  const hiddenCodes = (() => {
-    if (!rawCodes || atlas.colorColumn === null) return [];
-    const h = atlas.hiddenCategories.get(atlas.colorColumn);
-    return h ? [...h] : [];
-  })();
-
-  // Tooltip column names
-  const colNames = (atlas.describe?.columns ?? []);
-  const tooltipColNames = opts.tooltipColumns
+  const colNames = atlas.describe?.columns ?? [];
+  const tooltipColDescs = opts.tooltipColumns
     .filter((ci) => ci >= 0 && ci < colNames.length)
     .map((ci) => ({
       index: ci,
@@ -188,40 +198,101 @@ export function exportHtml(atlas: Atlas, opts: HtmlExportOptions): void {
       isTitle: ci === atlas.tooltipOpts?.titleColumn,
     }));
 
-  const payload = {
+  // Store visual data for assembly step
+  _pendingExport = {
     nPoints,
-    bg,
-    positions: typedArrayToBytes(rawXY.subarray(0, nPoints * 2)),
-    rgba: rawRgba.subarray(0, nPoints * 4),
-    codes: rawCodes ? typedArrayToBytes(rawCodes) : null,
-    radii: rawRadii ? typedArrayToBytes(rawRadii) : null,
-    hiddenCodes,
-    legend: JSON.stringify(legend),
-    labels: JSON.stringify(labels),
-    annotations: JSON.stringify(annotations),
-    title: JSON.stringify(title),
-    fontCss,
-    tooltipColumns: tooltipColNames,
-    maxChars: opts.maxChars,
+    bg: plotBackground(atlas),
+    // copy so the data isn't stale if atlas changes before assembly
+    xy: rawXY.slice(0, nPoints * 2),
+    rgba: rawRgba.slice(0, nPoints * 4),
+    codes: rawCodes ? rawCodes.slice() : null,
+    radii: rawRadii ? rawRadii.slice() : null,
+    headerBase: {
+      v: 1,
+      n: nPoints,
+      bg: plotBackground(atlas),
+      tooltipCols: tooltipColDescs,
+      legend: buildLegend(atlas),
+      labels: buildLabels(atlas),
+      annotations: buildAnnotations(atlas),
+      title: buildTitle(atlas),
+      fontCss: getLoadedFontCss(),
+      sample: { n: atlas.prepared.nSampled, total: atlas.prepared.nRows, pct: opts.samplePct },
+    },
     variable: atlas.variable,
+  };
+
+  // Post slim message to host (no binary data)
+  vscode.post({
+    type: 'exportHtml',
+    nPoints,
+    variable: atlas.variable,
+    tooltipColumns: tooltipColDescs,
+    maxChars: opts.maxChars,
     samplePct: opts.samplePct,
     total: atlas.prepared.nRows,
     sampled: atlas.prepared.nSampled,
-  };
+  });
+}
 
-  vscode.post({ type: 'exportHtml', ...payload });
+/**
+ * Step 3: Called when the host sends `exportHtmlAssembly`.
+ * Fetches viewer.js, packs the blob, gzips, builds HTML, posts `exportHtmlReady`.
+ */
+export async function assembleHtmlExport(
+  m: Extract<ToWebview, { type: 'exportHtmlAssembly' }>,
+): Promise<void> {
+  const p = _pendingExport;
+  if (!p) return; // no pending export
+
+  _pendingExport = null;
+
+  // 1. Fetch viewer JS bundle
+  const viewerJsRes = await fetch(m.viewerJsUri);
+  if (!viewerJsRes.ok) throw new Error(`Failed to fetch viewer bundle: ${viewerJsRes.status}`);
+  const viewerJs = await viewerJsRes.text();
+
+  // 2. Build combined text arrays from host-provided data
+  const textUtf8 = m.textUtf8 ?? null;
+  const textOffsets = m.textOffsets ?? null;
+
+  // 3. Pack blob
+  const header: BlobHeader = {
+    ...p.headerBase,
+    sections: { xy: [0, 0], rgba: [0, 0], codes: null, radii: null, textUtf8: null, textOffsets: null },
+  };
+  const rawBlob = packBlob({
+    header,
+    xy: p.xy,
+    rgba: p.rgba,
+    codes: p.codes,
+    radii: p.radii,
+    textUtf8,
+    textOffsets,
+  });
+
+  // 4. Gzip + base64
+  const gzipped = await gzipBytes(rawBlob);
+  const b64 = uint8ToBase64(gzipped);
+
+  // 5. Build HTML
+  const html = buildViewerHtml(viewerJs, b64, p.variable);
+  const htmlBytes = new TextEncoder().encode(html);
+
+  // 6. Post back to host for file write
+  vscode.post({ type: 'exportHtmlReady', htmlBytes });
 }
 
 /** Approximate byte count for the export (before gzip). Used for the size estimate in the dialog. */
-export function estimateExportBytes(atlas: Atlas, opts: Pick<HtmlExportOptions, 'tooltipColumns' | 'maxChars'>): number {
+export function estimateExportBytes(
+  atlas: Atlas,
+  opts: Pick<HtmlExportOptions, 'tooltipColumns' | 'maxChars'>,
+): number {
   const rawXY = atlas.allXY ?? atlas.anchorXY;
   if (!rawXY) return 0;
   const n = rawXY.length / 2;
-  // positions(8) + rgba(4) + codes(2) + radii(4 optional)
   const pointBytes = n * (8 + 4 + (atlas.colorValues instanceof Uint16Array ? 2 : 0));
-  // Text: rough estimate of maxChars per column × n
   const textBytes = n * opts.tooltipColumns.length * Math.min(opts.maxChars, 40);
-  // JSON overhead + labels + annotations
-  const overhead = 50_000 + atlas.renderer!.labels.length * 200 + atlas.annotations.size * 500;
+  const overhead = 50_000 + (atlas.renderer?.labels.length ?? 0) * 200 + atlas.annotations.size * 500;
   return pointBytes + textBytes + overhead;
 }

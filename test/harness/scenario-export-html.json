@@ -32,13 +32,81 @@
         "h.htmlExport !== undefined",
         "h.htmlExport.ok === true",
         "h.htmlExport.nPoints >= 100",
-        "h.htmlExport.size > 1000"
+        "h.htmlExport.size > 100000"
       ],
-      "report": "{ export: h.htmlExport }"
+      "report": "{ export: h.htmlExport }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 30000,
+      "openPageScreenshot": "viewer-dark.png",
+      "openPageSteps": [
+        {
+          "name": "viewer loaded with correct point count",
+          "assert": "v.nPoints >= 100",
+          "report": "{ nPoints: v.nPoints, legendCategories: v.legendCategories }"
+        },
+        {
+          "name": "legend has 4 categories (grp_0..3 + unlabelled = 5 entries, check >= 4)",
+          "assert": "v.legendCategories >= 4"
+        },
+        {
+          "name": "hover over point 0 reveals tooltip",
+          "eval": "v.triggerHover(0)",
+          "until": "v.showTooltip && v.tooltipTitle.length > 0",
+          "timeout": 3000,
+          "report": "{ showTooltip: v.showTooltip, title: v.tooltipTitle }"
+        },
+        {
+          "name": "tooltip title is item_0000",
+          "assert": "v.tooltipTitle === 'item_0000'"
+        },
+        {
+          "name": "legend toggle hides a category",
+          "click": ".legend-item",
+          "until": "v.hiddenCount > 0",
+          "timeout": 3000,
+          "screenshot": "viewer-legend-toggle.png",
+          "report": "{ hiddenCount: v.hiddenCount }",
+          "assert": "v.hiddenCount === 1"
+        },
+        {
+          "name": "search for item_0001 filters results",
+          "fill": [".search-input", "item_0001"],
+          "until": "v.hasSearch",
+          "timeout": 5000,
+          "report": "{ searchCount: v.searchCount }",
+          "assert": "v.searchCount >= 1"
+        },
+        {
+          "name": "clear search",
+          "fill": [".search-input", ""],
+          "assert": "true"
+        }
+      ]
     },
     {
       "name": "verify dialog closed after export",
       "assert": "a.htmlExportOpen === false"
+    },
+    {
+      "name": "set light background and export again",
+      "eval": "h.htmlExport = undefined; a.view.background = '#f0f0f0'; a.htmlExportOpen = true; const titleCol = a.describe.columns.find(c => c.name === 'title'); a.exportHtml({ tooltipColumns: [titleCol.index], linkColumn: -1, maxChars: 200, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 30000,
+      "assert": ["h.htmlExport.ok === true"],
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 30000,
+      "openPageScreenshot": "viewer-light.png",
+      "openPageSteps": [
+        {
+          "name": "light viewer loaded",
+          "assert": "v.nPoints >= 100",
+          "report": "{ nPoints: v.nPoints, bg: v.bg }"
+        },
+        {
+          "name": "light theme detected (bg is light)",
+          "assert": "v.bg === '#f0f0f0'"
+        }
+      ]
     }
   ]
 }
