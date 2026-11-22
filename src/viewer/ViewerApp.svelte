@@ -8,7 +8,7 @@
    */
   import { onMount } from 'svelte';
   import { ScatterRenderer } from '../webview/render/renderer';
-  import { HitIndex } from '../webview/render/hitIndex';
+  import { HitIndex, ScreenHitIndex } from '../webview/render/hitIndex';
   import { isValidLink } from '../webview/hover/texts';
   import type { UnpackedBlob, BlobAnnotation, BlobLabel } from '../shared/viewerBlob';
   import type { MapLabel } from '../webview/render/renderer';
@@ -23,6 +23,9 @@
   let container: HTMLDivElement;
   let renderer: ScatterRenderer | null = null;
   let hit: HitIndex | null = null;
+  // item 16: for 3D blobs we switch to ScreenHitIndex (screen-space projected)
+  let screenHit: ScreenHitIndex | null = null;
+  const is3D = (header.positionStride ?? 2) === 3;
 
   // ---- view state ----
   let hiddenCodes = $state(new Set<number>());
@@ -113,7 +116,7 @@
     if (!renderer || !blob.codes) return;
     const codes = blob.codes;
     renderer.setPointSets(
-      [{ id: 'pts', positions: blob.xy, colors: blob.rgba, length: nPoints, radii: blob.radii ?? undefined }],
+      [{ id: 'pts', positions: blob.xy, colors: blob.rgba, length: nPoints, positionStride: is3D ? 3 : 2, radii: blob.radii ?? undefined }],
       [{ codes, hidden: new Set(), precomputed: filterValues }],
     );
   }
@@ -121,35 +124,48 @@
   function rerenderFilterNoCode(): void {
     if (!renderer) return;
     renderer.setPointSets(
-      [{ id: 'pts', positions: blob.xy, colors: blob.rgba, length: nPoints, radii: blob.radii ?? undefined }],
+      [{ id: 'pts', positions: blob.xy, colors: blob.rgba, length: nPoints, positionStride: is3D ? 3 : 2, radii: blob.radii ?? undefined }],
       noCodeFilter ? [null] : [{ codes: blob.codes!, hidden: new Set(), precomputed: filterValues }],
     );
   }
 
   // ---- hover ----
   function onPointer(p: { x: number; y: number; world: [number, number] } | null): void {
-    if (!p || !renderer || !hit) {
+    if (!p || !renderer || (!hit && !screenHit)) {
       showTooltip = false;
       hoverIdx = -1;
       renderer?.setHoverRing(-1, pinnedIdx);
       return;
     }
-    const radius = renderer.worldPerPixel() * 10;
-    const idx = hit.nearest(p.world[0], p.world[1], radius);
+    let idx: number;
+    if (is3D && screenHit) {
+      // 3D: search in screen space with a fixed pixel radius
+      idx = screenHit.nearest(p.x, p.y, 12);
+    } else {
+      const radius = renderer!.worldPerPixel() * 10;
+      idx = hit!.nearest(p.world[0], p.world[1], radius);
+    }
     if (idx < 0 || (blob.codes && hiddenCodes.has(blob.codes[idx]))) {
       showTooltip = false;
       hoverIdx = -1;
-      renderer.setHoverRing(-1, pinnedIdx);
+      renderer!.setHoverRing(-1, pinnedIdx);
       return;
     }
     hoverIdx = idx;
-    renderer.setHoverRing(idx, pinnedIdx);
+    renderer!.setHoverRing(idx, pinnedIdx);
     tooltipX = p.x;
     tooltipY = p.y;
     tooltipTitle = getTitle(idx) || `Point ${idx + 1}`;
     tooltipFields = getFields(idx);
     tooltipLink = getLink(idx);
     showTooltip = true;
+  }
+
+  /** item 16: rebuild the ScreenHitIndex after the 3D camera moves. */
+  function rebuild3DHitIndex(): void {
+    if (!is3D || !renderer) return;
+    const screenXY = renderer.projectAll3D(blob.xy, nPoints);
+    if (screenXY) screenHit = new ScreenHitIndex(screenXY, nPoints);
   }
 
   function onClick(): void {
@@ -216,15 +232,17 @@
     if (!renderer) return;
     const next = new Map<string, { anchor: [number, number]; box: [number, number] }>();
     for (const ann of header.annotations) {
-      const anchor = renderer.projectWorld(ann.worldX, ann.worldY);
+      // item 16: pass worldZ for 3D annotations so they project to the correct depth.
+      const wz = ann.worldZ ?? 0;
+      const anchor = renderer.projectWorld(ann.worldX, ann.worldY, wz);
       if (!anchor) continue;
       // B5: box anchor = worldX + offsetX, worldY + offsetY (world-unit offsets).
-      // Legacy blobs (offsetVersion absent) may have screen-pixel offsets; they are small
-      // in world units so they still display near the point (not ideal, but non-breaking).
-      const box = renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY) ?? anchor;
+      const box = renderer.projectWorld(ann.worldX + ann.offsetX, ann.worldY + ann.offsetY, wz) ?? anchor;
       next.set(ann.id, { anchor, box });
     }
     annotationPositions = next;
+    // item 16: also rebuild the 3D screen hit index while camera is potentially moving.
+    if (is3D) rebuild3DHitIndex();
     annRafId = requestAnimationFrame(updateAnnotationPositions);
   }
 
@@ -253,6 +271,10 @@
       get totalPoints() { return nPoints; },
       /** CSS hex colors for each legend category (matches per-point rgba). */
       get clusterColors() { return header.legend && header.legend.kind === 'categorical' ? header.legend.colors : []; },
+      /** item 16: whether the blob is 3D. */
+      get is3D() { return is3D; },
+      /** item 16: direct access to the renderer for harness tests. */
+      get renderer() { return renderer; },
       /**
        * Trigger hover for point at row index `idx` (default: 0).
        * Passes the point's world coordinates so the HitIndex finds the right point.
@@ -260,9 +282,18 @@
        */
       triggerHover(idx = 0): number {
         if (idx < 0 || idx >= nPoints) return -1;
-        const wx = blob.xy[idx * 2];
-        const wy = blob.xy[idx * 2 + 1];
-        onPointer({ x: 400, y: 300, world: [wx, wy] as [number, number] });
+        if (is3D) {
+          // 3D: project to screen and trigger hover at that screen position.
+          const sx = blob.xy[idx * 3];
+          const sy = blob.xy[idx * 3 + 1];
+          const sz = blob.xy[idx * 3 + 2];
+          const screen = renderer?.projectWorld(sx, sy, sz);
+          if (screen) onPointer({ x: screen[0], y: screen[1], world: [sx, sy] });
+        } else {
+          const wx = blob.xy[idx * 2];
+          const wy = blob.xy[idx * 2 + 1];
+          onPointer({ x: 400, y: 300, world: [wx, wy] as [number, number] });
+        }
         return idx;
       },
       /**
@@ -312,19 +343,29 @@
     renderer.onPointer(onPointer);
     // Click: handled via container click event
     container.addEventListener('click', onClick);
-    // Apply dataMap preset defaults: right-drag and Ctrl-drag rotate 2D (item 1).
-    renderer.setNavSettings(
-      { preset: 'dataMap', scrollGesture: 'zoom', zoomToCursor: true, invertZoom: false, emulateMiddleButton: false },
-      2,
-    );
 
-    hit = new HitIndex(blob.xy, nPoints);
+    if (is3D) {
+      // item 16: 3D mode — left-drag orbits (like Data map 3D in the webview).
+      renderer.setDims(3);
+      renderer.setNavSettings(
+        { preset: 'dataMap', scrollGesture: 'zoom', zoomToCursor: true, invertZoom: false, emulateMiddleButton: false },
+        3,
+      );
+    } else {
+      // 2D mode: right-drag and Ctrl-drag rotate.
+      renderer.setNavSettings(
+        { preset: 'dataMap', scrollGesture: 'zoom', zoomToCursor: true, invertZoom: false, emulateMiddleButton: false },
+        2,
+      );
+      hit = new HitIndex(blob.xy, nPoints);
+    }
 
-    // Set labels
+    // Set labels (include worldZ for 3D)
     if (header.labels.length > 0) {
       const mapLabels: MapLabel[] = header.labels.map((l: BlobLabel) => ({
         text: l.text,
         position: [l.x, l.y] as [number, number],
+        worldZ: (l as BlobLabel & { z?: number }).z,
         size: l.size,
         color: l.color,
         priority: l.priority,
@@ -340,7 +381,7 @@
 
     // B2: Set 2D bounding-box overlays from the blob.
     if (header.boxes?.length) {
-      import('../webview/render/boxes').then(({ buildBoxLayers2D }) => {
+      import('../webview/render/boxes').then(() => {
         // Parse the CSS hex colors to RGBA tuples.
         const boxes2D = header.boxes!.map((b) => {
           const r = parseInt(b.color.slice(1, 3), 16) || 0;
@@ -352,22 +393,53 @@
       });
     }
 
+    // item 16: Set 3D bounding-box overlays from the blob.
+    if (is3D && header.boxes3D?.length) {
+      import('../webview/render/boxes').then(() => {
+        const boxes3D = header.boxes3D!.map((b) => {
+          const r = parseInt(b.color.slice(1, 3), 16) || 0;
+          const g = parseInt(b.color.slice(3, 5), 16) || 0;
+          const bl = parseInt(b.color.slice(5, 7), 16) || 0;
+          return { extent: b.extent, color: [r, g, bl, 180] as [number, number, number, number], label: b.label };
+        });
+        renderer?.setBoxes([], boxes3D);
+      });
+    }
+
+    // item 16: Set 3D data box / floor grid / gizmo.
+    if (is3D && header.dataBox3D) {
+      renderer.setDataBox(header.dataBox3D.extent, header.dataBox3D.showGrid, header.dataBox3D.showGizmo);
+    }
+
     // Initial render
     rerenderFilterNoCode();
 
-    // Auto-fit: include right padding for the legend panel (≈220 px).
-    import('../webview/render/hitIndex').then(({ bounds }) => {
-      const legendPad = header.legend ? 220 : 0;
-      renderer?.fit(bounds(blob.xy, nPoints), false, legendPad);
-      // Restore 2D rotation (item 14): apply after fit so the angle is preserved.
-      if (header.rotation2D) {
-        renderer?.setRotation2D(header.rotation2D);
+    if (is3D) {
+      // item 16: restore camera; skip auto-fit if camera is stored.
+      if (header.camera3D) {
+        renderer.restoreCamera3D(header.camera3D);
+      } else {
+        import('../webview/render/hitIndex').then(({ bounds3D }) => {
+          renderer?.fit3D(bounds3D(blob.xy, nPoints), false);
+        });
       }
-      // B4: render shapes embedded in the blob.
-      if (header.shapes?.length) {
-        renderer?.setShapes(header.shapes as unknown as import('../webview/atlas/shapes').Shape[]);
-      }
-    });
+      // Build initial 3D screen hit index after a brief delay so deck.gl has rendered.
+      requestAnimationFrame(() => { requestAnimationFrame(rebuild3DHitIndex); });
+    } else {
+      // Auto-fit: include right padding for the legend panel (≈220 px).
+      import('../webview/render/hitIndex').then(({ bounds }) => {
+        const legendPad = header.legend ? 220 : 0;
+        renderer?.fit(bounds(blob.xy, nPoints), false, legendPad);
+        // Restore 2D rotation (item 14): apply after fit so the angle is preserved.
+        if (header.rotation2D) {
+          renderer?.setRotation2D(header.rotation2D);
+        }
+        // B4: render shapes embedded in the blob (2D only).
+        if (header.shapes?.length) {
+          renderer?.setShapes(header.shapes as unknown as import('../webview/atlas/shapes').Shape[]);
+        }
+      });
+    }
 
     // Start annotation position tracking
     annRafId = requestAnimationFrame(updateAnnotationPositions);
@@ -579,7 +651,8 @@
           style="left:{pos.box[0]}px;top:{pos.box[1]}px;{ann.style === 'badge' && ann.color ? `border-color:${ann.color};` : ''}"
         >
           {#if ann.style === 'image' && ann.imageDataUrl}
-            <img src={ann.imageDataUrl} alt="Annotation" style="max-width:120px;max-height:120px;display:block;" />
+            {@const invertImg = header.imageInvert === true || (header.imageInvert === 'auto' && isDark)}
+            <img src={ann.imageDataUrl} alt="Annotation" style="max-width:120px;max-height:120px;display:block;{invertImg ? 'filter:invert(1);' : ''}" />
           {:else}
             {ann.text}
           {/if}
