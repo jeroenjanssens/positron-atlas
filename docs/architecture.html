@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">f868fb9</span> (2026-11-22).</p>
+     Checked against commit <span class="mono">b630ec0</span> (2026-11-22).</p>
   <nav>
     <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -137,7 +137,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="t" x="50" y="286">UMAP worker</text>
     <text class="s" x="50" y="305">embedding-atlas (WASM)</text>
     <text class="s" x="50" y="322">WebGPU, or 1 CPU thread</text>
-    <text class="s" x="50" y="339">kNN → spectral → SGD</text>
+    <text class="s" x="50" y="339">kNN → spectral → SGD · 2D/3D</text>
 
     <rect class="box" x="204" y="262" width="160" height="96" rx="8"/>
     <text class="t" x="218" y="286">Cluster worker</text>
@@ -147,7 +147,7 @@ only the selected numeric columns are converted to float32, and only the anchors
 
     <rect class="box" x="36" y="384" width="328" height="72" rx="8"/>
     <text class="t" x="50" y="408">deck.gl renderer</text><text class="m" x="178" y="408">render/renderer.ts</text>
-    <text class="s" x="50" y="427">ScatterplotLayer (binary attributes) · Polygon · Text</text>
+    <text class="s" x="50" y="427">Scatterplot · Polygon · Text · 2D or 3D (orbit view)</text>
     <text class="s" x="50" y="444">WebGL · density mode · glow · labels around the map</text>
 
     <rect class="box" x="36" y="476" width="328" height="84" rx="8"/>
@@ -229,7 +229,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <rect class="box" x="962" y="410" width="96" height="92" rx="8"/>
     <text class="t" x="972" y="434">Rust core</text>
     <text class="s" x="972" y="453">IVF index, kNN,</text>
-    <text class="s" x="972" y="470">placement, std.</text>
+    <text class="s" x="972" y="470">2D/3D placement</text>
     <text class="s" x="972" y="487">rayon · gemm</text>
 
     <rect class="box" x="1068" y="410" width="96" height="92" rx="8"/>
@@ -461,7 +461,7 @@ const STEPS = [
   { from: 'D', to: 'W', file: true, text: 'fetch() → Float32Array' },
 
   { phase: 'Lay out the anchors (browser)' },
-  { note: 'W', text: ['UMAP worker: kNN graph → spectral init → SGD', 'WebGPU (or one CPU thread) · a frame every ~33 ms', 'deck.gl redraws; live changes re-anneal'] },
+  { note: 'W', text: ['UMAP worker: kNN graph → spectral init → SGD, 2D or 3D', 'WebGPU (or one CPU thread) · a frame every ~33 ms', 'deck.gl redraws; live changes re-anneal'] },
 
   { phase: 'Place all rows (when there are more rows than anchors)' },
   { from: 'W', to: 'H', text: 'project(anchor layout as bytes)', sub: 'automatic when the estimate is under 20 s' },

@@ -12,11 +12,12 @@ Status: **accepted 2026-11-21**: all recommendations in section 1 (D1–D14) and
 
 Written 2026-11-21 against commit `830812c`; implementation starts in waves (section 14).
 
-**Progress (2026-11-22, local `main` at `f868fb9`):**
+**Progress (2026-11-22, local `main` at `b630ec0`):**
 
 - **Waves 0, 1 and 2 are done.** Done items: P1, P2, P3, P4, P5, P6; H1–H8; I1–I3; N1–N5; L1; F1; D-1; E1, E2; A1–A10 and A13.
 - **Dropped:** P7 (spike: kNN is 3–4 % of browser CPU UMAP time).
-- **Waves 3 and 4:** X1–X4 (self-contained HTML export), A11 (labels around the map) and A12 (glow) are done; 3D (T2–T6) is in progress.
+- **Waves 3 and 4 are done:** X1–X4 (self-contained HTML export), A11 (labels around the map), A12 (glow), and 3D (T2–T6: browser and kernel UMAP in 3D, Rust and numpy placement in 3D, orbit view with camera buttons, hover, lasso, legend and filters; the 2D-only features are turned off in 3D with a hint).
+- **All items in sections 3–11 are done**, except P7 (dropped after its spike) and the items left out on purpose in section 12.
 - **Measured HTML export sizes:** 3k points 1.3 MB (mostly the 1.25 MB viewer); MNIST 70k with images 2.7 MB (2 s load); 10⁶ points 12.1 MB.
 
 This plan covers everything asked for on 2026-11-21:
