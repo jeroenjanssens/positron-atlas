@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'view.panLeft', 'view.panRight', 'view.panUp', 'view.panDown',
       'view.rotateLeft', 'view.rotateRight', 'view.resetRotation',
       'view.top', 'view.front', 'view.side',
-      'view.toggle3D', 'view.toggleFullScreen', 'view.showControls', 'view.toggleGrid',
+      'view.toggle3D', 'view.toggleFullScreen',
       'tool.pan', 'tool.lasso', 'tool.annotate',
       'edit.undo', 'edit.redo',
       'select.all', 'select.clear',

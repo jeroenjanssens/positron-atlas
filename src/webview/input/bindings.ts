@@ -26,11 +26,9 @@ export type ActionId =
   | 'view.side'
   | 'view.toggle3D'
   | 'view.toggleFullScreen'
-  | 'view.showControls'
   | 'view.rotateLeft'
   | 'view.rotateRight'
   | 'view.resetRotation'
-  | 'view.toggleGrid'
   | 'tool.pan'
   | 'tool.lasso'
   | 'tool.annotate'
@@ -218,19 +216,6 @@ export const BINDINGS: BindingEntry[] = [
   {
     actionId: 'view.toggleFullScreen',
     label: 'Toggle full screen',
-    section: 'view',
-    context: 'both',
-  },
-  {
-    actionId: 'view.showControls',
-    label: 'Show controls / cheat sheet',
-    key: '?',
-    section: 'misc',
-    context: 'both',
-  },
-  {
-    actionId: 'view.toggleGrid',
-    label: 'Toggle grid mode (small multiples)',
     section: 'view',
     context: 'both',
   },

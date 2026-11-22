@@ -78,8 +78,6 @@
       { "command": "positronAtlas.nav.view.side",          "title": "Side view (3D)",                      "category": "Atlas" },
       { "command": "positronAtlas.nav.view.toggle3D",      "title": "Toggle 2D / 3D",                      "category": "Atlas" },
       { "command": "positronAtlas.nav.view.toggleFullScreen","title": "Toggle full screen",                 "category": "Atlas" },
-      { "command": "positronAtlas.nav.view.showControls",  "title": "Show controls / cheat sheet",         "category": "Atlas" },
-      { "command": "positronAtlas.nav.view.toggleGrid",    "title": "Toggle grid mode (small multiples)",  "category": "Atlas" },
       { "command": "positronAtlas.nav.tool.pan",           "title": "Pan tool",                            "category": "Atlas" },
       { "command": "positronAtlas.nav.tool.lasso",         "title": "Lasso select tool",                   "category": "Atlas" },
       { "command": "positronAtlas.nav.tool.annotate",      "title": "Annotate tool",                       "category": "Atlas" },
@@ -222,7 +220,6 @@
       { "command": "positronAtlas.nav.view.top",          "key": "1",          "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.view.front",        "key": "2",          "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.view.side",         "key": "3",          "when": "positronAtlas.webviewFocused" },
-      { "command": "positronAtlas.nav.view.showControls", "key": "shift+/",    "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.edit.undo",         "key": "ctrl+z",     "mac": "cmd+z",          "when": "positronAtlas.webviewFocused" },
       { "command": "positronAtlas.nav.edit.redo",         "key": "ctrl+shift+z","mac": "cmd+shift+z",   "when": "positronAtlas.webviewFocused" }
     ]
