@@ -394,12 +394,13 @@ Details are in the research notes of 2026-11-22.
   - **Fill:** click a cluster or category to assign it all.
 - **Where it goes:** a pending tag layer, shown live, then **Write to DataFrame** (confirm modal, as tags today) into a string column. Undoable until written (item 6).
 - **Scope check:** this is tagging rows, not painting pixels, so it stays on the Atlas side.
-- **To-do:**
-  - [ ] Input mode in A1's dispatcher; a screen-space brush with the hit index (2D) or projected points (3D).
-  - [ ] Pending-tag state with codes per row (u16), rendered as a colour overlay; legend of classes.
-  - [ ] Write back through the existing `write_labels` path.
-  - [ ] Help texts; cheat-sheet entries.
-  - [ ] Harness: brush a region, assert codes and pixels, undo, write.
+- **Done (B4):**
+  - [x] Input mode: `BrushLayer.svelte` pointer overlay, `BrushLayer.svelte` active when `annotateTool === 'brush'`.
+  - [x] Pending-tag state with codes per row (u16, `pendingBrushCodes`), rendered as a colour overlay via brush deck.gl layer.
+  - [x] Write back through `writeLabels` path; confirm modal, undoable brush strokes.
+  - [x] Help texts wired (`brush.size`, `brush.class`, `brush.fill`, `brush.write`); cheat-sheet entries.
+  - [x] Harness: `scenario-brush-drag.json` — drag paints points, assert codes and pixels, undo, write (57 tagged, 8295 painted pixels).
+  - Note: fill-on-click (single point cluster fill) is wired; `[`/`]` size keys work in brush mode.
 
 ---
 
@@ -410,13 +411,14 @@ Details are in the research notes of 2026-11-22.
   - **Style:** stroke and fill colour, width, opacity, dash, arrowhead; text font through the FontPicker.
   - **Placement:** shapes live in map coordinates (they move with zoom and pan, unlike callouts, which use screen offsets).
   - **Shape → tag:** points inside a closed shape can be tagged in one step.
-- **To-do:**
-  - [ ] Shape model (`atlas/shapes.ts`), persistence in the panel state, JSON export and import with annotations.
-  - [ ] Rendering: deck.gl `PolygonLayer` / `PathLayer` / `TextLayer`, and SVG handles for editing.
-  - [ ] Input mode and editing interactions (A1), undo (A3).
-  - [ ] Point-in-shape (reuse `pointsInPolygon`; ellipses and rectangles as polygons) → tag.
-  - [ ] PNG export and HTML viewer render shapes.
-  - [ ] Harness: draw, edit, tag-inside; pixel assertions.
+- **Done (B4):**
+  - [x] Shape model (`atlas/shapes.ts`), persistence in panel state, JSON export and import.
+  - [x] Rendering: SVG overlay layer (`ShapeLayer.svelte`) with polygon/polyline/text elements; deck.gl composite for PNG export.
+  - [x] Input mode and editing interactions: draw rect/ellipse/polygon/freehand/line/arrow/text, select, move, copy/paste, delete; undo for all.
+  - [x] Point-in-shape (`pointsInPolygon`; ellipses and rectangles converted to polygon) → `writeLabels` path.
+  - [x] PNG export and HTML viewer render shapes via `drawShapesOnCanvas` in `composite.ts`.
+  - [x] Harness: `scenario-shapes-drag.json` — draw rect over data, undo/redo move, fitView, rotation, tag 113 points inside, JSON round-trip, PNG pixel check.
+  - Note: resize handles render but resize drag not yet wired; vertex editing for polygon not yet wired; front/back z-order not yet implemented. These are polish items for a follow-up.
 
 ---
 

@@ -111,6 +111,8 @@ The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zo
 | Annotate | Typography, highlights, positions | Font, weight and weight range, wrap width, line spacing, halo, letter case; highlighted labels; reset dragged label positions | Rendering only |
 | Annotate | Title, annotations | Title, subtitle, font, size, color, logo; the list of point annotations (go to, rename, delete, export and import as JSON) | Rendering only; shown in exports |
 | Annotate | Tags | Tag the selected rows (writes a string column, `atlas_tag` by default) | Writes to the DataFrame after a confirmation |
+| Annotate | Brush | Paint over points with a size-adjustable brush to assign class labels; eraser (Alt), cluster fill; write to a new string column | Writes to the DataFrame after a confirmation |
+| Annotate | Shapes | Draw rectangles, ellipses, polygons, freehand lines, arrows and text on the map (map coordinates); select, move, copy/paste, delete; tag points inside a closed shape; JSON export and import | PNG and HTML exports include shapes |
 | Export | Image | Export PNG (with labels, outlines, annotations, title and glow) | |
 | Export | Interactive | HTML… (self-contained viewer with the data; sample, tooltip columns, images), Export with DataMapPlot | Save dialog |
 | Export | To the DataFrame | Add coordinates (`umap_x`, `umap_y`), new DataFrame from the selection | Kernel; asks before modifying the DataFrame |
