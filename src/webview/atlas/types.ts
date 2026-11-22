@@ -26,6 +26,14 @@ export interface ViewOptions {
   glowStrength?: number;
   /** Glow blur radius in CSS pixels (default 40). */
   glowRadius?: number;
+
+  // ---- B2: 3D data-frame overlays ----
+  /** Show a wireframe box around the entire 3D dataset as an orientation frame. */
+  show3DDataBox?: boolean;
+  /** Show a floor grid at the bottom of the 3D data box. */
+  show3DFloorGrid?: boolean;
+  /** Show the X/Y/Z orientation gizmo in the bottom corner of the 3D data box. */
+  show3DGizmo?: boolean;
 }
 
 export type Phase = 'loading' | 'preparing' | 'embedding' | 'ready' | 'error';

@@ -204,6 +204,13 @@ export interface LabelOptions {
   nameBy: 'number' | 'features' | number;
   /** Draw cluster outlines. */
   outlines: boolean;
+  /**
+   * Outline style for group boundaries (B2).
+   * 'hull' = convex hull polygon (2D only, default).
+   * 'box'  = axis-aligned bounding box (2D and 3D).
+   * In 3D the box is the only option (hulls are 2D-only).
+   */
+  outlineStyle?: 'hull' | 'box';
 
   // ---- A2 label typography ----
   /** Font family name, or '' / undefined to use the editor font. */
