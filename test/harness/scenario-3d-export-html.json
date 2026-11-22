@@ -1,0 +1,96 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 2000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 6, (4, 15))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 15)), columns=[f'x{i}' for i in range(15)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['title'] = [f'row_{i:04d}' for i in range(n)]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "switch to 3D and wait for layout",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": "a.dims === 3"
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 10000
+    },
+    {
+      "name": "wait for hit index",
+      "until": "a._3dScreenXY !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "export HTML in 3D (dark background)",
+      "eval": "const titleCol = a.describe.columns.find(c => c.name === 'title'); const clusterCol = a.describe.columns.find(c => c.name === 'cluster'); a.htmlExportOpen = true; a.exportHtml({ tooltipColumns: [titleCol.index, clusterCol.index], linkColumn: -1, maxChars: 200, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 30000,
+      "assert": [
+        "h.htmlExport.ok === true",
+        "h.htmlExport.nPoints >= 100",
+        "h.htmlExport.size > 50000"
+      ],
+      "report": "{ export: h.htmlExport }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 30000,
+      "openPageScreenshot": "3d-viewer-dark.png",
+      "checkOpenPagePixels": { "background": "#1e1e1e", "threshold": 20, "minCount": 200 },
+      "openPageSteps": [
+        {
+          "name": "viewer reports is3D = true",
+          "assert": "v.is3D === true",
+          "report": "{ is3D: v.is3D, nPoints: v.nPoints }"
+        },
+        {
+          "name": "point count is non-zero",
+          "assert": "v.nPoints >= 100"
+        },
+        {
+          "name": "legend has 4 categories",
+          "assert": "v.legendCategories >= 4"
+        },
+        {
+          "name": "hover on first point shows tooltip",
+          "eval": "v.triggerHover(0)",
+          "until": "v.showTooltip && v.tooltipTitle.length > 0",
+          "timeout": 5000,
+          "report": "{ showTooltip: v.showTooltip, title: v.tooltipTitle }"
+        },
+        {
+          "name": "tooltip title is row_0000",
+          "assert": "v.tooltipTitle === 'row_0000'"
+        },
+        {
+          "name": "canvas has drawn pixels (points are visible)",
+          "eval": "window.__px3d = await v.countDrawnPixels(20)",
+          "until": "window.__px3d !== undefined",
+          "assert": "window.__px3d > 100",
+          "report": "{ drawnPixels: window.__px3d }"
+        }
+      ]
+    },
+    {
+      "name": "export HTML in 3D (light background)",
+      "eval": "h.htmlExport = undefined; a.view.background = '#f5f5f5'; const titleCol = a.describe.columns.find(c => c.name === 'title'); a.htmlExportOpen = true; a.exportHtml({ tooltipColumns: [titleCol.index], linkColumn: -1, maxChars: 200, embedImages: false, samplePct: 100 })",
+      "until": "h.htmlExport !== undefined",
+      "timeout": 30000,
+      "assert": "h.htmlExport.ok === true",
+      "report": "{ export: h.htmlExport }",
+      "openPage": "h.htmlExport.url",
+      "openPageTimeout": 30000,
+      "openPageScreenshot": "3d-viewer-light.png",
+      "checkOpenPagePixels": { "background": "#f5f5f5", "threshold": 20, "minCount": 200 },
+      "openPageSteps": [
+        {
+          "name": "light 3D viewer loaded",
+          "assert": "v.is3D === true && v.bg === '#f5f5f5'",
+          "report": "{ is3D: v.is3D, bg: v.bg }"
+        }
+      ]
+    }
+  ]
+}

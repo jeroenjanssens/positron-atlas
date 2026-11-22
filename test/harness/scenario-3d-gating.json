@@ -45,15 +45,16 @@
       ]
     },
     {
-      "name": "export tab in 3D",
+      "name": "export tab in 3D \u2014 HTML enabled, DataMapPlot disabled",
       "eval": "a.ui.tab='export'",
       "settle": 600,
       "assert": [
-        "[...document.querySelectorAll('button')].filter(b => /HTML\u2026|Export with DataMapPlot|Copy as DataMapPlot/.test(b.textContent)).every(b => b.disabled)"
+        "[...document.querySelectorAll('button')].filter(b => /HTML\u2026/.test(b.textContent)).every(b => !b.disabled)",
+        "[...document.querySelectorAll('button')].filter(b => /Export with DataMapPlot|Copy as DataMapPlot/.test(b.textContent)).every(b => b.disabled)"
       ]
     },
     {
-      "name": "back to 2D re-enables",
+      "name": "back to 2D \u2014 HTML and DataMapPlot both enabled",
       "eval": "a.setDims(2)",
       "until": "a.dims === 2 && a.phase === 'ready'",
       "timeout": 120000,

@@ -1,0 +1,68 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nn = 2000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 6, (3, 15))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 15)), columns=[f'x{i}' for i in range(15)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "switch to 3D and wait for layout",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 120000,
+      "assert": "a.dims === 3"
+    },
+    {
+      "name": "wait for hit index",
+      "until": "a._3dScreenXY !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "perspective is the default",
+      "assert": [
+        "!a.view.orthographic3D",
+        "a.renderer && !a.renderer.isOrtho3D"
+      ],
+      "screenshot": "3d-perspective.png"
+    },
+    {
+      "name": "toggle to orthographic via setView",
+      "eval": "a.setView({ orthographic3D: true })",
+      "settle": 300,
+      "assert": [
+        "a.view.orthographic3D === true",
+        "a.renderer && a.renderer.isOrtho3D === true"
+      ],
+      "report": "{ ortho: a.view.orthographic3D, rendererOrtho: a.renderer ? a.renderer.isOrtho3D : null }",
+      "screenshot": "3d-orthographic.png"
+    },
+    {
+      "name": "toggle back to perspective",
+      "eval": "a.setView({ orthographic3D: false })",
+      "settle": 200,
+      "assert": [
+        "!a.view.orthographic3D",
+        "a.renderer && !a.renderer.isOrtho3D"
+      ]
+    },
+    {
+      "name": "depth fade is off by default",
+      "assert": "!a.view.depthFade"
+    },
+    {
+      "name": "enable depth fade",
+      "eval": "a.setView({ depthFade: true })",
+      "settle": 300,
+      "assert": "a.view.depthFade === true",
+      "report": "{ depthFade: a.view.depthFade }",
+      "screenshot": "3d-depth-fade.png"
+    },
+    {
+      "name": "disable depth fade",
+      "eval": "a.setView({ depthFade: false })",
+      "settle": 200,
+      "assert": "!a.view.depthFade"
+    }
+  ]
+}
