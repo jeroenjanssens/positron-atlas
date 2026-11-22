@@ -120,12 +120,16 @@ export function onWorker(atlas: Atlas, m: WorkerOut): void {
       break;
     case 'frame':
       atlas.anchorXY = m.embedding;
+      // Every frame is a new layout: keep following it until the user moves the view
+      // (renderer.fit skips fitting after manual navigation).
+      atlas.autoFit = true;
       atlas.paused = false;
       atlas.umapProgress = { stage: 'optimizing', progress: 1, epoch: m.epoch, total: m.total };
       atlas.render();
       break;
     case 'paused':
       atlas.anchorXY = m.embedding;
+      atlas.autoFit = true;
       atlas.paused = true;
       atlas.hit = null;
       atlas.umapProgress = { stage: 'paused', progress: 1, epoch: m.epoch, total: m.total };
@@ -133,6 +137,7 @@ export function onWorker(atlas: Atlas, m: WorkerOut): void {
       break;
     case 'done':
       atlas.anchorXY = m.embedding;
+      atlas.autoFit = true;
       atlas.paused = false;
       if (m.seconds) {
         atlas.timings = atlas.liveRun ? { ...atlas.timings, update: m.seconds } : { ...atlas.timings, umap: m.seconds, update: 0 };

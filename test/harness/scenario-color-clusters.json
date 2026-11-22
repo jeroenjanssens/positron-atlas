@@ -13,6 +13,14 @@
       "timeout": 120000
     },
     {
+      "name": "the live layout is fitted: every point is inside the map",
+      "eval": "await new Promise(r => setTimeout(r, 300))",
+      "assert": [
+        "(() => { const xy = a.anchorXY, n = a.prepared.nAnchors, c = a.renderer.container; let out = 0; for (let i = 0; i < n; i += 7) { const p = a.renderer.projectWorld(xy[2*i], xy[2*i+1]); if (!p || p[0] < 0 || p[1] < 0 || p[0] > c.clientWidth || p[1] > c.clientHeight) out++; } return out === 0; })()"
+      ],
+      "report": "(() => { const xy = a.anchorXY, n = a.prepared.nAnchors; let x0 = 1e9, x1 = -1e9; for (let i = 0; i < n; i++) { const p = a.renderer.projectWorld(xy[2*i], xy[2*i+1]); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); } return { x0: Math.round(x0), x1: Math.round(x1) }; })()"
+    },
+    {
       "name": "open annotate tab and run automatic clusters",
       "eval": "document.querySelector('#tab-annotate').click(); await new Promise(r => setTimeout(r, 200)); const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
       "until": "a.clusterCount > 0 && !a.clustering",
