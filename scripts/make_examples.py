@@ -1111,11 +1111,11 @@ else:
             # Keep only the first (recommended) protein name: text before " (".
             pl.col("title").str.replace(r"\\s*\\(.*", "").alias("title"),
             # Keep only the first gene name.
-            pl.col("gene").str.splitn(" ", 2).list.first().alias("gene"),
+            pl.col("gene").str.split(" ").list.first().alias("gene"),
             # Shorten organism name: "Homo sapiens (Human)" → "Homo sapiens".
             pl.col("organism").str.replace(r"\\s*\\(.*", "").alias("organism"),
             # Keep only the first protein family.
-            pl.col("family").str.splitn(",", 2).list.first().alias("family"),
+            pl.col("family").str.split(",").list.first().alias("family"),
             pl.col("length").cast(pl.Int32),
         )
     )
