@@ -320,6 +320,19 @@ export function updateLabels(atlas: Atlas): void {
   const dragOffsets = opts.dragOffsets ?? {};
   const wpp = atlas.renderer.worldPerPixel();
 
+  // ---- Zoom-dependent fine label opacity (A8) ----
+  // Fine labels fade in between fittedZoom+1 and fittedZoom+1.5.
+  // At the overview zoom, fine labels are invisible; they appear as the user zooms in.
+  let fineAlpha = 1; // 0=invisible, 1=fully visible
+  if (finePlaced.length > 0) {
+    const fz = atlas.fittedZoom; // atlas.fittedZoom is preserved (harness-accessible)
+    const cz = atlas.renderer.currentZoom();
+    if (Number.isFinite(fz)) {
+      const delta = cz - (fz + 1.0); // positive once zoomed in past threshold
+      fineAlpha = Math.min(1, Math.max(0, delta / 0.5)); // fade over 0.5 zoom levels
+    }
+  }
+
   // ---- Highlight groups (A9) ----
   const highlightSet = new Set(opts.highlightGroups ?? []);
 
@@ -362,26 +375,31 @@ export function updateLabels(atlas: Atlas): void {
   }
 
   // ---- Add fine labels (A8) ----
-  for (let i = 0; i < finePlaced.length; i++) {
-    const l = finePlaced[i];
-    const rawText = l.text === '' ? '(empty)' : l.text;
-    const text = applyCase(rawText);
-    const offset = dragOffsets[rawText];
-    const position: [number, number] = offset
-      ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
-      : [l.x, l.y];
+  // Skip entirely when alpha is 0 (at overview zoom, avoids polluting collision budget).
+  if (fineAlpha > 0) {
+    const fineA = Math.round(255 * fineAlpha);
+    for (let i = 0; i < finePlaced.length; i++) {
+      const l = finePlaced[i];
+      const rawText = l.text === '' ? '(empty)' : l.text;
+      const text = applyCase(rawText);
+      const offset = dragOffsets[rawText];
+      const position: [number, number] = offset
+        ? [l.x + offset[0] * wpp, l.y - offset[1] * wpp]
+        : [l.x, l.y];
 
-    const isHighlighted = highlightSet.has(rawText);
-    out.push({
-      text,
-      position,
-      size: fineSizes[i],
-      color: isHighlighted ? [255, 255, 255, 255] : plain,
-      priority: allPriorities[counts.length + i],
-      weight: fineWeights[i],
-      badge: isHighlighted ? ([...plain.slice(0, 3), 200] as [number, number, number, number]) : undefined,
-      key: rawText,
-    });
+      const isHighlighted = highlightSet.has(rawText);
+      const baseColor: [number, number, number, number] = [plain[0], plain[1], plain[2], fineA];
+      out.push({
+        text,
+        position,
+        size: fineSizes[i],
+        color: isHighlighted ? [255, 255, 255, fineA] : baseColor,
+        priority: allPriorities[counts.length + i],
+        weight: fineWeights[i],
+        badge: isHighlighted ? ([...plain.slice(0, 3), Math.round(200 * fineAlpha)] as [number, number, number, number]) : undefined,
+        key: rawText,
+      });
+    }
   }
 
   atlas.labelCount = out.length;

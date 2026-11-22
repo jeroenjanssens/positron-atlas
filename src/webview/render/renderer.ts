@@ -78,6 +78,8 @@ export class ScatterRenderer {
   private userMoved = false;
   labels: MapLabel[] = [];
   private outlines: [number, number][][] = [];
+  /** Zoom level set by the last fit() call. Used for zoom-dependent fine-label visibility (A8). */
+  fittedZoom: number = -Infinity;
   private outlineColor: [number, number, number] = [200, 200, 200];
   private labelStyle: LabelStyle = { outline: [30, 30, 30, 255], fontFamily: 'sans-serif' };
   private readonly collision = new CollisionFilterExtension();
@@ -229,6 +231,11 @@ export class ScatterRenderer {
     return Math.pow(2, -(this.viewState.zoom as number));
   }
 
+  /** Current zoom level. */
+  currentZoom(): number {
+    return typeof this.viewState.zoom === 'number' ? this.viewState.zoom : 0;
+  }
+
   setStyle(style: Partial<RenderStyle>): void {
     this.style = { ...this.style, ...style };
     this.render();
@@ -300,6 +307,7 @@ export class ScatterRenderer {
     // Shift the center left so the data sits in the area not covered by the legend.
     const cx = (b[0] + b[2]) / 2 + pad / 2 / scale;
     this.viewState = { target: [cx, (b[1] + b[3]) / 2, 0], zoom };
+    this.fittedZoom = zoom; // A8: record overview zoom for fine-label threshold
     this.deck.setProps({ viewState: this.viewState as any });
   }
 

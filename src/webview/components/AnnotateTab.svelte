@@ -6,6 +6,7 @@
   import Info from './controls/Info.svelte';
   import Select from './controls/Select.svelte';
   import NumberInput from './controls/NumberInput.svelte';
+  import FontPicker from './controls/FontPicker.svelte';
   import { formatCount } from '../logic';
 
   let { atlas }: { atlas: Atlas } = $props();
@@ -29,12 +30,6 @@
   // A9: highlight groups text input
   let highlightInput = $state('');
 
-  // A2: bundled font families for the picker
-  const BUNDLED_FONTS = [
-    'Cinzel', 'Playfair Display SC', 'Marcellus SC',
-    'Montserrat', 'Roboto', 'Roboto Condensed', 'Inter', 'JetBrains Mono',
-  ];
-
   function onLabelChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
     atlas.setLabelSource(v === '' ? null : v === 'clusters' ? 'clusters' : Number(v));
@@ -42,10 +37,6 @@
   function onNameByChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
     atlas.setLabelOptions({ nameBy: v === 'number' || v === 'features' ? v : Number(v) });
-  }
-  function onFontChange(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
-    atlas.setLabelOptions({ fontFamily: v });
   }
   function onFineColumnChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
@@ -180,15 +171,10 @@
 
 <!-- A2: Label Typography -->
 <Section {atlas} id="labelTypography" title="Label typography">
-  <!-- Font family picker -->
+  <!-- Font family picker (D11: bundled + Google Fonts catalogue + installed) -->
   <div class="select">
     <span>Font <Info id="labels.fontFamily" /></span>
-    <Select value={atlas.labels.fontFamily ?? ''} ariaLabel="Label font" onchange={onFontChange}>
-      <option value="">Editor font (default)</option>
-      <optgroup label="Bundled fonts">
-        {#each BUNDLED_FONTS as f}<option value={f}>{f}</option>{/each}
-      </optgroup>
-    </Select>
+    <FontPicker value={atlas.labels.fontFamily ?? ''} ariaLabel="Label font" onchange={(f) => atlas.setLabelOptions({ fontFamily: f })} />
   </div>
   <!-- Base weight (shown as a weight slider) -->
   <Slider label="Font weight" value={atlas.labels.fontWeight ?? 600} min={100} max={900} step={100}

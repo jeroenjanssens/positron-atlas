@@ -278,6 +278,8 @@ export class Atlas {
   /** Extended: includes prepIdx for hover ring and cache lookups. */
   pendingHover: { x: number; y: number; prepIdx?: number } | null = null;
   autoFit = true;
+  /** Overview zoom set by the last fit() call; used for zoom-dependent fine-label visibility (A8). */
+  fittedZoom: number = -Infinity;
   liveRun = false;
   inbox: Promise<void> = Promise.resolve();
   gpuProbe: Promise<boolean> = probeWebGpu();

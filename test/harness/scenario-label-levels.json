@@ -15,71 +15,93 @@
         "a.labelCount > 0",
         "a.renderer.labels.length > 0"
       ],
-      "report": "{ clusterCount: a.clusterCount, labelCount: a.labelCount }",
+      "report": "{ clusterCount: a.clusterCount, labelCount: a.labelCount, fittedZoom: a.fittedZoom }",
       "screenshot": "label-levels-coarse.png"
     },
     {
       "name": "enable two levels of detail (A8 multi-level)",
-      "eval": "const cb = document.querySelector('[data-section=labels] input[type=checkbox]'); if (cb && !a.labels.multiLevel) { cb.click(); } else { a.setLabelOptions({ multiLevel: true }); }",
+      "eval": "a.setLabelOptions({ multiLevel: true })",
       "until": "a.labels.multiLevel === true",
       "timeout": 5000,
       "assert": [
         "a.labels.multiLevel === true"
-      ],
-      "report": "{ multiLevel: a.labels.multiLevel }"
+      ]
     },
     {
-      "name": "fine clusters are computed when multi-level is on",
-      "until": "a.clusterFine !== null || a.clusterFine === null",
+      "name": "fine clusters are computed",
+      "until": "a.clusterFine !== null",
       "timeout": 30000,
-      "report": "{ hasFineClusters: a.clusterFine !== null, fineK: a.clusterFine?.k, totalLabels: a.labelCount }",
-      "screenshot": "label-levels-two.png"
+      "report": "{ hasFineClusters: a.clusterFine !== null, fineK: a.clusterFine?.k, coarseK: a.clusterCount, fittedZoom: a.fittedZoom }"
     },
     {
-      "name": "coarse labels render (pixels present)",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__levelsPixels = n",
-      "until": "window.__levelsPixels !== undefined",
-      "assert": "window.__levelsPixels > 500",
-      "report": "{ drawnPixels: window.__levelsPixels }"
-    },
-    {
-      "name": "zoom in by 2 levels: programmatic view change triggers label refresh",
-      "eval": "const vs = a.renderer['viewState']; const newZoom = (vs.zoom || 0) + 2; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 500))",
+      "name": "AT OVERVIEW ZOOM: only coarse labels are drawn (fine alpha=0)",
+      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: fz }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
       "until": "true",
+      "assert": [
+        "a.fittedZoom > -Infinity",
+        "a.renderer.labels.length === a.clusterCount"
+      ],
+      "report": "{ zoom: a.renderer['viewState'].zoom, fittedZoom: a.fittedZoom, labelCount: a.renderer.labels.length, coarseOnly: a.renderer.labels.length === a.clusterCount }",
+      "screenshot": "label-levels-overview.png"
+    },
+    {
+      "name": "overview export: count non-black pixels (coarse labels only)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__overviewPixels = n",
+      "until": "window.__overviewPixels !== undefined",
+      "assert": "window.__overviewPixels > 200",
+      "report": "{ overviewPixels: window.__overviewPixels }"
+    },
+    {
+      "name": "ZOOM IN past threshold (fittedZoom+1.5): fine labels appear",
+      "eval": "const fz = a.fittedZoom; const newZoom = fz + 1.8; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 600))",
+      "until": "a.renderer.labels.length > a.clusterCount",
       "timeout": 5000,
-      "report": "{ zoom: a.renderer['viewState'].zoom, labelCount: a.labelCount }",
+      "assert": [
+        "a.renderer.labels.length > a.clusterCount",
+        "a.clusterFine !== null",
+        "a.renderer.labels.length === a.clusterCount + a.clusterFine.k"
+      ],
+      "report": "{ zoom: a.renderer['viewState'].zoom, labelCount: a.renderer.labels.length, coarseCount: a.clusterCount, fineCount: a.clusterFine?.k }",
       "screenshot": "label-levels-zoomed-in.png"
     },
     {
-      "name": "zoom out: programmatic view change",
-      "eval": "const vs = a.renderer['viewState']; const newZoom = (vs.zoom || 0) - 4; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 500))",
-      "until": "true",
+      "name": "zoomed-in export: labels are visible (pixels present)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 60) n++; window.__zoomedPixels = n",
+      "until": "window.__zoomedPixels !== undefined",
+      "assert": ["window.__zoomedPixels > 200", "a.renderer.labels.length === a.clusterCount + (a.clusterFine ? a.clusterFine.k : 0)"],
+      "report": "{ zoomedPixels: window.__zoomedPixels, labelCount: a.renderer.labels.length, coarseCount: a.clusterCount, fineCount: a.clusterFine?.k }"
+    },
+    {
+      "name": "zoom back to overview: fine labels disappear",
+      "eval": "const fz = a.fittedZoom; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: fz }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(fz); await new Promise(r => setTimeout(r, 600))",
+      "until": "a.renderer.labels.length === a.clusterCount",
       "timeout": 5000,
-      "report": "{ zoom: a.renderer['viewState'].zoom, labelCount: a.labelCount }",
+      "assert": [
+        "a.renderer.labels.length === a.clusterCount"
+      ],
+      "report": "{ labelCount: a.renderer.labels.length, coarseCount: a.clusterCount }",
       "screenshot": "label-levels-zoomed-out.png"
+    },
+    {
+      "name": "zoom in again and verify collision priorities: coarse always beats fine",
+      "eval": "const fz = a.fittedZoom; const newZoom = fz + 2; const vs = a.renderer['viewState']; a.renderer['viewState'] = { ...vs, zoom: newZoom }; a.renderer['deck'].setProps({ viewState: a.renderer['viewState'] }); a.renderer['viewChangeCallback']?.(newZoom); await new Promise(r => setTimeout(r, 600)); const coarseLabels = a.renderer.labels.filter((l, i) => i < a.clusterCount); const fineLabels = a.renderer.labels.filter((l, i) => i >= a.clusterCount); const minCoarse = coarseLabels.length ? Math.min(...coarseLabels.map(l => l.priority ?? 0)) : 0; const maxFine = fineLabels.length ? Math.max(...fineLabels.map(l => l.priority ?? 0)) : -Infinity; window.__priorityOk = coarseLabels.length > 0 && fineLabels.length > 0 && minCoarse > maxFine",
+      "until": "window.__priorityOk !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__priorityOk === true"
+      ],
+      "report": "{ priorityOk: window.__priorityOk, coarseCount: a.clusterCount, fineCount: a.clusterFine?.k, totalLabels: a.renderer.labels.length }"
     },
     {
       "name": "disable multi-level: fine clusters cleared",
       "eval": "a.setLabelOptions({ multiLevel: false })",
-      "until": "a.labels.multiLevel === false",
+      "until": "a.labels.multiLevel === false && a.clusterFine === null",
       "timeout": 30000,
       "assert": [
-        "a.labels.multiLevel === false"
+        "a.labels.multiLevel === false",
+        "a.clusterFine === null"
       ],
       "report": "{ multiLevel: a.labels.multiLevel, clusterFine: a.clusterFine }"
-    },
-    {
-      "name": "collision priority: coarse labels have higher priority than fine labels",
-      "eval": "a.setLabelOptions({ multiLevel: true })",
-      "until": "a.labels.multiLevel === true",
-      "timeout": 5000
-    },
-    {
-      "name": "verify collision priorities: coarse >= fine",
-      "until": "a.labelCount > a.clusterCount || a.clusterFine === null",
-      "timeout": 30000,
-      "eval": "if (a.clusterFine && a.labelCount > a.clusterCount) { const coarseLabels = a.renderer.labels.slice(0, a.clusterCount); const fineLabels = a.renderer.labels.slice(a.clusterCount); const minCoarse = Math.min(...coarseLabels.map(l => l.priority ?? 0)); const maxFine = Math.max(...fineLabels.map(l => l.priority ?? 0)); window.__priorityOk = minCoarse > maxFine; } else { window.__priorityOk = null; }",
-      "report": "{ coarseCount: a.clusterCount, fineCount: a.clusterFine ? a.clusterFine.k : 0, totalLabels: a.labelCount, priorityOk: window.__priorityOk }"
     }
   ]
 }

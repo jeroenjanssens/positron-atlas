@@ -77,6 +77,7 @@ export function render(atlas: Atlas): void {
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth());
+    atlas.fittedZoom = atlas.renderer.fittedZoom; // A8: track for zoom-dependent fine labels
   }
 }
 
@@ -84,6 +85,7 @@ export function fitView(atlas: Atlas): void {
   if (atlas.anchorXY && atlas.prepared) {
     atlas.autoFit = true;
     atlas.renderer?.fit(bounds(atlas.anchorXY, atlas.prepared.nAnchors), true, atlas.legendWidth());
+    if (atlas.renderer) atlas.fittedZoom = atlas.renderer.fittedZoom; // A8
   }
 }
 
