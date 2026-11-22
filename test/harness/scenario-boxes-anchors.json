@@ -1,0 +1,58 @@
+{
+  "description": "B2: 2D bounding-box coverage assertion for anchors-only layout (all rows are anchors, no nearest-neighbour projection).",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(7)\nk = rng.integers(0, 4, 1200)\ncenters = rng.normal(0, 8, (4, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (1200, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "settings": {},
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready (anchors-only: projection === none)",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000,
+      "assert": [
+        "a.projection === 'none'"
+      ],
+      "report": "{ phase: a.phase, projection: a.projection, nAnchors: a.prepared?.nAnchors, nKept: a.nKept }"
+    },
+    {
+      "name": "annotate tab",
+      "click": "#tab-annotate",
+      "until": "a.ui.tab === 'annotate'"
+    },
+    {
+      "name": "enable automatic clusters",
+      "eval": "const s = document.querySelector('select[aria-label=\"Label by\"]'); s.value = 'clusters'; s.dispatchEvent(new Event('change', { bubbles: true }))",
+      "until": "a.clusterCount > 0 && a.labelCount === a.clusterCount",
+      "timeout": 30000,
+      "assert": [
+        "a.clusterCount >= 2",
+        "a.labels.clusters === true"
+      ],
+      "report": "{ k: a.clusterCount, codesLen: a.cluster?.codes?.length, codesAnchorsLen: a.cluster?.codesAnchors?.length }"
+    },
+    {
+      "name": "enable box outlines",
+      "eval": "const cb = document.querySelector('input[type=checkbox][aria-label=\"Show outlines\"]') || Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Show outlines'))?.querySelector('input'); if (cb && !cb.checked) { cb.click(); } const s = document.querySelector('select[aria-label=\"Outline style\"]'); if (s) { s.value = 'box'; s.dispatchEvent(new Event('change', { bubbles: true })); }",
+      "until": "a.labels.outlines === true",
+      "timeout": 5000,
+      "report": "{ outlines: a.labels.outlines, outlineStyle: a.labels.outlineStyle }"
+    },
+    {
+      "name": "boxes are rendered (non-background pixels)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__boxPxA = n;",
+      "until": "window.__boxPxA !== undefined",
+      "assert": [ "window.__boxPxA > 100" ],
+      "report": "{ nonBlackPx: window.__boxPxA }",
+      "screenshot": "boxes-anchors-only.png"
+    },
+    {
+      "name": "coverage >=95%: anchor-only cluster members inside their 2D box (1st-99th percentile per axis, joint ~96%)",
+      "eval": "const proj = a.projection; const xy = a.anchorXY; const codes = a.cluster?.codesAnchors; const names = a.clusterNames; const kk = a.clusterCount; const nd = a.dims; const placed = xy ? Math.floor(xy.length / nd) : 0; const boxes2D = a.renderer.boxes2D; let fail = null; const stats = []; if (boxes2D && xy && codes && kk > 0 && placed > 0) { for (const box of boxes2D) { if (!box.extent || !box.label) continue; const ci = names ? names.indexOf(box.label) : -1; if (ci < 0) continue; let inside = 0, total = 0; for (let i = 0; i < placed; i++) { if (codes[i] !== ci) continue; total++; const x = xy[nd*i], y = xy[nd*i+1]; const [x0,y0,x1,y1] = box.extent; if (x>=x0 && x<=x1 && y>=y0 && y<=y1) inside++; } const pct = total > 10 ? inside / total : 1; stats.push({ label: box.label, inside, total, pct: Math.round(pct*1000)/10 }); if (pct < 0.95 && !fail) fail = { label: box.label, inside, total, pct: Math.round(pct*1000)/10 + '%' }; } } window.__covAnchors = { ok: fail === null, fail, stats, proj, placed };",
+      "until": "window.__covAnchors !== undefined",
+      "assert": [
+        "window.__covAnchors.fail === null"
+      ],
+      "report": "window.__covAnchors"
+    }
+  ]
+}

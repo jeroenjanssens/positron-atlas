@@ -84,6 +84,15 @@
       "assert": [ "window.__px3dClusters > 100" ],
       "report": "{ px3dClusters: window.__px3dClusters }",
       "screenshot": "boxes-3d-clusters-boxes.png"
+    },
+    {
+      "name": "coverage >=95%: each cluster's drawn points are inside its 3D box (0.5th-99.5th percentile per axis, joint ~97%)",
+      "eval": "const proj = a.projection; const xy = (proj === 'done') && a.allXY ? a.allXY : a.anchorXY; const codes = (proj === 'done') && a.allXY ? a.cluster?.codes : a.cluster?.codesAnchors; const names = a.clusterNames; const kk = a.clusterCount; const nd = 3; const placed = xy ? (a.allXY === xy ? a.placedRows : Math.floor(a.anchorXY.length / nd)) : 0; const boxes3D = a.renderer.boxes3D; let fail = null; const stats = []; if (boxes3D && xy && codes && kk > 0 && placed > 0) { for (const box of boxes3D) { if (!box.extent || !box.label) continue; const ci = names ? names.indexOf(box.label) : -1; if (ci < 0) continue; let inside = 0, total = 0; for (let i = 0; i < placed; i++) { if (codes[i] !== ci) continue; total++; const x = xy[nd*i], y = xy[nd*i+1], z = xy[nd*i+2]; const [x0,y0,z0,x1,y1,z1] = box.extent; if (x>=x0 && x<=x1 && y>=y0 && y<=y1 && z>=z0 && z<=z1) inside++; } const pct = total > 10 ? inside / total : 1; stats.push({ label: box.label, inside, total, pct: Math.round(pct*1000)/10 }); if (pct < 0.95 && !fail) fail = { label: box.label, inside, total, pct: Math.round(pct*1000)/10 + '%' }; } } window.__cov3D = { ok: fail === null, fail, stats, proj, placed };",
+      "until": "window.__cov3D !== undefined",
+      "assert": [
+        "window.__cov3D.fail === null"
+      ],
+      "report": "window.__cov3D"
     }
   ]
 }

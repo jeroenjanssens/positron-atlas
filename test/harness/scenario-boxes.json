@@ -54,6 +54,15 @@
       "report": "{ clusterCount: a.clusterCount, outlines: a.labels.outlines, outlineStyle: a.labels.outlineStyle }"
     },
     {
+      "name": "coverage >=95%: each cluster's drawn points are inside its 2D box (projected layout, 1st-99th percentile)",
+      "eval": "const proj = a.projection; const xy = (proj === 'done') && a.allXY ? a.allXY : a.anchorXY; const codes = (proj === 'done') && a.allXY ? a.cluster?.codes : a.cluster?.codesAnchors; const names = a.clusterNames; const k = a.clusterCount; const nd = a.dims; const placed = xy ? (a.allXY === xy ? a.placedRows : Math.floor(a.anchorXY.length / nd)) : 0; const boxes2D = a.renderer.boxes2D; let fail = null; const stats = []; if (boxes2D && xy && codes && k > 0 && placed > 0) { for (const box of boxes2D) { if (!box.extent || !box.label) continue; const ci = names ? names.indexOf(box.label) : -1; if (ci < 0) continue; let inside = 0, total = 0; for (let i = 0; i < placed; i++) { if (codes[i] !== ci) continue; total++; const x = xy[nd * i], y = xy[nd * i + 1]; const [x0, y0, x1, y1] = box.extent; if (x >= x0 && x <= x1 && y >= y0 && y <= y1) inside++; } const pct = total > 10 ? inside / total : 1; stats.push({ label: box.label, inside, total, pct: Math.round(pct * 1000) / 10 }); if (pct < 0.95 && !fail) fail = { label: box.label, inside, total, pct: Math.round(pct * 1000) / 10 + '%' }; } } window.__cov2D = { ok: fail === null, fail, stats, proj, placed };",
+      "until": "window.__cov2D !== undefined",
+      "assert": [
+        "window.__cov2D.fail === null"
+      ],
+      "report": "window.__cov2D"
+    },
+    {
       "name": "rotate map 30 degrees and verify boxes rotate with the map",
       "eval": "a.setRotation2D(30)",
       "assert": [

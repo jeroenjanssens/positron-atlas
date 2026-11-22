@@ -9,6 +9,7 @@ import { isRebuild, liveChanges } from '../logic';
 import { vscode } from '../vscode';
 import { updateMapColors } from './colors';
 import { refreshClusters } from './clusters';
+import { scheduleLabels } from './labels';
 
 export function createWorker(atlas: Atlas): void {
   atlas.worker?.terminate();
@@ -126,6 +127,7 @@ export function onWorker(atlas: Atlas, m: WorkerOut): void {
       atlas.paused = false;
       atlas.umapProgress = { stage: 'optimizing', progress: 1, epoch: m.epoch, total: m.total };
       atlas.render();
+      scheduleLabels(atlas);
       break;
     case 'paused':
       atlas.anchorXY = m.embedding;
@@ -134,6 +136,7 @@ export function onWorker(atlas: Atlas, m: WorkerOut): void {
       atlas.hit = null;
       atlas.umapProgress = { stage: 'paused', progress: 1, epoch: m.epoch, total: m.total };
       atlas.render();
+      scheduleLabels(atlas);
       break;
     case 'done':
       atlas.anchorXY = m.embedding;

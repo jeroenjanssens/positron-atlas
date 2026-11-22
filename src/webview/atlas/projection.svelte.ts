@@ -7,6 +7,7 @@ import type { FileRef } from '../../shared/protocol';
 import { vscode, fetchTyped, float32ToBytes } from '../vscode';
 import { updateMapColors } from './colors';
 import { refreshClusters } from './clusters';
+import { scheduleLabels } from './labels';
 import { stopWorker } from './umap.svelte';
 
 export function project(atlas: Atlas): void {
@@ -146,4 +147,5 @@ export async function onXYChunk(atlas: Atlas, file: FileRef): Promise<void> {
   atlas.allXY.set(xy, offset * atlas.dims);
   atlas.placedRows = Math.max(atlas.placedRows, offset + xy.length / atlas.dims);
   atlas.render();
+  scheduleLabels(atlas);
 }

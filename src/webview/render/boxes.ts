@@ -61,8 +61,8 @@ export function percentileVal(sorted: number[], p: number): number {
  * @param codes     u16 group code per point; codes >= k are "no group" (noise/unlabelled).
  * @param k         Number of groups.
  * @param stride    2 or 3 (number of values per point in `positions`).
- * @param pLo       Lower percentile (default 0.02).
- * @param pHi       Upper percentile (default 0.98).
+ * @param pLo       Lower percentile (default 0.01).
+ * @param pHi       Upper percentile (default 0.99).
  * @returns Array of length k; null for groups with no points.
  */
 export function groupExtents2D(
@@ -70,8 +70,8 @@ export function groupExtents2D(
   codes: Uint16Array,
   k: number,
   stride: 2 | 3 = 2,
-  pLo = 0.02,
-  pHi = 0.98,
+  pLo = 0.01,
+  pHi = 0.99,
 ): Array<Extent2D | null> {
   const xs: number[][] = Array.from({ length: k }, () => []);
   const ys: number[][] = Array.from({ length: k }, () => []);
@@ -103,16 +103,16 @@ export function groupExtents2D(
  * @param positions Interleaved x,y,z positions (stride always 3).
  * @param codes     u16 group code per point; >= k means no group.
  * @param k         Number of groups.
- * @param pLo       Lower percentile (default 0.02).
- * @param pHi       Upper percentile (default 0.98).
+ * @param pLo       Lower percentile (default 0.005).
+ * @param pHi       Upper percentile (default 0.995).
  * @returns Array of length k; null for groups with no points.
  */
 export function groupExtents3D(
   positions: Float32Array,
   codes: Uint16Array,
   k: number,
-  pLo = 0.02,
-  pHi = 0.98,
+  pLo = 0.005,
+  pHi = 0.995,
 ): Array<Extent3D | null> {
   const xs: number[][] = Array.from({ length: k }, () => []);
   const ys: number[][] = Array.from({ length: k }, () => []);
