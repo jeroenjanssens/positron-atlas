@@ -105,12 +105,11 @@ describe('groupExtents2D', () => {
     const extents = groupExtents2D(positions, codes, 1, 3);
     expect(extents[0]).not.toBeNull();
     const [x0, y0, x1, y1] = extents[0]!;
-    // With 2 points sorted = [1, 3], pLo=0.02 → idx=0.02 → 1 + 2*0.02 = 1.04
-    // pHi=0.98 → idx=0.98 → 1 + 2*0.98 = 2.96
-    expect(x0).toBeCloseTo(1.04, 5);
-    expect(y0).toBeCloseTo(2.04, 5);
-    expect(x1).toBeCloseTo(2.96, 5);
-    expect(y1).toBeCloseTo(3.96, 5);
+    // 2 points, sorted x = [1, 3]: default percentiles 0.01 and 0.99 interpolate to 1.02 and 2.98.
+    expect(x0).toBeCloseTo(1.02, 5);
+    expect(y0).toBeCloseTo(2.02, 5);
+    expect(x1).toBeCloseTo(2.98, 5);
+    expect(y1).toBeCloseTo(3.98, 5);
   });
 
   it('handles 1M points in < 2 seconds (performance smoke test)', () => {
@@ -155,15 +154,14 @@ describe('groupExtents3D', () => {
     const positions = new Float32Array([0, 0, 0, 10, 10, 10]);
     const codes = new Uint16Array([0, 0]);
     const extents = groupExtents3D(positions, codes, 1);
-    // With pLo=0.02, pHi=0.98 and only 2 points:
-    // sorted X = [0, 10]: p=0.02 → idx=0.02, val=0+10*0.02=0.2; p=0.98 → val=9.8
+    // sorted x = [0, 10]: default 3D percentiles 0.005 and 0.995 interpolate to 0.05 and 9.95.
     const [x0, y0, z0, x1, y1, z1] = extents[0]!;
-    expect(x0).toBeCloseTo(0.2);
-    expect(y0).toBeCloseTo(0.2);
-    expect(z0).toBeCloseTo(0.2);
-    expect(x1).toBeCloseTo(9.8);
-    expect(y1).toBeCloseTo(9.8);
-    expect(z1).toBeCloseTo(9.8);
+    expect(x0).toBeCloseTo(0.05);
+    expect(y0).toBeCloseTo(0.05);
+    expect(z0).toBeCloseTo(0.05);
+    expect(x1).toBeCloseTo(9.95);
+    expect(y1).toBeCloseTo(9.95);
+    expect(z1).toBeCloseTo(9.95);
   });
 
   it('ignores points with codes >= k', () => {
