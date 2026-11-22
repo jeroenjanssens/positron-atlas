@@ -1,29 +1,37 @@
 {
-  "description": "Navigation presets e2e: ? opens cheat sheet, cheat sheet DOM is present, platform is set from host.",
+  "description": "Cheat sheet in real Positron: focus the map with a real click, press ? (the contributed keybinding), and the cheat sheet opens with the host's platform; R fits the view.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 4, 3000)\ndf = pd.DataFrame(rng.normal(0, 1, (3000, 8)) + k[:, None] * 4, columns=[f'x{i}' for i in range(8)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
   "steps": [
     {
-      "name": "press ? to open cheat sheet",
-      "eval": "window.__harness?.dispatch('view.showControls') ?? (a.cheatSheetVisible = true)",
-      "until": "a.cheatSheetVisible === true",
+      "name": "focus the map with a real click",
+      "clickMap": true,
+      "until": "document.hasFocus()",
+      "timeout": 5000
+    },
+    {
+      "name": "press ? (Shift+/): the keybinding opens the cheat sheet",
+      "key": "?",
+      "code": "Slash",
+      "modifiers": 8,
+      "until": "a.cheatSheetVisible === true && document.querySelector('.cheat-sheet') !== null",
       "timeout": 5000,
-      "report": "{ cheatSheetVisible: a.cheatSheetVisible }"
+      "report": "{ platform: a.platform, rows: document.querySelectorAll('.cheat-sheet tr').length }",
+      "screenshot": "e2e-cheatsheet.png"
     },
     {
-      "name": "cheat sheet DOM is present",
-      "until": "document.querySelector('.cheat-sheet') !== null",
+      "name": "platform comes from the host",
+      "until": "a.platform === 'darwin'",
       "timeout": 2000
     },
     {
-      "name": "platform is set from host",
-      "until": "a.platform !== '' && a.platform !== undefined",
-      "timeout": 2000,
-      "report": "{ platform: a.platform }"
-    },
-    {
-      "name": "close cheat sheet",
-      "eval": "a.cheatSheetVisible = false",
-      "until": "a.cheatSheetVisible === false",
-      "timeout": 2000
+      "name": "press R: fits the view through the keybinding",
+      "eval": "a.renderer.adjustZoom(2); window.__z = a.renderer.viewState.zoom",
+      "key": "r",
+      "code": "KeyR",
+      "until": "a.renderer.viewState.zoom < window.__z - 1",
+      "timeout": 5000,
+      "report": "{ before: window.__z, after: a.renderer.viewState.zoom }"
     }
   ]
 }

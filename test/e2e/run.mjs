@@ -79,6 +79,25 @@ try {
   const steps = scenario ? JSON.parse(readFileSync(env.ATLAS_E2E_SCENARIO, 'utf8')).steps ?? [] : [];
   for (const step of steps) {
     const ts = Date.now();
+    // clickMap: a real mouse click in the middle of the Atlas map (page coordinates of the
+    // webview's canvas), so the webview gets keyboard focus the way a user gives it.
+    if (step.clickMap) {
+      const r = JSON.parse(await cdp.evaluate(
+        `(() => { const f = [...document.querySelectorAll('iframe')].find((e) => e.getBoundingClientRect().width > 300); const b = f.getBoundingClientRect(); return JSON.stringify({ x: b.left + b.width * 0.6, y: b.top + b.height * 0.5 }); })()`,
+      ));
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await cdp.send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      }
+      await sleep(500);
+    }
+    // key: a real key press sent to the workbench (VS Code's keybinding service sees it),
+    // e.g. { "key": "?", "code": "Slash", "modifiers": 8 } (8 = Shift).
+    if (step.key) {
+      const k = { key: step.key, code: step.code ?? '', modifiers: step.modifiers ?? 0 };
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...k, text: step.key.length === 1 ? step.key : undefined });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
+      await sleep(300);
+    }
     if (step.eval) await cdp.evaluate(`(async () => { const a = window.__atlas; ${step.eval} })()`, ctx);
     if (step.until) {
       for (;;) {
