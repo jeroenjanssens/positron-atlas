@@ -192,6 +192,26 @@ try {
       await page.mouse.up();
       for (const k of step.modifiers ?? []) await page.keyboard.up(k);
     }
+    if (step.rightDrag) {
+      // Right-button drag (triggers deck.gl alternateMode: rotate in 2D, pan in 3D).
+      const pts = await page.evaluate(`(() => { const a = window.__atlas; const h = window.__harness; return (${step.rightDrag}); })()`);
+      for (const k of step.modifiers ?? []) await page.keyboard.down(k);
+      await page.mouse.move(pts[0][0], pts[0][1]);
+      await page.mouse.down({ button: 'right' });
+      for (const [x, y] of pts.slice(1)) await page.mouse.move(x, y, { steps: 4 });
+      await page.mouse.up({ button: 'right' });
+      for (const k of step.modifiers ?? []) await page.keyboard.up(k);
+    }
+    if (step.middleDrag) {
+      // Middle-button drag (intercepted by NavController: pan 2D, orbit or pan 3D for CAD).
+      const pts = await page.evaluate(`(() => { const a = window.__atlas; const h = window.__harness; return (${step.middleDrag}); })()`);
+      for (const k of step.modifiers ?? []) await page.keyboard.down(k);
+      await page.mouse.move(pts[0][0], pts[0][1]);
+      await page.mouse.down({ button: 'middle' });
+      for (const [x, y] of pts.slice(1)) await page.mouse.move(x, y, { steps: 4 });
+      await page.mouse.up({ button: 'middle' });
+      for (const k of step.modifiers ?? []) await page.keyboard.up(k);
+    }
     if (step.press) await page.keyboard.press(step.press);
     if (step.until) {
       while (!(await check(step.until))) {

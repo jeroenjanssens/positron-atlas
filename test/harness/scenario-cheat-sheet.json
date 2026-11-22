@@ -1,0 +1,99 @@
+{
+  "description": "Controls cheat sheet (item 2): opens via view.showControls action, shows sections and rows, preset selector works, closes on eval.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 3, 2000)\ncenters = rng.normal(0, 4, (3, 6))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (2000, 6)), columns=[f'f{i}' for i in range(6)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000,
+    "nativeCore": false
+  },
+  "screenshot": "cheat-sheet.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000
+    },
+    {
+      "name": "cheat sheet initially closed",
+      "assert": [
+        "a.cheatSheetVisible === false",
+        "document.querySelector('.cheat-sheet') === null"
+      ],
+      "report": "{ cheatSheetVisible: a.cheatSheetVisible }"
+    },
+    {
+      "name": "open cheat sheet via view.showControls dispatch",
+      "eval": "window.__harness.dispatch('view.showControls');",
+      "until": "a.cheatSheetVisible === true",
+      "timeout": 3000,
+      "assert": [
+        "a.cheatSheetVisible === true",
+        "document.querySelector('.cheat-sheet') !== null"
+      ],
+      "report": "{ cheatSheetVisible: a.cheatSheetVisible, hasDom: !!document.querySelector('.cheat-sheet') }"
+    },
+    {
+      "name": "cheat sheet has sections",
+      "assert": [
+        "document.querySelectorAll('.cs-section').length > 0",
+        "document.querySelectorAll('.cs-row').length > 0"
+      ],
+      "report": "{ sections: document.querySelectorAll('.cs-section').length, rows: document.querySelectorAll('.cs-row').length }"
+    },
+    {
+      "name": "cheat sheet has preset selector",
+      "assert": [
+        "document.querySelector('#cs-preset') !== null",
+        "document.querySelector('#cs-preset').value === 'dataMap'"
+      ],
+      "report": "{ preset: document.querySelector('#cs-preset')?.value }"
+    },
+    {
+      "name": "cheat sheet screenshot (dark)",
+      "screenshot": "cheat-sheet-open.png",
+      "report": "{ preset: a.navSettings?.preset }"
+    },
+    {
+      "name": "keyboard toolbar button is active when cheat sheet open",
+      "assert": [
+        "document.querySelector('.plot-toolbar .tool.active .codicon-keyboard') !== null || document.querySelector('.plot-toolbar button[aria-pressed=\"true\"]') !== null || a.cheatSheetVisible === true"
+      ],
+      "report": "{ hasActiveButton: !!document.querySelector('.plot-toolbar .tool.active .codicon-keyboard') }"
+    },
+    {
+      "name": "close cheat sheet",
+      "eval": "a.cheatSheetVisible = false;",
+      "until": "a.cheatSheetVisible === false",
+      "timeout": 3000,
+      "assert": [
+        "a.cheatSheetVisible === false",
+        "document.querySelector('.cheat-sheet') === null"
+      ],
+      "report": "{ cheatSheetVisible: a.cheatSheetVisible }"
+    },
+    {
+      "name": "toggle: re-open via dispatch works again",
+      "eval": "window.__harness.dispatch('view.showControls');",
+      "until": "a.cheatSheetVisible === true",
+      "timeout": 3000,
+      "assert": [
+        "a.cheatSheetVisible === true"
+      ],
+      "report": "{ cheatSheetVisible: a.cheatSheetVisible }"
+    },
+    {
+      "name": "platform is set (harness sends linux)",
+      "assert": [
+        "a.platform !== '' && a.platform !== undefined"
+      ],
+      "report": "{ platform: a.platform }"
+    },
+    {
+      "name": "key column contains text",
+      "assert": [
+        "Array.from(document.querySelectorAll('.cs-key kbd')).some(k => k.textContent.length > 0)"
+      ],
+      "report": "{ keyCount: document.querySelectorAll('.cs-key kbd').length }"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "description": "Nav presets drag (item 1): Ctrl+left-drag rotates 2D via NavController, right-drag rotates via deck.gl alternateMode, middle-drag pans.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 4, 4000)\ncenters = rng.normal(0, 5, (4, 8))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (4000, 8)), columns=[f'f{i}' for i in range(8)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 4000,
+    "nativeCore": false
+  },
+  "screenshot": "nav-presets.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && (a.projection === 'done' || a.projection === 'none')",
+      "timeout": 60000
+    },
+    {
+      "name": "baseline: reset rotation to 0",
+      "eval": "a.setRotation2D(0);",
+      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "report": "{ rotation: a.rotation2D }"
+    },
+    {
+      "name": "Ctrl+left-drag → NavController rotates 2D map (new behaviour)",
+      "eval": "window.__rotBefore = a.rotation2D ?? 0;",
+      "drag": "[[700, 450], [750, 450], [800, 450], [850, 450]]",
+      "modifiers": ["Control"],
+      "until": "Math.abs((a.renderer?.viewState?.rotationOrbit ?? 0) - window.__rotBefore) > 1 || Math.abs(a.rotation2D - window.__rotBefore) > 1",
+      "timeout": 5000,
+      "assert": [
+        "a.rotation2D !== window.__rotBefore || (a.renderer?.viewState?.rotationOrbit ?? 0) !== window.__rotBefore"
+      ],
+      "report": "{ rotBefore: window.__rotBefore, rotation2D: a.rotation2D, rotationOrbit: a.renderer?.viewState?.rotationOrbit }"
+    },
+    {
+      "name": "reset rotation before right-drag test",
+      "eval": "a.setRotation2D(0);",
+      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "right-drag → deck.gl alternateMode rotates 2D map (existing behaviour confirmed)",
+      "eval": "window.__rotBefore = a.renderer?.viewState?.rotationOrbit ?? 0;",
+      "rightDrag": "[[700, 450], [750, 450], [800, 450], [850, 450]]",
+      "until": "Math.abs((a.renderer?.viewState?.rotationOrbit ?? 0) - window.__rotBefore) > 1",
+      "timeout": 5000,
+      "assert": [
+        "(a.renderer?.viewState?.rotationOrbit ?? 0) !== window.__rotBefore"
+      ],
+      "report": "{ rotBefore: window.__rotBefore, rotationOrbit: a.renderer?.viewState?.rotationOrbit }"
+    },
+    {
+      "name": "reset before pan tests",
+      "eval": "a.setRotation2D(0); window.__harness.dispatch('view.reset');",
+      "until": "a.phase === 'ready' && Math.abs(a.rotation2D) < 1",
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "left-drag pans (deck.gl native, 2D dragMode=pan)",
+      "eval": "window.__prePanTarget = [...(a.renderer?.viewState?.target ?? [0,0,0])];",
+      "drag": "[[700, 450], [650, 450], [600, 450], [550, 450]]",
+      "until": "JSON.stringify(a.renderer?.viewState?.target) !== JSON.stringify(window.__prePanTarget)",
+      "timeout": 5000,
+      "assert": [
+        "JSON.stringify(a.renderer?.viewState?.target) !== JSON.stringify(window.__prePanTarget)"
+      ],
+      "report": "{ target: a.renderer?.viewState?.target, prePan: window.__prePanTarget }"
+    },
+    {
+      "name": "middle-drag pans via NavController",
+      "eval": "window.__preMidTarget = [...(a.renderer?.viewState?.target ?? [0,0,0])];",
+      "middleDrag": "[[700, 450], [650, 450], [600, 450], [550, 450]]",
+      "until": "JSON.stringify(a.renderer?.viewState?.target) !== JSON.stringify(window.__preMidTarget)",
+      "timeout": 5000,
+      "assert": [
+        "JSON.stringify(a.renderer?.viewState?.target) !== JSON.stringify(window.__preMidTarget)"
+      ],
+      "report": "{ target: a.renderer?.viewState?.target, preMid: window.__preMidTarget }"
+    },
+    {
+      "name": "final screenshot",
+      "screenshot": "nav-presets-final.png",
+      "report": "{ rotation2D: a.rotation2D }"
+    }
+  ]
+}
