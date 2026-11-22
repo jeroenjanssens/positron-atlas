@@ -92,7 +92,8 @@
       { "command": "positronAtlas.nav.select.all",         "title": "Select all visible points",           "category": "Atlas" },
       { "command": "positronAtlas.nav.select.clear",       "title": "Clear selection",                     "category": "Atlas" },
       { "command": "positronAtlas.nav.view.showControls",  "title": "Show controls",                       "category": "Atlas",
-        "icon": "$(keyboard)" }
+        "icon": "$(keyboard)" },
+      { "command": "positronAtlas.nav.animate.playPause", "title": "Play / pause animation",               "category": "Atlas" }
     ],
     "menus": {
       "commandPalette": [
@@ -242,7 +243,8 @@
       { "command": "positronAtlas.nav.view.top",    "key": "numpad7",     "when": "positronAtlas.webviewFocused && positronAtlas.navPreset == 'cad'" },
       { "command": "positronAtlas.nav.view.front",  "key": "numpad1",     "when": "positronAtlas.webviewFocused && positronAtlas.navPreset == 'cad'" },
       { "command": "positronAtlas.nav.view.side",   "key": "numpad3",     "when": "positronAtlas.webviewFocused && positronAtlas.navPreset == 'cad'" },
-      { "command": "positronAtlas.nav.view.reset",  "key": "shift+1",     "when": "positronAtlas.webviewFocused && positronAtlas.navPreset == 'design'" }
+      { "command": "positronAtlas.nav.view.reset",  "key": "shift+1",     "when": "positronAtlas.webviewFocused && positronAtlas.navPreset == 'design'" },
+      { "command": "positronAtlas.nav.animate.playPause", "key": "space", "when": "positronAtlas.webviewFocused && positronAtlas.animating" }
     ]
   },
   "scripts": {

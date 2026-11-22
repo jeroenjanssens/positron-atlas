@@ -612,6 +612,9 @@
         }
         break;
       }
+      // --- C2: Animate context key (no-op in harness; real host calls setContext) ---
+      case 'animatingChanged':
+        break;
       // --- C2: Save video (item 10) ---
       case 'saveVideo': {
         harness.video = m.bytes;

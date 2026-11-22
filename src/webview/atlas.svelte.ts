@@ -26,7 +26,9 @@ import type {
   UmapParams,
   DescribeResult,
   JobStatus,
+  VideoExportOptions,
 } from '../shared/protocol';
+import { VideoRecorder, isVideoSupported } from './render/videoExport';
 import { computeTimeFilter, stepWindow, DEFAULT_ANIMATE_SPEED, DEFAULT_WINDOW_SIZE } from './atlas/animate';
 import { buildTrackPaths, thinIndices, createPathLayer } from './atlas/tracks';
 import { buildVectors, thinVectors, createVectorLayer } from './atlas/vectors';
@@ -344,6 +346,7 @@ export class Atlas {
   animateMin = $state(0);
   animateMax = $state(1);
   animateFilter: Float32Array | null = $state.raw(null);
+  videoRecording = $state(false);
   // ---- C2: Tracks + Vectors -------------------------------------------------------
   tracks = $state<TracksOptions>({ idColumn: null, timeColumn: null, colorBy: 'id', fadingTail: false });
   trackData: TracksResult | null = $state.raw(null);
@@ -1109,6 +1112,25 @@ export class Atlas {
     this.animatePlaying = false;
     if (this.animateRafId !== null) { cancelAnimationFrame(this.animateRafId); this.animateRafId = null; }
     document.removeEventListener('visibilitychange', this._onVisibilityChange);
+  }
+
+  /** Record a WebM video clip and send it to the host for saving (C2, item 10). */
+  async startVideoExport(opts: VideoExportOptions): Promise<void> {
+    const canvas = this.renderer?.getCanvas();
+    if (!canvas || !isVideoSupported()) return;
+    const rec = new VideoRecorder();
+    rec.start(canvas, opts.fps);
+    this.videoRecording = true;
+    const dur = (opts.durationSecs ?? 3) * 1000;
+    if (opts.mode === 'time' && this.animateValues !== null) this.startAnimation();
+    else if (opts.mode === 'turntable' && !this.autoRotate) this.toggleAutoRotate();
+    await new Promise<void>((r) => setTimeout(r, dur));
+    if (opts.mode === 'time') this.stopAnimation();
+    else if (opts.mode === 'turntable' && this.autoRotate) this.toggleAutoRotate();
+    const b64 = await rec.stop();
+    this.videoRecording = false;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    this.post({ type: 'saveVideo', bytes: b64, filename: `atlas-${opts.mode}-${ts}.webm` });
   }
 
   // ---- C2: Tracks + Vectors methods ---------------------------------------------

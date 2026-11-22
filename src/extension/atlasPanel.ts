@@ -873,6 +873,10 @@ export class AtlasPanel {
       case 'annotateToolChanged':
         await vscode.commands.executeCommand('setContext', 'positronAtlas.annotateTool', m.tool ?? '').then(undefined, () => undefined);
         break;
+      // --- Animate context key (C2) ---
+      case 'animatingChanged':
+        await vscode.commands.executeCommand('setContext', 'positronAtlas.animating', (m as Extract<ToHost, { type: 'animatingChanged' }>).animating).then(undefined, () => undefined);
+        break;
       // --- First-run hint dismissed (item 2) ---
       case 'hintSeen':
         await this.ctx.extension.globalState.update('atlasHintShownV1', true);

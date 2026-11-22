@@ -74,6 +74,7 @@ export function activate(context: vscode.ExtensionContext): void {
       'edit.undo', 'edit.redo',
       'select.all', 'select.clear',
       'brush.sizeUp', 'brush.sizeDown', 'shapes.order.front', 'shapes.order.back',
+      'animate.playPause',
     ] as ActionId[]).map((actionId) =>
       vscode.commands.registerCommand(`positronAtlas.nav.${actionId}`, () => {
         AtlasPanel.commandTarget()?.forwardCommand(actionId);

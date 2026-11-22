@@ -628,6 +628,8 @@ export interface VideoExportOptions {
   widthPx: number;
   heightPx: number;
   fps: number;
+  /** Recording duration in seconds (default 3). */
+  durationSecs?: number;
 }
 
 /** Entry in the font catalogue sent to the webview. */
@@ -761,6 +763,8 @@ export type ToHost =
    * tool = null means the annotate sub-tool is inactive.
    */
   | { type: 'annotateToolChanged'; tool: 'brush' | 'shapes' | null }
+  /** Notify host that animate values loaded/cleared (for positronAtlas.animating context key). */
+  | { type: 'animatingChanged'; animating: boolean }
   /** User dismissed the first-run hint; host persists atlasHintShownV1 to globalState. */
   | { type: 'hintSeen' }
   /**
