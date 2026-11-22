@@ -347,7 +347,7 @@
         // D3/D12: export with DataMapPlot — write to a temp file in the job dir.
         const outName = `datamapplot_${Date.now()}.html`;
         const outPath = `${info.jobRoot}/${jobDir}/${outName}`;
-        const opts = JSON.stringify({ labelColumn: m.labelColumn, titleColumn: m.titleColumn, title: m.title });
+        const opts = JSON.stringify({ labelColumn: m.labelColumn, titleColumn: m.titleColumn, title: m.title, labelColorMap: m.labelColorMap });
         // The browser UMAP runs entirely in-browser; pass XY coords as a temp file
         // so the kernel can use them even when job.xy was never set server-side.
         let xyPath = null;

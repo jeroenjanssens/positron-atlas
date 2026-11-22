@@ -60,7 +60,20 @@ export function exportDataMapPlot(atlas: Atlas): void {
   // browser UMAP ran (job.xy is only set by the kernel-side UMAP paths).
   const rawXY = atlas.allXY ?? atlas.anchorXY;
   const anchorXY = rawXY ? float32ToBytes(rawXY) : undefined;
-  vscode.post({ type: 'exportDataMapPlot', labelColumn, titleColumn, anchorXY });
+  // Colors: when coloring by the label column (categorical), pass a name→hex map so
+  // DataMapPlot can colour the clusters with the same palette as the Atlas map.
+  let labelColorMap: Record<string, string> | undefined;
+  if (
+    labelColumn !== null &&
+    atlas.colorColumn === labelColumn &&
+    atlas.colorMeta?.kind === 'categorical'
+  ) {
+    labelColorMap = {};
+    for (let i = 0; i < atlas.colorMeta.categories.length; i++) {
+      labelColorMap[atlas.colorMeta.categories[i]] = atlas.categoryColor(i);
+    }
+  }
+  vscode.post({ type: 'exportDataMapPlot', labelColumn, titleColumn, anchorXY, labelColorMap });
 }
 
 export function reload(atlas: Atlas): void {

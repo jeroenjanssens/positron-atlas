@@ -1988,6 +1988,7 @@ def export_datamapplot(job_id: str, output_path: str, opts_json: str = "{}", xy_
     label_col = opts.get("labelColumn")
     title_col = opts.get("titleColumn")
     title = opts.get("title") or None
+    label_color_map = opts.get("labelColorMap")  # {category: hex} or None
 
     frame = job.frame
     kwargs: dict[str, Any] = {}
@@ -2000,6 +2001,9 @@ def export_datamapplot(job_id: str, output_path: str, opts_json: str = "{}", xy_
         labels = np.array([str(v) if not _is_null(v) else "Unlabelled" for v in raw], dtype=object)
         label_layers.append(labels)
         kwargs["noise_label"] = "Unlabelled"
+        # Pass the Atlas categorical colour palette so DataMapPlot uses matching colours.
+        if label_color_map and isinstance(label_color_map, dict):
+            kwargs["label_color_map"] = {str(k): str(v) for k, v in label_color_map.items()}
 
     if title_col is not None:
         raw = frame.column(int(title_col), job.kept_idx)

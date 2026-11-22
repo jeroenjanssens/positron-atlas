@@ -19,13 +19,13 @@
       "report": "{ deps: a.describe.deps }"
     },
     {
-      "name": "set label column to cluster",
-      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setLabelColumn(col.index)",
-      "until": "a.labels.column !== null",
-      "timeout": 5000
+      "name": "set label and color column to cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setLabelColumn(col.index); a.setColorColumn(col.index)",
+      "until": "a.labels.column !== null && a.colorColumn !== null && a.colorMeta !== null",
+      "timeout": 10000
     },
     {
-      "name": "export with DataMapPlot",
+      "name": "export with DataMapPlot (label_color_map expected)",
       "eval": "a.exportDataMapPlot()",
       "until": "h.datamapplotExport !== undefined",
       "timeout": 30000,
@@ -37,8 +37,8 @@
       "report": "{ export: h.datamapplotExport }"
     },
     {
-      "name": "verify stub recorded the call via exec",
-      "eval": "const res = await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: 'assert len(_dmp_calls) > 0, f\"expected at least one call, got {_dmp_calls}\"' }) }); window.__dmpCheck = (await res.json()).ok;",
+      "name": "verify stub got label_color_map",
+      "eval": "const res = await fetch('/exec', { method: 'POST', body: JSON.stringify({ code: 'assert len(_dmp_calls) > 0 and _dmp_calls[-1][\"label_color_map\"] is not None, f\"expected label_color_map in call, got {_dmp_calls}\"' }) }); window.__dmpCheck = (await res.json()).ok;",
       "until": "window.__dmpCheck !== undefined",
       "timeout": 5000,
       "assert": "window.__dmpCheck === true",

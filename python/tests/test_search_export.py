@@ -153,6 +153,7 @@ def _install_stub():
             "n": int(coords.shape[0]),
             "n_layers": len(label_layers),
             "kwargs": sorted(kwargs),
+            "label_color_map": kwargs.get("label_color_map"),
         })
 
         def _save(path):
@@ -180,8 +181,9 @@ def test_export_datamapplot_basic(ns, tmp_path):
         job.xy = rng.normal(size=(nkept, 2)).astype(np.float32)
 
         out_html = str(tmp_path / "export.html")
-        # labelColumn=5 (label), titleColumn=6 (title)
-        opts = json.dumps({"labelColumn": 5, "titleColumn": 6})
+        # labelColumn=5 (label), titleColumn=6 (title), plus a label_color_map
+        label_colors = {"c0": "#4e79a7", "c1": "#f28e2b", "c2": "#e15759", "c3": "#76b7b2"}
+        opts = json.dumps({"labelColumn": 5, "titleColumn": 6, "labelColorMap": label_colors})
         r = J(pak.export_datamapplot(jid, out_html, opts))
         assert r["ok"], r
         assert r["path"] == out_html
@@ -194,6 +196,8 @@ def test_export_datamapplot_basic(ns, tmp_path):
         assert calls[0]["n_layers"] == 1  # one label layer
         assert "hover_text" in calls[0]["kwargs"]
         assert "noise_label" in calls[0]["kwargs"]
+        # label_color_map should be forwarded from opts to datamapplot kwargs.
+        assert calls[0]["label_color_map"] == label_colors
     finally:
         sys.modules.pop("datamapplot", None)
 

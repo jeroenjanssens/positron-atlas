@@ -295,4 +295,13 @@ export type ToHost =
   /** Search the title/chosen column for a substring (A7). */
   | { type: 'search'; column: number; query: string; limit: number; regex?: boolean }
   /** Export the map as an interactive DataMapPlot HTML file (D3/D12). */
-  | { type: 'exportDataMapPlot'; labelColumn: number | null; titleColumn: number | null; title?: string; anchorXY?: Uint8Array };
+  | {
+      type: 'exportDataMapPlot';
+      labelColumn: number | null;
+      titleColumn: number | null;
+      title?: string;
+      /** Raw XY coords from the browser UMAP (Float32, 2 per kept row). */
+      anchorXY?: Uint8Array;
+      /** Category → hex color when colorColumn === labelColumn (categorical). */
+      labelColorMap?: Record<string, string>;
+    };

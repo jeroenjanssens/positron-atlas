@@ -69,7 +69,12 @@ def install_datamapplot_stub(namespace: dict) -> None:
             labels = np.asarray(labels)
             if labels.shape != (coords.shape[0],) or any(not isinstance(v, str) for v in labels):
                 raise ValueError("labels must be one string per point")
-        call_record = {"n": int(coords.shape[0]), "layers": [sorted(set(map(str, la))) for la in label_layers], "kwargs": sorted(kwargs)}
+        call_record = {
+            "n": int(coords.shape[0]),
+            "layers": [sorted(set(map(str, la))) for la in label_layers],
+            "kwargs": sorted(kwargs),
+            "label_color_map": kwargs.get("label_color_map"),
+        }
         calls.append(call_record)
 
         def _save(path):

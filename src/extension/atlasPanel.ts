@@ -486,6 +486,76 @@ export class AtlasPanel {
         void vscode.window.showInformationMessage(`Added ${r.columns.join(', ')} to ${r.variable}.`);
         break;
       }
+      // --- Search (A7) ---
+      case 'search': {
+        const r = await this.bridge.call<{ ok: boolean; file?: string; count: number }>(
+          'search',
+          this.requireJob(),
+          m.column,
+          m.query,
+          m.limit ?? 100_000,
+          JSON.stringify({ regex: m.regex ?? false }),
+        );
+        if (r.ok && r.file && r.count > 0) {
+          this.post({
+            type: 'searchResults',
+            column: m.column,
+            query: m.query,
+            file: this.fileRef({ file: r.file, dtype: 'u32', shape: [r.count] }),
+            count: r.count,
+          });
+        } else {
+          this.post({ type: 'searchEmpty', column: m.column, query: m.query });
+        }
+        break;
+      }
+      // --- Export with DataMapPlot (D3/D12) ---
+      case 'exportDataMapPlot': {
+        const job = this.requireJob();
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const uri = await vscode.window.showSaveDialog({
+          filters: { 'HTML file': ['html'] },
+          defaultUri: vscode.Uri.file(path.join(workspaceRoot, `${this.state.variable}-datamapplot.html`)),
+        });
+        if (!uri) {
+          break;
+        }
+        let xyPath: string | null = null;
+        if (m.anchorXY && m.anchorXY.length > 0) {
+          xyPath = path.join(this.jobDir.fsPath, `dmp_xy_${Date.now()}.f32`);
+          await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
+        }
+        try {
+          const opts = JSON.stringify({
+            labelColumn: m.labelColumn,
+            titleColumn: m.titleColumn,
+            title: m.title,
+            labelColorMap: m.labelColorMap,
+          });
+          const r = await this.bridge.call<{ ok: boolean; path: string }>(
+            'export_datamapplot',
+            job,
+            uri.fsPath,
+            opts,
+            xyPath,
+          );
+          if (r.ok) {
+            this.post({ type: 'datamapplotSaved', path: r.path });
+            const open = await vscode.window.showInformationMessage(
+              `DataMapPlot HTML saved to ${path.basename(r.path)}`,
+              'Open',
+            );
+            if (open === 'Open') {
+              await vscode.env.openExternal(uri);
+            }
+          }
+        } finally {
+          if (xyPath) {
+            await fs.rm(xyPath, { force: true });
+          }
+        }
+        break;
+      }
       case 'savePng': {
         const uri = await vscode.window.showSaveDialog({
           filters: { 'PNG image': ['png'] },
