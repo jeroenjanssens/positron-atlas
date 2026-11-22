@@ -210,6 +210,11 @@ export class Atlas {
   /** True when coloring by automatic cluster codes (A6). */
   colorByCluster = $state(false);
   /**
+   * The k-length colour palette computed by recolorByClusters (A6).
+   * Single source of truth for cluster colours used by legend, labels, and outlines.
+   */
+  clusterPalette = $state.raw<string[] | null>(null);
+  /**
    * Incremented each time render() calls renderer.setPointSets so that the ExploreTab's
    * `renderVisibleCount` expression re-evaluates (the renderer's internal state is not
    * reactive; this tick gives Svelte a reactive dependency to track).

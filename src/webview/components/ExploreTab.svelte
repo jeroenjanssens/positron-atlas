@@ -137,6 +137,9 @@
         <option value={String(c.index)}>{c.name}</option>
       {/each}
     </Select>
+    {#if atlas.histFilter && atlas.histData && (atlas.histFilter.range[0] > atlas.histData.edges[0] || atlas.histFilter.range[1] < atlas.histData.edges[atlas.histData.edges.length - 1])}
+      <button class="link" style="font-size:10px;padding:1px 4px;" onclick={() => atlas.setHistRange([atlas.histData!.edges[0], atlas.histData!.edges[atlas.histData!.edges.length - 1]])} title="Reset brush to show all">Reset</button>
+    {/if}
   </div>
   {#if atlas.histFilter && atlas.histData}
     <Histogram {atlas} />

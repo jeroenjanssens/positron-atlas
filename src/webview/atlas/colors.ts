@@ -31,6 +31,7 @@ export function setColorByCluster(atlas: Atlas, on: boolean): void {
     atlas.mapColors = null;
     recolorByClusters(atlas);
   } else {
+    atlas.clusterPalette = null;
     atlas.recolor();
   }
 }
@@ -46,6 +47,8 @@ export function recolorByClusters(atlas: Atlas): void {
   const { codes, k } = atlas.cluster; // k = noise code
   const n = atlas.nKept;
   const palette = buildClusterPalette(atlas, k);
+  // Store as single source of truth for legend, labels, and outlines.
+  atlas.clusterPalette = palette;
   // codes[i] < k → cluster colour; codes[i] >= k → noise grey
   atlas.colorsAll = new Uint8Array(n * 4);
   const noiseRgb = hexToRgb(NOISE_COLOR);
@@ -301,8 +304,12 @@ export function recolor(atlas: Atlas): void {
   atlas.render();
 }
 
-/** Point color of category i of the color column. */
+/** Point color of category i of the color column (or cluster i when colorByCluster). */
 export function categoryColor(atlas: Atlas, i: number): string {
+  // A6: cluster colours are the single source of truth when colorByCluster is active.
+  if (atlas.colorByCluster && atlas.clusterPalette && i < atlas.clusterPalette.length) {
+    return atlas.clusterPalette[i];
+  }
   if (atlas.view.palette === 'map' && atlas.mapColors && i < atlas.mapColors.length) {
     return atlas.mapColors[i];
   }

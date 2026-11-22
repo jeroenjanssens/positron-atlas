@@ -112,9 +112,6 @@
     window.removeEventListener('mouseup', onMouseUp);
   }
 
-  function onResetBrush(): void {
-    atlas.setHistRange([lo, hi]);
-  }
 </script>
 
 <div class="hist-wrap">
@@ -170,9 +167,6 @@
     <!-- Axes baseline -->
     <line x1={PAD_L} y1={PAD_T + IH} x2={PAD_L + IW} y2={PAD_T + IH} class="axis" />
   </svg>
-  {#if filter && (filter.range[0] > lo || filter.range[1] < hi)}
-    <button class="link reset" onclick={onResetBrush} title="Reset brush to show all">Reset</button>
-  {/if}
 </div>
 
 <style>
@@ -205,19 +199,5 @@
   }
   .label-hi {
     text-anchor: end;
-  }
-  .reset {
-    position: absolute;
-    right: 0;
-    top: 0;
-    font-size: 10px;
-    padding: 1px 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--vscode-textLink-foreground, #0078d4);
-  }
-  .reset:hover {
-    text-decoration: underline;
   }
 </style>
