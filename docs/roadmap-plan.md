@@ -286,6 +286,8 @@ Hidden points are not drawn, not hoverable, not lassoed, and do not count for la
 
 ### D10. Annotations: what "relative position" means, and where they are kept
 
+> **Superseded (2026-11-22)** for positions: dragged labels and callout boxes move to map coordinates, so they stay correct under 2D rotation and in 3D. See `napari-plan.md` Q11–Q14 and item 15. Where annotations are stored (panel state, keyed by row or ID column, JSON export and import) is unchanged.
+
 **Recommendation:**
 
 - A dragged annotation or label stores an **offset in screen pixels from its anchor**. For a point annotation, the anchor is the point; for a cluster label, it is the label's automatic position. The offset therefore stays the same at every zoom level, which keeps annotations readable when zooming in, like callouts on a map.

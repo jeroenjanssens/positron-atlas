@@ -36,68 +36,138 @@ Effort is S (≤ 1 day), M (a few days) or L (a week or more). Facts about other
     - An "Atlas: Open example" command (sample data).
     - "Open the selection in the Data Explorer".
     - 3D view options: perspective or orthographic, depth fade.
+14. **Rotate the 2D map.** Right-drag (or keys) rotates the 2D view, with a compass to show and reset the angle. Labels stay upright.
+15. **Labels and annotations in map coordinates.** Dragged labels, callouts, leader lines, badges, shapes and boxes keep their place on the map when you pan, zoom, rotate (2D) or orbit (3D). Point annotations and label dragging also work in 3D.
+16. **Follow-ups** from the first plan: 3D support for clusters and the HTML viewer, inverting image-URL thumbnails, caching cosine neighbours, R support (still left out).
 
 ---
 
 ## Open questions (with recommendations)
 
-Each question has a recommendation; the plan below assumes the recommendations.
+Each question has a recommendation, its pros and cons, and the alternatives. The plan below assumes the recommendations. Q9–Q14 were added for 2D rotation and world-anchored labels (items 14 and 15).
 
 **Q1. "Grid": small multiples or a reference grid?** napari's grid mode (`Cmd/Ctrl+G`, verified) shows layers side by side.
 
-- **Recommendation:** item 4 is small multiples.
-- **Also:** an optional reference grid (a floor plane in 3D), offered as an option of item 3, because a floor helps orientation in 3D the same way a bounding box does.
-- **Alternative:** only one of the two.
+- **Recommendation:** both, as separate features. Item 4 is small multiples (several panels, linked cameras). A reference grid (a floor plane, 3D) is an option of item 3, next to the bounding box.
+- **Pros:** covers both readings; each is useful on its own (comparison vs orientation).
+- **Cons:** two features to build and explain.
+- **Alternatives:** only small multiples (napari's meaning), or only a floor grid (cheapest).
 
 **Q2. Default preset.**
 
-- **Recommendation:** "Data map" (below). It is what Atlas does today, and it matches napari, deck.gl, Plotly and three.js:
+- **Recommendation:** "Data map" (item 1). It is what Atlas does today, and it matches napari, deck.gl, Plotly and three.js:
   - 2D: left-drag pans, scroll zooms to the cursor.
   - 3D: left-drag rotates, right-drag or Shift-drag pans.
-- **Alternative:** detect a trackpad and default to the "Design" scroll behaviour. Rejected: surprising, and detection is unreliable.
+- **Pros:** no change for current users; matches the most common data tools.
+- **Cons:** CAD and design users must switch once.
+- **Alternatives:** detect a trackpad and default to "Design" scrolling (surprising, and detection is unreliable), or ask on first use (an extra dialog).
 
 **Q3. Trackpad scrolling.** On macOS, two-finger scroll arrives as wheel events.
 
-- **Recommendation:** a separate setting, **Scroll gesture: zoom | pan**, defaulting to **zoom** (today's behaviour, and the convention for data plots and maps).
-  - With **pan**, pinch or ⌘/Ctrl+scroll zooms, as in Figma.
-- **Pros:** predictable; one setting covers mice and trackpads.
-- **Cons:** trackpad users who expect panning must find the setting. The cheat sheet mentions it.
+- **Recommendation:** a separate setting, **Scroll gesture: zoom | pan**, defaulting to **zoom**. With **pan**, pinch or ⌘/Ctrl+scroll zooms, as in Figma.
+- **Pros:** predictable; one setting covers mice and trackpads; independent of the preset.
+- **Cons:** trackpad users who expect panning must find it (the cheat sheet mentions it).
+- **Alternatives:** tie it to the preset (fewer settings, but mixes two decisions), or auto-detect (unreliable).
 
-**Q4. The reset-view key.**
+**Q4. Navigation keys.**
 
 - **Facts:**
-  - napari uses `Ctrl/Cmd+R` (verified).
-  - In VS Code, `Ctrl+R` opens Recent (Windows/Linux) and is also "Open Recent" on macOS (`Ctrl+R`).
-  - `Cmd+0`, `Cmd+=` and `Cmd+-` zoom the whole window, so they are taken.
+  - napari uses `Ctrl/Cmd+R` for reset (verified).
+  - In VS Code, `Ctrl+R` opens Recent.
+  - `Cmd+0`, `Cmd+=` and `Cmd+-` zoom the whole window.
 - **Recommendation:**
-  - Plain keys while the map has focus: `R` reset/fit, `+`/`-` zoom, arrow keys pan, `1/2/3` top/front/side in 3D, `?` cheat sheet.
-  - Every one of them is a contributed keybinding scoped to Atlas focus, so users can rebind them and they never steal keys elsewhere.
-- **Alternative:** napari's `Cmd/Ctrl+R`, which conflicts with Open Recent.
+  - Plain keys while the map has focus: `R` reset/fit, `+`/`-` zoom, arrow keys pan, `1/2/3` top/front/side (3D), `[`/`]` rotate (Q10), `?` cheat sheet.
+  - Every key is a contributed keybinding scoped to Atlas focus, so it is rebindable and never steals keys elsewhere.
+- **Pros:** no conflicts with Positron; fast; rebindable the native way.
+- **Cons:** plain keys don't work while typing in the search box (handled: the search box keeps its keys).
+- **Alternatives:** napari's `Cmd/Ctrl+R` (conflicts with Open Recent), or modifier combinations everywhere (safe but slower to use).
 
 **Q5. Python API transport.**
 
-- **Recommendation:** start on the existing `evaluateCode` bridge. The kernel side queues commands that the host drains while polling job status. Events (selection changed) are pushed as a queue the Python handle reads, or as callbacks run when the kernel is idle.
+- **Recommendation:** start on the existing `evaluateCode` bridge. Commands queue in the kernel and the host drains them while polling; events (selection changed) go back as a queue or as callbacks run when the kernel is idle.
 - **Pros:** works today, no new channel.
-- **Cons:** events are only as fast as the polling (150 ms).
+- **Cons:** events are as slow as the polling (≈ 150 ms).
 - **Alternatives:**
-  - Positron comms (Jupyter comm messages): native and instant, but needs a Positron API for extensions to open a comm. Spike first.
+  - Positron comms (Jupyter comm messages): native and instant, but needs an extension API to open a comm (spike S1).
   - A local socket: fast, but a new network surface.
 
 **Q6. Time slider and the scope rule.**
 
-- **Recommendation:** build it as a **row filter** on a column (dates, years, epochs), not as slicing through array axes, and name it accordingly ("Animate by column"). Mention it to your colleague first.
-- **Alternative:** skip it.
+- **Recommendation:** a **row filter** on a column (dates, years, epochs), named "Animate by column", not slicing through array axes. Mention it to your colleague first.
+- **Pros:** clearly a data-map feature; reuses the filter machinery.
+- **Cons:** a slider over time can still look like his viewer's time axis.
+- **Alternatives:** skip it, or only the histogram brush (exists) with a play button.
 
 **Q7. Video format.**
 
-- **Recommendation:** WebM via the browser's `MediaRecorder` on the canvas (no dependency).
-- **Plus:** an animated PNG/GIF export for short clips through a small encoder, which needs a dependency.
-- **Alternative:** frames as PNGs into a folder.
+- **Recommendation:** WebM via the browser's `MediaRecorder` on the canvas.
+- **Pros:** no dependency; good quality; plays in browsers and most players.
+- **Cons:** WebM doesn't paste into every slide tool.
+- **Alternatives:** an animated GIF or PNG (wider support, bigger files, needs an encoder dependency), or a folder of PNG frames (works everywhere, needs an extra step to make a video).
 
 **Q8. Preset names.**
 
-- **Recommendation:** describe conventions rather than claim compatibility: "Data map (napari, maps)", "Molecular viewer (ChimeraX, PyMOL)", "3D/CAD (Blender, Fusion 360)", "Design (Figma, Illustrator)".
-- **Before naming:** verify the unverified bindings (Fusion 360 presets, Illustrator, Maestro, Spotfire) against current official docs.
+- **Recommendation:** describe conventions: "Data map (napari, maps)", "Molecular viewer (ChimeraX, PyMOL)", "3D/CAD (Blender, Fusion 360)", "Design (Figma, Illustrator)". Verify the unverified bindings (Fusion 360 presets, Illustrator, Maestro, Spotfire) before naming them.
+- **Pros:** honest; users recognise their tools.
+- **Cons:** product names in a setting may need updating if those tools change.
+- **Alternatives:** neutral names only ("Preset A"…) — safe but meaningless.
+
+**Q9. How to rotate the 2D map** (item 14). deck.gl's `OrthographicView` (used for 2D today) has no rotation.
+
+- **Recommendation:** render 2D with `OrbitView` in orthographic, top-down mode, with tilt locked, so rotation is the camera's `rotationOrbit`. Verify in a spike that `OrbitView` supports orthographic projection in deck.gl 9.
+- **Pros:**
+  - The camera rotates, so deck.gl's own projection and unprojection stay correct for hover, lasso, annotations, labels and exports.
+  - One view type for 2D and 3D, so less code.
+- **Cons:** 2D zoom and pan behaviour must be re-tuned to match today's feel; a bigger change to the renderer.
+- **Alternatives:**
+  - Keep `OrthographicView` and rotate every layer with a `modelMatrix`: smaller change, but every screen↔world conversion (hit index, lasso, annotations, label drags) must apply the inverse rotation itself.
+  - Rotate the coordinates on the CPU: simple, but rewriting 10M positions on every rotation is too slow.
+
+**Q10. Rotation controls.**
+
+- **Recommendation:**
+  - Data map and Design presets: **right-drag** rotates in 2D (it is unused there today), Ctrl-drag as an alternative.
+  - CAD preset: middle-drag with Shift.
+  - All presets: `[`/`]` rotate by 15° (the brush uses `[`/`]` for its size only while the brush tool is active, through a `when` context), and `N` resets to "north up".
+  - A small **compass** button in the plot toolbar shows the angle; a click resets it.
+- **Pros:** no conflict with lasso (Shift/Alt), panning or clicking; the compass makes rotation discoverable and undoable at a glance.
+- **Cons:** right-drag is invisible without the cheat sheet; `[`/`]` changes meaning in brush mode.
+- **Alternatives:** Alt-drag (conflicts with lasso remove), a rotation handle on the canvas (discoverable but takes space), keys only.
+
+**Q11. Where dragged labels are stored** (item 15). This **supersedes decision D10** in `roadmap-plan.md` (screen-pixel offsets).
+
+- **Recommendation:** an **offset in map coordinates from the group's automatic position**: x, y in 2D; x, y, z in 3D.
+- **Pros:**
+  - The label stays at the same place on the map when you pan, zoom, rotate or orbit.
+  - It follows its group when the layout changes (a live UMAP update, re-placement), because the offset is relative to the group.
+- **Cons:** zoomed far out, a label dragged away from its cluster ends up close to it on screen, and vice versa (the same as labels on a real map).
+- **Alternatives:**
+  - **An absolute map position:** simplest, but it stays put while its cluster moves after a layout change.
+  - **A screen-pixel offset (today):** constant visual distance, but wrong after rotation and in 3D.
+  - **Migration:** existing saved pixel offsets are converted once using the current view scale (approximate), or reset.
+
+**Q12. Point annotations (callouts)** (item 15).
+
+- **Recommendation:** the **box is anchored in map coordinates too** (point + map offset, x/y or x/y/z), consistent with labels.
+- **Pros:** a composed figure stays composed under pan, zoom and rotation; works in 3D (where annotations are off today).
+- **Cons:** zoomed far out, many boxes crowd together; zoomed far in, the box can be far off-screen from its point.
+  - **Mitigation:** fade boxes whose point is off-screen, and an optional "keep box near point on screen" toggle per annotation.
+- **Alternatives:** keep screen offsets (today; readable at any zoom, wrong under rotation and in 3D), or hybrid: map-anchored box with a maximum on-screen distance (more logic, best of both).
+
+**Q13. Text size when zooming.**
+
+- **Recommendation:** labels and annotation text keep their **size in pixels** (readable at every zoom), while their **positions** are in map coordinates. An option, **Scale text with zoom**, gives figure-like behaviour (text grows and shrinks with the map).
+- **Pros:** readable by default (like online maps); figure mode available for exports.
+- **Cons:** with fixed pixel size, labels overlap more when zoomed out (collision hiding handles this).
+- **Alternatives:** always scale with zoom (text unreadable far out), or a zoom range in which text scales and then stops.
+
+**Q14. What stays fixed on screen.**
+
+- **Recommendation:** only interface overlays stay in screen space: the title/subtitle/logo, legend, toolbar, search box, histogram and cheat sheet. **Everything that annotates the data is in map coordinates:** labels, badges, dragged labels, callouts, leader lines, shapes, bounding boxes.
+  - **Exception:** labels **around the map** are a per-view layout by nature. They are recomputed when the view settles; their leader lines start at map coordinates. A **Freeze layout** action stores the current around-labels as map coordinates, so they then behave like other labels.
+- **Pros:** one clear rule; predictable under rotation and 3D.
+- **Cons:** a frozen around-layout can drift out of view when panning.
+- **Alternatives:** let the title also be placed on the map (rarely useful), or never freeze around-labels (simpler, but no way to keep a composed layout).
 
 ---
 
@@ -114,7 +184,7 @@ The plan splits along those lines.
 
 **Wave A** (foundations, 3 agents in parallel, plus 1 spike):
 
-- **A1 Input and navigation layer** (item 1). Owns: the controller setup in `renderer.ts`, a new `src/webview/input/` module (all pointer and keyboard dispatch), `package.json` keybindings, commands and navigation settings, and the focus context key.
+- **A1 Input and navigation layer** (items 1 and 14: presets and 2D rotation). Owns: the controller setup in `renderer.ts`, a new `src/webview/input/` module (all pointer and keyboard dispatch), `package.json` keybindings, commands and navigation settings, and the focus context key.
 - **A2 Layer model** (the first half of item 5). Owns: `PointSet` → `Layer` in `renderer.ts`, the layer list state and the protocol for layers. Coordinates with A1 on `renderer.ts`: A1 changes controllers and events, A2 changes the layers array.
 - **A3 Undo/redo stack** (item 6). Owns: a new `src/webview/atlas/history.ts` and hooks in the existing editing functions (tags, label drags, annotations, filters). Small touch points in many `atlas/*.ts` files, but append-only.
 - **Spike S1 (Positron):**
@@ -128,13 +198,14 @@ The plan splits along those lines.
 - **B2 Bounding boxes and reference grid** (item 3): renderer overlay layers only.
 - **B3 Another DataFrame on the map** (the second half of item 5, plus item 9 symbols): needs A2.
 - **B4 Brush tagging and shapes** (items 7 and 8): needs A1 (input modes) and A3 (undo). Shared input-tool code, so one agent.
+- **B5 Map-anchored labels and annotations** (item 15): needs A1 (rotation, so it can be tested under rotation). Owns `atlas/labels.ts`, `atlas/annotations.ts`, `AnnotationOverlay.svelte` and the label drag code; B4 adds shape files and only registers its layers there. Can run next to B1–B4.
 
 **Wave C** (2–3 agents in parallel):
 
 - **C1 Grid mode** (item 4): multiple deck views; needs A2.
 - **C2 Time slider, video export, tracks and vectors** (items 10 and 11): renderer and filter work.
 - **C3 Python API** (item 12): kernel, host and protocol; needs S1's answer.
-- **Small items** (item 13) can be picked up by any agent with spare capacity.
+- **Small items** (items 13 and 16) can be picked up by any agent with spare capacity.
 
 The usual integration rules apply (see `roadmap-plan.md` section 14):
 
@@ -400,6 +471,59 @@ Details are in the research notes of 2026-11-22.
   - point shading as spheres (optional).
 
 ---
+
+## 14. Rotate the 2D map — A1 (M)
+
+- **What:**
+  - The 2D map can be rotated: right-drag (Data map and Design presets), Ctrl-drag, `[`/`]` in 15° steps, `N` back to north-up (Q10).
+  - A compass button in the plot toolbar shows the current angle; a click resets it.
+  - Text (labels, badges, annotation text) stays upright; positions rotate with the map.
+  - Bounding boxes per group are aligned with the data (they rotate with the map).
+- **How** (Q9): render 2D with `OrbitView` in orthographic, top-down mode with tilt locked, so the rotation is the camera's; fall back to a rotation `modelMatrix` if the spike shows problems.
+- **To-do:**
+  - [ ] Spike: `OrbitView` orthographic top-down in deck.gl 9 (zoom units, pan feel, fit, picking) against today's 2D look; decide view type.
+  - [ ] Rotation state in the view state; persisted per panel; fit keeps the current angle; `R` resets the view but keeps the angle, `N` resets the angle.
+  - [ ] Input bindings per preset (item 1's dispatcher), `[`/`]` with a `when` context so the brush can reuse them.
+  - [ ] Compass button (codicon `compass`) with the angle as tooltip, click resets; cheat-sheet rows.
+  - [ ] Everything that converts between screen and map (hit index, lasso, annotations, label drags, around-labels, search zoom) uses the view's projection, never an unrotated shortcut.
+  - [ ] PNG export of a rotated view; HTML viewer supports the rotation (stored angle, and the same right-drag or Ctrl-drag).
+  - [ ] Tests:
+    - vitest for angle math.
+    - Harness: rotate by a real right-drag, check the drawn image rotated (pixel test on an asymmetric layout); hover, lasso and an annotation still hit the right rows after rotation; screenshots.
+
+## 15. Labels and annotations in map coordinates — B5 (M–L)
+
+- **What:** everything that annotates the data keeps its place on the map under pan, zoom, rotation and 3D orbit (Q11–Q14).
+  - **Dragged labels:** offset from the group's automatic position, in map coordinates (x, y; x, y, z in 3D).
+  - **Callouts:** the box position is the point plus a map offset; the leader line connects two map positions.
+  - **Badges and highlighted labels:** at their map position (they already are).
+  - **Shapes (item 8) and bounding boxes (item 3):** in map coordinates from the start.
+  - **Labels around the map:** recomputed per view, with **Freeze layout** to store them in map coordinates (Q14).
+  - **Text size:** text stays a fixed pixel size by default, with **Scale text with zoom** as an option (Q13).
+  - **Screen-fixed:** only the interface overlays (title, legend, toolbar, search, histogram, cheat sheet).
+- **In 3D:**
+  - **Point annotations:** turn them back on (off today): the box is drawn as an HTML overlay at the projected map position, with depth fade for boxes behind the cloud.
+  - **Label dragging:** moves a label in the camera plane at its own depth (unproject at the label's depth), stored as x, y, z.
+  - **Leader lines:** drawn in map space (deck.gl `LineLayer`), so they rotate correctly.
+- **To-do:**
+  - [ ] State and persistence: label offsets and annotation box positions as map coordinates (2 or 3 values); a migration from today's pixel offsets (convert with the stored view scale, or reset with a notice); JSON export and import updated (with a version field).
+  - [ ] Label drag code: screen → map conversion through the view (works rotated and in 3D); group matching after reclustering unchanged.
+  - [ ] Callout rendering: project box anchors every frame (one `requestAnimationFrame`); leader lines as a deck.gl layer in map space; off-screen points fade their boxes; optional "keep box near point on screen" per annotation (Q12).
+  - [ ] 3D: annotations and label dragging enabled; the 3D hints from the first plan updated.
+  - [ ] Freeze layout for labels around the map.
+  - [ ] Scale text with zoom option (TextLayer `sizeUnits: 'common'` vs `'pixels'`, with min and max pixel sizes).
+  - [ ] PNG export and HTML viewer use the same map positions (the viewer gets the offsets, not screen pixels).
+  - [ ] Tests:
+    - vitest for conversions and migration.
+    - Harness: drag a label and a callout, then pan, zoom and rotate, and assert both are still next to the same map position (pixel test near the projected anchor); the same in 3D after orbiting; a layout change keeps a dragged label next to its cluster; screenshots.
+
+## 16. Follow-ups from the first plan — any wave (S–M each)
+
+- [ ] **3D support for automatic clusters and outlines:** cluster on the 3D layout (a 3D density grid, or k-means on the 3D positions) and draw boxes or hulls in 3D (with item 3).
+- [ ] **HTML viewer in 3D:** an `OrbitView` in the viewer, with the stored camera, so 3D maps can be exported (now disabled in 3D).
+- [ ] **Invert or tint image-URL thumbnails:** "Invert colors" applies only to pixel-column images today. Add it for image URLs (CSS filter) so dark structure drawings (ChEMBL) stay readable on dark cards; consider "auto" (invert in dark themes).
+- [ ] **Cache cosine neighbours:** the neighbour cache holds euclidean neighbours only. Compute and cache cosine neighbours on first use, or at prepare when the metric is known.
+- [ ] **R support** stays out of scope (`roadmap-plan.md` section 12) until decided otherwise.
 
 ## Testing and risks
 
