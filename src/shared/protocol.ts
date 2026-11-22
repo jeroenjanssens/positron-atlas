@@ -54,11 +54,13 @@ export interface PrepareResult {
 }
 
 export interface KernelOutput {
-  kind: 'anchors' | 'anchorPos' | 'xy';
+  kind: 'anchors' | 'anchorPos' | 'xy' | 'overlayXy';
   file: string;
   dtype: 'f32' | 'u16' | 'u32';
   shape: number[];
   offset?: number;
+  /** B3: overlay layer id; present when kind === 'overlayXy'. */
+  layerId?: string;
 }
 
 export interface JobStatus {
@@ -447,7 +449,7 @@ export type ToWebview =
     }
   | { type: 'status'; task: string; status: JobStatus }
   | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
-  | { type: 'xyChunk'; file: FileRef; total: number }
+  | { type: 'xyChunk'; file: FileRef; total: number; layerId?: string }
   | { type: 'projected'; seconds: number; exact?: boolean; backend?: 'rust' | 'numpy' }
   | { type: 'colors'; column: number; file: FileRef; meta: ColorMeta; length: number }
   | { type: 'labelCodes'; column: number; file: FileRef; meta: ColorMeta; length: number; purpose?: 'labels' | 'names' }
@@ -506,6 +508,10 @@ export type ToWebview =
    * Sent by the host in response to `exportHtml` (X2).
    * Contains kernel-fetched text and the URI the webview should fetch for the viewer bundle.
    */
+  /** B3: overlay prepare completed (kernel applied transforms; host can now call project_overlay). */
+  | { type: 'overlayPrepared'; layerId: string; variable: string; nRows: number; nKept: number; dims: number }
+  /** B3: overlay layer removed from the kernel job. */
+  | { type: 'overlayRemoved'; layerId: string }
   | {
       type: 'exportHtmlAssembly';
       /**
@@ -657,4 +663,10 @@ export type ToHost =
       mask: Uint8Array | null;
       /** Number of kept/prepared rows (determines valid bit range). */
       nKept: number;
-    };
+    }
+  /** B3: apply base-job transforms to overlay variable; kernel calls prepare_overlay. */
+  | { type: 'prepareOverlay'; layerId: string; variable: string }
+  /** B3: place overlay rows via anchor index after prepareOverlay succeeds. */
+  | { type: 'projectOverlay'; layerId: string; metric: 'euclidean' | 'cosine'; seed: number }
+  /** B3: remove an overlay layer from the kernel job and the layer list. */
+  | { type: 'removeOverlay'; layerId: string };

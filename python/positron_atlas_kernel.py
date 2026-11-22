@@ -675,6 +675,13 @@ class _Job:
         self.nbr_done: threading.Event = threading.Event()
         self.nbr_done.set()  # starts set (no pending neighbours)
         self.nbr_error: str | None = None
+        # B3: transform parameters stored after prepare so prepare_overlay can apply the same.
+        self.feature_names: list[str] | None = None
+        self.scale_mean: np.ndarray | None = None   # float32 means per feature column
+        self.scale_inv: np.ndarray | None = None    # float32 1/std per feature column
+        self.pca_mean: np.ndarray | None = None     # float32 PCA centering mean (None if no PCA)
+        self.pca_comps: np.ndarray | None = None    # float32 k×d PCA component matrix (None if no PCA)
+        self.overlays: dict[str, '_OverlayState'] = {}
 
     def _mine(self) -> bool:
         """True unless called from a superseded (orphaned) task thread."""
@@ -959,6 +966,8 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
     x = raw[:k_rows]
 
     # --- standardize (streaming exact mean/std) ---------------------------------------
+    mean32: np.ndarray | None = None
+    inv32: np.ndarray | None = None
     core = _native_core() if opts.get("native", True) else None
     if standardize and core is not None and x.dtype == np.float32 and x.flags.c_contiguous and x.flags.writeable:
         # The Rust core: the same sums and formula, multithreaded, with the GIL released.
@@ -998,6 +1007,8 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
 
     # --- PCA (optional) -----------------------------------------------------------------
     evr: list[float] | None = None
+    pmean: np.ndarray | None = None
+    comps: np.ndarray | None = None
     if pca and pca_dims < d:
         job.set("pca", 0.55, "Fitting PCA")
         rng = np.random.default_rng(seed)
@@ -1013,6 +1024,13 @@ def _prepare_impl(job: _Job, opts: dict[str, Any]) -> dict[str, Any]:
             job.set("pca", 0.6 + 0.3 * stop / k_rows, f"Projecting onto {comps.shape[0]} components")
         x = feats
     dims = int(x.shape[1])
+
+    # B3: store transform parameters so prepare_overlay can apply the same pipeline.
+    job.feature_names = [frame.column_names()[c] for c in cols]
+    job.scale_mean = mean32
+    job.scale_inv = inv32
+    job.pca_mean = pmean
+    job.pca_comps = comps
 
     # --- anchors -------------------------------------------------------------------------
     job.set("anchors", 0.92, "Selecting anchors")
@@ -1736,6 +1754,229 @@ def project(job_id: str, anchor_xy_path: str, opts_json: str = "{}") -> str:
     anchor_xy = np.fromfile(anchor_xy_path, dtype="<f4")
     job.run("project", lambda: _project_impl(job, anchor_xy, opts))
     return _json({"ok": True, "jobId": job.id})
+
+
+# --------------------------------------------------------------------------------------
+# B3: overlay projection — another DataFrame on the map
+# --------------------------------------------------------------------------------------
+
+
+class _OverlayState:
+    """Feature-transformed rows of an overlay DataFrame, ready for placement."""
+
+    def __init__(self, name: str, features: np.ndarray, kept_idx: np.ndarray, n_original: int):
+        self.name = name
+        self.features = features        # float32, shape (n_kept, dims)
+        self.kept_idx = kept_idx        # original row positions that survived NaN-drop
+        self.n_original = n_original    # row count before NaN-drop
+        self.xy: np.ndarray | None = None   # set after project_overlay
+
+
+def _overlay_apply_transforms(
+    job: _Job,
+    ov_frame: "_Frame",
+    name_to_col: dict[str, int],
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Read and transform the overlay frame using the base job's stored parameters.
+
+    Returns (features float32, kept_idx int64, n_original).
+    Raises ValueError with a human-readable message when columns are missing.
+    """
+    if job.feature_names is None:
+        raise RuntimeError("Run prepare on the base DataFrame before adding an overlay.")
+
+    # --- match columns by name -------------------------------------------------------
+    missing = [fn for fn in job.feature_names if fn not in name_to_col]
+    if missing:
+        n_shown = min(5, len(missing))
+        shown = ", ".join(repr(m) for m in missing[:n_shown])
+        suffix = f" (and {len(missing) - n_shown} more)" if len(missing) > n_shown else ""
+        raise ValueError(
+            f"Overlay DataFrame '{ov_frame}' is missing feature column(s) used by the base map: "
+            f"{shown}{suffix}. The overlay must have all {len(job.feature_names)} feature columns."
+        )
+    ov_cols = [name_to_col[fn] for fn in job.feature_names]
+    d = len(ov_cols)
+    n = ov_frame.n_rows
+
+    # --- read (chunked, drop NaN rows) ------------------------------------------------
+    chunk = max(1, _CHUNK_VALUES // d)
+    raw = np.empty((n, d), dtype=np.float32)
+    keep = np.ones(n, dtype=bool)
+    all_rows = np.arange(n, dtype=np.int64)
+    w = 0
+    for start in range(0, n, chunk):
+        stop = min(n, start + chunk)
+        blk = ov_frame.block(ov_cols, all_rows[start:stop])
+        bad = ~np.isfinite(blk)
+        if bad.any():
+            ok = ~bad.any(axis=1)
+            keep[start:stop] = ok
+            blk = blk[ok]
+        raw[w : w + len(blk)] = blk
+        w += len(blk)
+    kept_idx = all_rows[keep]
+    k_rows = w
+    if k_rows == 0:
+        raise ValueError(
+            f"All {n} rows of the overlay DataFrame contain missing values in the feature columns."
+        )
+    x = raw[:k_rows]
+
+    # --- apply standardization -------------------------------------------------------
+    if job.scale_mean is not None and job.scale_inv is not None:
+        x = x - job.scale_mean
+        x *= job.scale_inv
+
+    # --- apply PCA -------------------------------------------------------------------
+    if job.pca_comps is not None and job.pca_mean is not None:
+        ct = np.ascontiguousarray(job.pca_comps.T)
+        feats = (x - job.pca_mean) @ ct
+        x = feats.astype(np.float32)
+    else:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+
+    return x, kept_idx, n
+
+
+@_guard
+def prepare_overlay(job_id: str, overlay_name: str, layer_id: str) -> str:
+    """Apply the base job's stored transforms to an overlay DataFrame.
+
+    ``overlay_name`` is the Python variable name in the kernel namespace.
+    ``layer_id`` is the unique string the host assigned to this overlay layer.
+    The result is stored in ``job.overlays[layer_id]`` and status is polled via wait_for_job.
+    Heavy work runs in the job thread (cancels previous project/overlay tasks).
+    """
+    job = _get(job_id)
+    if job.feature_names is None:
+        return _json({"ok": False, "error": "Run prepare on the base DataFrame before adding an overlay."})
+    try:
+        ov_obj = _resolve(overlay_name)
+        ov_frame = _make_frame(ov_obj)
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": f"Cannot load overlay variable '{overlay_name}': {type(e).__name__}: {e}"})
+
+    name_to_col = {n: i for i, n in enumerate(ov_frame.column_names())}
+
+    def _run() -> dict[str, Any]:
+        job.set("overlay-prepare", 0.1, f"Loading overlay '{overlay_name}'")
+        features, kept_idx, n_original = _overlay_apply_transforms(job, ov_frame, name_to_col)
+        job.set("overlay-prepare", 0.9, f"Stored {len(features):,} overlay rows")
+        job.overlays[layer_id] = _OverlayState(overlay_name, features, kept_idx, n_original)
+        return {
+            "layerId": layer_id,
+            "nRows": n_original,
+            "nKept": int(len(features)),
+            "dims": int(features.shape[1]),
+        }
+
+    job.run(f"overlay-prepare-{layer_id}", _run)
+    return _json({"ok": True, "jobId": job.id})
+
+
+def _write_overlay_xy_chunks(job: _Job, layer_id: str, xy: np.ndarray, chunk_rows: int = 1_000_000) -> int:
+    """Write overlay xy chunks and add them to job.outputs with the layerId tag."""
+    ndim = int(xy.shape[1]) if xy.ndim == 2 else 2
+    n_files = 0
+    safe_id = layer_id.replace("/", "_").replace("\\", "_")
+    for start in range(0, len(xy), chunk_rows):
+        stop = min(len(xy), start + chunk_rows)
+        fname = f"overlay_{safe_id}_xy_{n_files:04d}.f32"
+        _write(job, fname, xy[start:stop])
+        job.add_output(kind="overlayXy", file=fname, dtype="f32", shape=[stop - start, ndim], offset=start, layerId=layer_id)
+        n_files += 1
+    return n_files
+
+
+def _project_overlay_impl(job: _Job, layer_id: str, anchor_xy: np.ndarray, opts: dict[str, Any]) -> dict[str, Any]:
+    """Place overlay rows via the base anchor index."""
+    ov = job.overlays.get(layer_id)
+    if ov is None:
+        raise RuntimeError(f"No overlay prepared for layer '{layer_id}'. Call prepare_overlay first.")
+    if job.anchors is None or job.anchor_pos is None:
+        raise RuntimeError("Base job anchors not available. Run prepare and project on the base DataFrame first.")
+
+    x = ov.features
+    n = len(x)
+    k = int(opts.get("k", 10))
+    metric = str(opts.get("metric", "euclidean"))
+    cosine = metric == "cosine"
+    seed = int(opts.get("seed", 0))
+    core = _native_core() if opts.get("native", True) else None
+
+    # Detect output dimensions from anchor_xy.
+    n_anchors = len(job.anchor_pos)
+    ndim = int(anchor_xy.size // max(n_anchors, 1)) if n_anchors > 0 else 2
+    if ndim not in (2, 3):
+        ndim = 2
+    anchor_xy_2d = np.ascontiguousarray(anchor_xy, dtype=np.float32).reshape(-1, ndim)
+    anchors = job.anchors
+
+    job.set("overlay-project", 0.0, f"Placing {n:,} overlay rows")
+    t0 = time.time()
+
+    if core is not None:
+        if not (x.dtype == np.float32 and x.flags.c_contiguous):
+            x = np.ascontiguousarray(x, dtype=np.float32)
+        index = core.Index(anchors, seed=seed, cosine=cosine)
+        xy_all = np.empty((n, ndim), dtype=np.float32)
+        all_pos = np.arange(n, dtype=np.int64)
+        core_ok = index.place(x, all_pos, anchor_xy_2d, xy_all, k)
+        if not core_ok:
+            raise _Cancelled()
+    else:
+        if cosine:
+            anc_norm = anchors / np.maximum(np.linalg.norm(anchors, axis=1, keepdims=True), 1e-12)
+        else:
+            anc_norm = anchors
+        index = AnchorIndex(anc_norm, seed=seed)
+        q = np.ascontiguousarray(x, dtype=np.float32)
+        if cosine:
+            q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-12)
+        BLOCK = 65_536
+        xy_all = np.empty((n, ndim), dtype=np.float32)
+        for s in range(0, n, BLOCK):
+            e = min(n, s + BLOCK)
+            ii, dd = index.query(q[s:e], k)
+            xy_all[s:e] = place_from_neighbors(ii, dd, anchor_xy_2d)
+            job.set("overlay-project", e / n, f"Placed {e:,}/{n:,} overlay rows")
+
+    job.set("overlay-project", 0.95, "Writing overlay coordinates")
+    ov.xy = xy_all
+    n_files = _write_overlay_xy_chunks(job, layer_id, xy_all)
+    return {
+        "layerId": layer_id,
+        "nRows": n,
+        "files": n_files,
+        "seconds": time.time() - t0,
+    }
+
+
+@_guard
+def project_overlay(job_id: str, layer_id: str, anchor_xy_path: str, opts_json: str = "{}") -> str:
+    """Place the prepared overlay rows via the base anchor index.
+
+    ``anchor_xy_path`` is the path to the base anchor XY file (the same file passed to project).
+    Heavy work runs in the job thread.
+    """
+    job = _get(job_id)
+    if layer_id not in job.overlays:
+        return _json({"ok": False, "error": f"No overlay prepared for layer '{layer_id}'. Call prepare_overlay first."})
+    opts = json.loads(opts_json)
+    anchor_xy = np.fromfile(anchor_xy_path, dtype="<f4")
+    job.run(f"overlay-project-{layer_id}", lambda: _project_overlay_impl(job, layer_id, anchor_xy, opts))
+    return _json({"ok": True, "jobId": job.id})
+
+
+@_guard
+def remove_overlay(job_id: str, layer_id: str) -> str:
+    """Remove an overlay layer from the job, freeing its cached features and XY data."""
+    job = _get(job_id)
+    removed = layer_id in job.overlays
+    if removed:
+        del job.overlays[layer_id]
+    return _json({"ok": True, "removed": removed})
 
 
 def _write_xy_chunks(job: _Job, xy: np.ndarray, chunk_rows: int = 1_000_000) -> int:

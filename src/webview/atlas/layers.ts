@@ -25,7 +25,7 @@
  *   highlight re-colours the base point set and therefore cannot be detached from it.
  */
 
-export type LayerKind = 'base' | 'overlay-frame';
+export type LayerKind = 'base' | 'overlay-frame' | 'point-overlay';
 export type LayerBlending = 'normal' | 'additive';
 
 /** Persistent state for a point or overlay layer.  Serialised into PanelState. */
@@ -39,6 +39,8 @@ export interface LayerState {
   blending: LayerBlending;
   /** Draw order: lower = drawn first (behind). */
   order: number;
+  /** B3: Python variable name the overlay was loaded from. */
+  sourceName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +154,27 @@ export function updateLayer(layers: LayerState[], id: string, patch: Partial<Lay
   return layers.map((l) => (l.id === id ? { ...l, ...patch } : l));
 }
 
+/** Remove a layer by id. No-op when id is not found. */
+export function removeLayer(layers: LayerState[], id: string): LayerState[] {
+  return layers.filter((l) => l.id !== id);
+}
+
+/** Add a new point-overlay layer at the top of the stack (highest order). */
+export function addOverlayLayer(layers: LayerState[], id: string, name: string, sourceName: string): LayerState[] {
+  const maxOrder = layers.reduce((m, l) => Math.max(m, l.order), 0);
+  const layer: LayerState = {
+    id,
+    kind: 'point-overlay',
+    name,
+    visible: true,
+    opacity: 1,
+    blending: 'normal',
+    order: maxOrder + 10,
+    sourceName,
+  };
+  return [...layers, layer];
+}
+
 /**
  * Reorder layers by moving `id` to `newIndex` in the sorted array.
  * Returns a new array sorted by order, with order values re-assigned as 0,1,2…
@@ -171,17 +194,33 @@ export function restoreLayers(saved: LayerState[] | undefined): LayerState[] {
   if (!Array.isArray(saved) || saved.length === 0) return defaults;
   const savedMap = new Map(saved.map((l) => [l.id, l]));
   // Merge known defaults with saved overrides; unknown ids in saved are dropped.
-  return defaults.map((d) => {
+  const restored = defaults.map((d) => {
     const s = savedMap.get(d.id);
     if (!s) return d;
     return {
       ...d,
       visible: typeof s.visible === 'boolean' ? s.visible : d.visible,
       opacity: typeof s.opacity === 'number' ? Math.max(0, Math.min(1, s.opacity)) : d.opacity,
-      blending: s.blending === 'additive' ? 'additive' : 'normal',
+      blending: (s.blending === 'additive' ? 'additive' : 'normal') as LayerBlending,
       order: typeof s.order === 'number' ? s.order : d.order,
     };
   });
+  // B3: re-attach persisted point-overlay layers (not in defaults; added dynamically).
+  for (const s of saved) {
+    if (s.kind === 'point-overlay' && typeof s.id === 'string' && s.id.length > 0) {
+      restored.push({
+        id: s.id,
+        kind: 'point-overlay',
+        name: typeof s.name === 'string' ? s.name : s.id,
+        visible: typeof s.visible === 'boolean' ? s.visible : true,
+        opacity: typeof s.opacity === 'number' ? Math.max(0, Math.min(1, s.opacity)) : 1,
+        blending: (s.blending === 'additive' ? 'additive' : 'normal') as LayerBlending,
+        order: typeof s.order === 'number' ? s.order : 100,
+        sourceName: typeof s.sourceName === 'string' ? s.sourceName : undefined,
+      });
+    }
+  }
+  return restored;
 }
 
 // ---------------------------------------------------------------------------

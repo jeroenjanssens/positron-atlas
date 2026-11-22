@@ -188,9 +188,15 @@ import {
   createInitialLayers,
   updateLayer as updateLayerImpl,
   reorderLayer as reorderLayerImpl,
+  removeLayer as removeLayerImpl,
   deckLayerDescriptors,
   type LayerState,
 } from './atlas/layers';
+import {
+  onOverlayPrepared as onOverlayPreparedImpl,
+  onOverlayXYChunk as onOverlayXYChunkImpl,
+  onOverlayRemoved as onOverlayRemovedImpl,
+} from './atlas/overlay';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
 import { enqueueApiCommand as enqueueApiCommandImpl } from './atlas/api';
@@ -404,6 +410,16 @@ export class Atlas {
   /** Non-empty label = can redo; shown in toolbar tooltip. */
   redoLabel = $state('');
 
+  // ---- B3: overlay layer data -------------------------------------------------
+  /** XY positions per overlay layer (Float32Array of n*dims values). Non-reactive. */
+  overlayXY = new Map<string, Float32Array>();
+  /** RGBA colors per overlay layer (Uint8Array of n*4 values). Non-reactive. */
+  overlayColors = new Map<string, Uint8Array>();
+  /** Total row count per overlay layer (after NaN-drop). Non-reactive. */
+  overlayNKept = new Map<string, number>();
+  /** Number of rows filled so far per overlay layer. Non-reactive. */
+  overlayFilled = new Map<string, number>();
+
   // ---- non-reactive data -------------------------------------------------------
   // Not marked private so atlas/* sub-modules can access them.
   // Treat as internal: do not use directly outside this module tree.
@@ -615,7 +631,11 @@ export class Atlas {
         }
         break;
       case 'xyChunk':
-        await onXYChunkImpl(this, msg.file);
+        if (msg.layerId) {
+          await onOverlayXYChunkImpl(this, msg.layerId, msg.file);
+        } else {
+          await onXYChunkImpl(this, msg.file);
+        }
         break;
       case 'projected':
         this.placementBackend = msg.backend ?? null;
@@ -722,6 +742,13 @@ export class Atlas {
       // --- Python API commands (C3) ---
       case 'apiCommand':
         enqueueApiCommandImpl(this, msg.commandId, msg.name, msg.args);
+        break;
+      // --- B3: overlay layers ---
+      case 'overlayPrepared':
+        onOverlayPreparedImpl(this, msg.layerId, msg.nKept, msg.variable);
+        break;
+      case 'overlayRemoved':
+        onOverlayRemovedImpl(this, msg.layerId);
         break;
     }
   }
@@ -961,6 +988,20 @@ export class Atlas {
     this.syncOverlayDescriptors();
     this.render();
     this.persist();
+  }
+
+  // ---- B3: overlay layers ------------------------------------------------------
+
+  /** Request the host to prepare an overlay from a Python variable. */
+  addOverlay(variable: string): void {
+    const layerId = `overlay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    vscode.post({ type: 'prepareOverlay', layerId, variable });
+  }
+
+  /** Remove an overlay layer: tells the host, then cleans up local state. */
+  removeOverlay(layerId: string): void {
+    vscode.post({ type: 'removeOverlay', layerId });
+    // Local cleanup handled via the overlayRemoved response from the host.
   }
 
   // ---- sidebar -----------------------------------------------------------------

@@ -127,6 +127,29 @@ export function render(atlas: Atlas): void {
       histAll,
     )];
   }
+  // B3: append overlay point sets (one per visible point-overlay layer).
+  for (const layer of atlas.layers) {
+    if (layer.kind !== 'point-overlay' || !layer.visible) continue;
+    const xy = atlas.overlayXY.get(layer.id);
+    const colors = atlas.overlayColors.get(layer.id);
+    const nKept = atlas.overlayNKept.get(layer.id) ?? 0;
+    if (!xy || !colors || nKept === 0) continue;
+    const nd = atlas.dims;
+    const nFilled = atlas.overlayFilled.get(layer.id) ?? 0;
+    if (nFilled === 0) continue;
+    sets.push({
+      id: `overlay-${layer.id}`,
+      layerId: layer.id,
+      positions: xy.subarray(0, nFilled * nd),
+      colors: colors.subarray(0, nFilled * 4),
+      length: nFilled,
+      positionStride: nd,
+      layerOpacity: layer.opacity,
+      layerBlending: layer.blending,
+    });
+    filters.push(null);
+  }
+
   atlas.renderer.setPointSets(sets, filters);
   // B5: push annotations to renderer for the leader-lines deck.gl layer.
   atlas.renderer.setAnnotations(atlas.annotations);

@@ -19,6 +19,7 @@
   let fileVersion = 0;
   let generation = 0;
   let projectionCurrent = false;
+  let anchorXYPath = null; // B3: kept for overlay projection after base project
 
   const post = (msg) => window.postMessage(msg, '*');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -198,12 +199,10 @@
       case 'project': {
         const name = `anchor_xy_${Date.now()}.f32`;
         const xyPath = await writeJobFile(name, m.anchorXY);
-        try {
-          // T2: pass dims so the kernel places into 2D or 3D output space.
-          await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore, dims: m.dims ?? 2 })), false);
-        } finally {
-          await rmJobFile(name);
-        }
+        // B3: keep the anchor XY path so overlay projection can reuse it.
+        anchorXYPath = xyPath;
+        // T2: pass dims so the kernel places into 2D or 3D output space.
+        await runXYTask('project', () => call('project', jobId, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore, dims: m.dims ?? 2 })), false);
         break;
       }
       case 'exact':
@@ -607,6 +606,65 @@
           }
           harness.commOnMsg({ content: { data: { type: 'selectionChanged', mask_b64, nKept: m.nKept } } });
         }
+        break;
+      }
+      // --- B3: overlay layers ---
+      case 'prepareOverlay': {
+        const gen = ++generation;
+        await call('prepare_overlay', jobId, m.variable, m.layerId);
+        const s = await waitForJob(
+          jobId,
+          (st) => { post({ type: 'status', task: 'overlay-prepare', status: st }); },
+          gen,
+        );
+        if (s.stage === 'done') {
+          const r = s.result || {};
+          post({ type: 'overlayPrepared', layerId: r.layerId || m.layerId, variable: m.variable, nRows: r.nRows || 0, nKept: r.nKept || 0, dims: r.dims || 0 });
+        } else if (s.stage === 'error') {
+          const err = new Error(s.error || 'Overlay prepare failed');
+          err.detail = s.result && s.result.traceback;
+          throw err;
+        }
+        break;
+      }
+      case 'projectOverlay': {
+        if (!anchorXYPath) throw new Error('No anchor XY available. Run the base projection first.');
+        const gen = ++generation;
+        const layerId = m.layerId;
+        await call('project_overlay', jobId, layerId, anchorXYPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings().nativeCore }));
+        const seen = new Set();
+        const s = await waitForJob(
+          jobId,
+          (st) => {
+            post({ type: 'status', task: 'overlay-project', status: st });
+            for (const o of st.outputs) {
+              if (o.kind === 'overlayXy' && !seen.has(o.file)) {
+                seen.add(o.file);
+                post({ type: 'xyChunk', file: fileRef(o), total: (st.result && st.result.nRows) || 0, layerId });
+              }
+            }
+          },
+          gen,
+        );
+        if (s.stage === 'done') {
+          for (const o of s.outputs) {
+            if (o.kind === 'overlayXy' && !seen.has(o.file)) {
+              seen.add(o.file);
+              post({ type: 'xyChunk', file: fileRef(o), total: (s.result && s.result.nRows) || 0, layerId });
+            }
+          }
+        } else if (s.stage === 'error') {
+          const err = new Error(s.error || 'Overlay projection failed');
+          err.detail = s.result && s.result.traceback;
+          throw err;
+        }
+        break;
+      }
+      case 'removeOverlay': {
+        if (jobId) {
+          await call('remove_overlay', jobId, m.layerId).catch(() => undefined);
+        }
+        post({ type: 'overlayRemoved', layerId: m.layerId });
         break;
       }
     }

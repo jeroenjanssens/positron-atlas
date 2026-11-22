@@ -159,6 +159,8 @@ export class AtlasPanel {
   private imagePermission: 'always' | 'never' | 'ask' = 'ask';
   /** URI for the in-progress HTML export; set by handleExportHtml, consumed by handleExportHtmlReady. */
   private pendingExportUri: vscode.Uri | undefined;
+  /** B3: path to the last anchor XY file; kept for overlay projection after base project. */
+  private anchorXYPath: string | undefined;
 
   // ---- C3: Python API comm client ------------------------------------------------
   private commClient: RuntimeClientInstance | undefined;
@@ -423,13 +425,14 @@ export class AtlasPanel {
         const job = this.requireJob();
         const xyPath = path.join(this.jobDir.fsPath, `anchor_xy_${Date.now()}.f32`);
         await fs.writeFile(xyPath, bytesFromPayload(m.anchorXY));
-        try {
-          const settings = readSettings();
-          // T2: pass dims to the kernel so it places into 2D or 3D output space.
-          await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore, dims: m.dims ?? 2 })), false);
-        } finally {
-          await fs.rm(xyPath, { force: true });
+        // B3: keep the anchor XY file so overlay projection can reuse it.
+        if (this.anchorXYPath) {
+          await fs.rm(this.anchorXYPath, { force: true }).catch(() => undefined);
         }
+        this.anchorXYPath = xyPath;
+        const settings = readSettings();
+        // T2: pass dims to the kernel so it places into 2D or 3D output space.
+        await this.runXYTask('project', () => this.bridge.call('project', job, xyPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore, dims: m.dims ?? 2 })), false);
         break;
       }
       case 'exact': {
@@ -892,6 +895,68 @@ export class AtlasPanel {
         } else {
           this.ctx.log.debug('selectionChanged: no Python API handle for this tab');
         }
+        break;
+      }
+      // --- B3: overlay layers ---
+      case 'prepareOverlay': {
+        const job = this.requireJob();
+        const token = this.newToken();
+        await this.bridge.call('prepare_overlay', job, m.variable, m.layerId);
+        const s = await this.bridge.waitForJob(
+          job,
+          (st) => { this.post({ type: 'status', task: 'overlay-prepare', status: st }); },
+          token,
+        );
+        if (s.stage === 'done') {
+          const r = s.result as { layerId: string; nRows: number; nKept: number; dims: number };
+          this.post({ type: 'overlayPrepared', layerId: r.layerId, variable: m.variable, nRows: r.nRows, nKept: r.nKept, dims: r.dims });
+        } else if (s.stage === 'error') {
+          throw new KernelError(s.error ?? 'Overlay prepare failed', s.result?.traceback);
+        }
+        break;
+      }
+      case 'projectOverlay': {
+        const job = this.requireJob();
+        if (!this.anchorXYPath) {
+          throw new Error('No anchor XY available. Run the base projection first.');
+        }
+        const token = this.newToken();
+        const settings = readSettings();
+        const layerId = m.layerId;
+        await this.bridge.call('project_overlay', job, layerId, this.anchorXYPath, JSON.stringify({ metric: m.metric, seed: m.seed, native: settings.nativeCore }));
+        const seen = new Set<string>();
+        const s = await this.bridge.waitForJob(
+          job,
+          (st) => {
+            this.post({ type: 'status', task: 'overlay-project', status: st });
+            for (const o of st.outputs) {
+              if (o.kind === 'overlayXy' && !seen.has(o.file)) {
+                seen.add(o.file);
+                this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: st.result?.nRows ?? 0, layerId });
+              }
+            }
+          },
+          token,
+        );
+        if (s.stage === 'done') {
+          // All chunks already streamed; signal completion via a final xyChunk sweep.
+          for (const o of s.outputs) {
+            if (o.kind === 'overlayXy' && !seen.has(o.file)) {
+              seen.add(o.file);
+              this.post({ type: 'xyChunk', file: this.fileRef(o as KernelOutput), total: s.result?.nRows ?? 0, layerId });
+            }
+          }
+        } else if (s.stage === 'error') {
+          throw new KernelError(s.error ?? 'Overlay projection failed', s.result?.traceback);
+        }
+        break;
+      }
+      case 'removeOverlay': {
+        const job = this.jobId;
+        if (job) {
+          await this.bridge.call('remove_overlay', job, m.layerId).catch(() => undefined);
+        }
+        this.post({ type: 'overlayRemoved', layerId: m.layerId });
         break;
       }
     }
