@@ -302,6 +302,11 @@
     renderer.onPointer(onPointer);
     // Click: handled via container click event
     container.addEventListener('click', onClick);
+    // Apply dataMap preset defaults: right-drag and Ctrl-drag rotate 2D (item 1).
+    renderer.setNavSettings(
+      { preset: 'dataMap', scrollGesture: 'zoom', zoomToCursor: true, invertZoom: false, emulateMiddleButton: false },
+      2,
+    );
 
     hit = new HitIndex(blob.xy, nPoints);
 
