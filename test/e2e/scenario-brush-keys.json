@@ -1,0 +1,12 @@
+{
+  "description": "Brush keys in real Positron: with the brush tool active, ] grows the brush and does not rotate the map; with the brush off, ] rotates the map.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 4, 3000)\ndf = pd.DataFrame(rng.normal(0, 1, (3000, 8)) + k[:, None] * 4, columns=[f'x{i}' for i in range(8)])\ndf['cluster'] = [f'c{v}' for v in k]\n",
+  "steps": [
+    {"name": "focus the map", "clickMap": true, "until": "document.hasFocus()", "timeout": 5000},
+    {"name": "brush tool on", "eval": "a.setAnnotateTool('brush'); window.__size0 = a.brush.sizePx; window.__rot0 = a.rotation2D; await new Promise((r) => setTimeout(r, 500));", "clickMap": true, "report": "{ size: a.brush.sizePx, rot: a.rotation2D }"},
+    {"name": "] grows the brush and does not rotate", "key": "]", "code": "BracketRight", "until": "a.brush.sizePx > window.__size0", "timeout": 4000, "assert": "Math.abs(a.rotation2D - window.__rot0) < 0.5", "report": "{ size: a.brush.sizePx, rot: a.rotation2D }"},
+    {"name": "brush tool off", "eval": "a.setAnnotateTool(null); window.__rot1 = a.rotation2D; await new Promise((r) => setTimeout(r, 500));"},
+    {"name": "] rotates the map", "key": "]", "code": "BracketRight", "until": "Math.abs(a.rotation2D - window.__rot1) > 1", "timeout": 4000, "report": "{ rot: a.rotation2D }"}
+  ]
+}
