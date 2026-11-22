@@ -483,6 +483,57 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  // ---- Explore → Tooltip (H3–H8) -----------------------------------------------
+
+  'tooltip.titleColumn': {
+    title: 'Title column',
+    what: 'The column shown as the card heading when you hover or click a point.',
+    intuition:
+      'Atlas auto-detects a column named title, name, label, or text on first load and defaults to showing only the title (Fields = None). ' +
+      'Set to "(none / auto)" to fall back to "Row N". ' +
+      'Only text and categorical columns are listed; use Link column for URLs.',
+    cost: 'none',
+  },
+
+  'tooltip.fields': {
+    title: 'Fields',
+    what: 'Which columns appear as key–value rows in the hover card.',
+    intuition:
+      '"None" hides all fields — useful when the title or image is enough to identify a point. ' +
+      '"All columns" shows every column returned by the kernel. ' +
+      '"Chosen columns" lets you pick exactly the columns you care about.',
+    cost: 'none',
+  },
+
+  'tooltip.linkColumn': {
+    title: 'Link column',
+    what: 'A column containing a URL; the card shows an "Open link" button and Cmd/Ctrl+click opens it directly.',
+    intuition:
+      'Atlas auto-detects columns named url, link, href, or uri. ' +
+      'Only valid http/https/mailto values are treated as links; other values are ignored.',
+    cost: 'none',
+  },
+
+  'tooltip.imageUrlColumn': {
+    title: 'Image URL column',
+    what: 'A column containing an image file path or URL; the card fetches and shows the image.',
+    intuition:
+      'Atlas auto-detects columns named image, img, photo, picture, thumbnail, or thumb. ' +
+      'Local file paths are served by the extension without a network request. ' +
+      'For http/https URLs, use "Load images" to control whether fetching is allowed.',
+    cost: 'none',
+  },
+
+  'tooltip.loadImages': {
+    title: 'Load images',
+    what: 'Whether the extension fetches images from http/https URLs in the image column.',
+    intuition:
+      '"Ask first" shows a one-time dialog the next time an http/https image is requested. ' +
+      '"Always" loads silently without prompting. ' +
+      '"Never" blocks remote fetching; local file paths still work.',
+    cost: 'none',
+  },
+
   // ---- Annotate → Labels -------------------------------------------------------
 
   'labels.labelBy': {

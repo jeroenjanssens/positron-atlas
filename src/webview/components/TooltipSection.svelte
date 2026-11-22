@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Atlas } from '../atlas.svelte';
   import Section from './Section.svelte';
+  import Select from './controls/Select.svelte';
+  import Checkbox from './controls/Checkbox.svelte';
+  import Info from './controls/Info.svelte';
 
   let { atlas }: { atlas: Atlas } = $props();
 
@@ -11,17 +14,17 @@
 
   function onTitleChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
-    atlas.tooltipOpts = { ...atlas.tooltipOpts, titleColumn: v === '' ? null : Number(v) };
+    atlas.tooltipOpts = { ...atlas.tooltipOpts, titleColumn: v === '' ? undefined : Number(v) };
   }
 
   function onLinkChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
-    atlas.tooltipOpts = { ...atlas.tooltipOpts, linkColumn: v === '' ? null : Number(v) };
+    atlas.tooltipOpts = { ...atlas.tooltipOpts, linkColumn: v === '' ? undefined : Number(v) };
   }
 
   function onImageUrlChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
-    atlas.tooltipOpts = { ...atlas.tooltipOpts, imageUrlColumn: v === '' ? null : Number(v) };
+    atlas.tooltipOpts = { ...atlas.tooltipOpts, imageUrlColumn: v === '' ? undefined : Number(v) };
   }
 
   function onFieldModeChange(e: Event) {
@@ -34,77 +37,82 @@
     const next = checked ? [...cols, idx].sort((a, b) => a - b) : cols.filter((i) => i !== idx);
     atlas.tooltipOpts = { ...atlas.tooltipOpts, fieldColumns: next };
   }
-
-  function onPermChange(e: Event) {
-    const v = (e.target as HTMLSelectElement).value as 'always' | 'never' | 'ask';
-    atlas.loadImagesFromUrls = v;
-  }
 </script>
 
 <Section {atlas} id="tooltip" title="Tooltip">
-  <label class="select">
-    <span>Title column</span>
-    <select value={atlas.tooltipOpts.titleColumn === null || atlas.tooltipOpts.titleColumn === undefined ? '' : String(atlas.tooltipOpts.titleColumn)} onchange={onTitleChange}>
-      <option value="">(none)</option>
+  <div class="select">
+    <span>Title column <Info id="tooltip.titleColumn" /></span>
+    <Select
+      value={atlas.tooltipOpts.titleColumn === null || atlas.tooltipOpts.titleColumn === undefined ? '' : String(atlas.tooltipOpts.titleColumn)}
+      ariaLabel="Title column"
+      onchange={onTitleChange}
+    >
+      <option value="">(none / auto)</option>
       {#each textCols as c (c.index)}
         <option value={String(c.index)}>{c.name}</option>
       {/each}
-    </select>
-  </label>
+    </Select>
+  </div>
 
-  <label class="select">
-    <span>Fields</span>
-    <select value={atlas.tooltipOpts.fieldMode} onchange={onFieldModeChange}>
+  <div class="select">
+    <span>Fields <Info id="tooltip.fields" /></span>
+    <Select value={atlas.tooltipOpts.fieldMode} ariaLabel="Fields" onchange={onFieldModeChange}>
       <option value="none">None</option>
       <option value="all">All columns</option>
       <option value="chosen">Chosen columns</option>
-    </select>
-  </label>
+    </Select>
+  </div>
 
   {#if atlas.tooltipOpts.fieldMode === 'chosen'}
     <div class="field-list">
       {#each allCols as c (c.index)}
         {#if c.kind !== 'other'}
-          <label class="check">
-            <input type="checkbox"
-              checked={atlas.tooltipOpts.fieldColumns.includes(c.index)}
-              onchange={(e) => toggleFieldCol(c.index, (e.target as HTMLInputElement).checked)} />
-            {c.name}
-          </label>
+          <Checkbox
+            checked={atlas.tooltipOpts.fieldColumns.includes(c.index)}
+            onchange={(v) => toggleFieldCol(c.index, v)}
+          >{c.name}</Checkbox>
         {/if}
       {/each}
     </div>
   {/if}
 
-  <label class="select">
-    <span>Link column</span>
-    <select value={atlas.tooltipOpts.linkColumn === null || atlas.tooltipOpts.linkColumn === undefined ? '' : String(atlas.tooltipOpts.linkColumn)} onchange={onLinkChange}>
-      <option value="">(none)</option>
+  <div class="select">
+    <span>Link column <Info id="tooltip.linkColumn" /></span>
+    <Select
+      value={atlas.tooltipOpts.linkColumn === null || atlas.tooltipOpts.linkColumn === undefined ? '' : String(atlas.tooltipOpts.linkColumn)}
+      ariaLabel="Link column"
+      onchange={onLinkChange}
+    >
+      <option value="">(none / auto)</option>
       {#each textCols as c (c.index)}
         <option value={String(c.index)}>{c.name}</option>
       {/each}
-    </select>
-  </label>
+    </Select>
+  </div>
 
-  <label class="select">
-    <span>Image URL column</span>
-    <select value={atlas.tooltipOpts.imageUrlColumn === null || atlas.tooltipOpts.imageUrlColumn === undefined ? '' : String(atlas.tooltipOpts.imageUrlColumn)} onchange={onImageUrlChange}>
-      <option value="">(none)</option>
+  <div class="select">
+    <span>Image URL column <Info id="tooltip.imageUrlColumn" /></span>
+    <Select
+      value={atlas.tooltipOpts.imageUrlColumn === null || atlas.tooltipOpts.imageUrlColumn === undefined ? '' : String(atlas.tooltipOpts.imageUrlColumn)}
+      ariaLabel="Image URL column"
+      onchange={onImageUrlChange}
+    >
+      <option value="">(none / auto)</option>
       {#each textCols as c (c.index)}
         <option value={String(c.index)}>{c.name}</option>
       {/each}
-    </select>
-  </label>
+    </Select>
+  </div>
 
   {#if atlas.tooltipOpts.imageUrlColumn !== null && atlas.tooltipOpts.imageUrlColumn !== undefined}
-    <label class="select">
-      <span>Load images</span>
-      <select value={atlas.loadImagesFromUrls} onchange={onPermChange}>
+    <div class="select">
+      <span>Load images <Info id="tooltip.loadImages" /></span>
+      <Select value={atlas.loadImagesFromUrls} ariaLabel="Load images" onchange={(e) => { atlas.loadImagesFromUrls = (e.target as HTMLSelectElement).value as 'always' | 'never' | 'ask'; }}>
         <option value="ask">Ask first</option>
         <option value="always">Always</option>
         <option value="never">Never</option>
-      </select>
-    </label>
+      </Select>
+    </div>
   {/if}
 </Section>
 
