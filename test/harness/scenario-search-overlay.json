@@ -1,6 +1,6 @@
 {
   "variable": "df",
-  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 300\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\nm = 60\nk2 = rng.integers(0, 2, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 10)), columns=[f'x{i}' for i in range(10)])\ndf2['label'] = ['alpha' if v == 0 else 'beta' for v in k2]\n",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(99)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\nm = 60\nk2 = rng.integers(0, 2, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 10)), columns=[f'x{i}' for i in range(10)])\ndf2['label'] = ['alpha' if v == 0 else 'beta' for v in k2]\n",
   "settings": {
     "pcaEnabled": false,
     "maxAnchorsCpu": 500

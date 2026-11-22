@@ -3092,32 +3092,36 @@ def search_overlay(job_id: str, layer_id: str, column: int, query: str, limit: i
         frame = _make_frame(ov_obj)
     except Exception as e:  # noqa: BLE001
         return _json({"ok": False, "error": str(e)})
-    col = int(column)
-    q = str(query)
-    q_low = q.lower()
-    if frame.kind == "pandas":
-        col_name = frame.column_names()[col]
-        series = frame.obj[col_name].iloc[overlay.kept_idx]
-        mask_bool = series.str.contains(q, case=False, regex=False, na=False).to_numpy(dtype=bool, na_value=False)
-    elif frame.kind == "polars":
-        import re as _re
-        col_name = frame.column_names()[col]
-        series = frame.obj[col_name].gather(overlay.kept_idx)
-        try:
-            mask_bool = series.str.contains(f"(?i){_re.escape(q)}").to_numpy(dtype=bool)
-        except Exception:  # noqa: BLE001
-            vals = np.array(series.to_list(), dtype=object)
+    try:
+        col = int(column)
+        q = str(query)
+        q_low = q.lower()
+        if frame.kind == "pandas":
+            col_name = frame.column_names()[col]
+            series = frame.obj[col_name].iloc[overlay.kept_idx]
+            mask_arr = series.str.contains(q, case=False, regex=False, na=False)
+            mask_bool = np.asarray(mask_arr, dtype=bool)
+        elif frame.kind == "polars":
+            import re as _re
+            col_name = frame.column_names()[col]
+            series = frame.obj[col_name].gather(overlay.kept_idx)
+            try:
+                mask_bool = series.str.contains(f"(?i){_re.escape(q)}").to_numpy(dtype=bool)
+            except Exception:  # noqa: BLE001
+                vals = np.array(series.to_list(), dtype=object)
+                mask_bool = np.array([isinstance(v, str) and q_low in v.lower() for v in vals], dtype=bool)
+        else:
+            vals = np.array([frame.column(col, np.array([i], dtype=np.intp))[0] for i in overlay.kept_idx], dtype=object)
             mask_bool = np.array([isinstance(v, str) and q_low in v.lower() for v in vals], dtype=bool)
-    else:
-        vals = np.array([frame.column(col, np.array([i], dtype=np.intp))[0] for i in overlay.kept_idx], dtype=object)
-        mask_bool = np.array([isinstance(v, str) and q_low in v.lower() for v in vals], dtype=bool)
-    pos_indices = np.where(mask_bool)[0].astype(np.uint32)
-    if len(pos_indices) > limit:
-        pos_indices = pos_indices[:limit]
-    fname = f"search_overlay_{layer_id}_{int(time.time() * 1000)}.u32"
-    fpath = os.path.join(job.job_dir, fname)
-    pos_indices.astype("<u4").tofile(fpath)
-    return _json({"ok": True, "file": fname, "count": int(len(pos_indices))})
+        pos_indices = np.where(mask_bool)[0].astype(np.uint32)
+        if len(pos_indices) > limit:
+            pos_indices = pos_indices[:limit]
+        fname = f"search_overlay_{layer_id}_{int(time.time() * 1000)}.u32"
+        fpath = os.path.join(job.dir, fname)
+        pos_indices.astype("<u4").tofile(fpath)
+        return _json({"ok": True, "file": fname, "count": int(len(pos_indices))})
+    except Exception as e:  # noqa: BLE001
+        return _json({"ok": False, "error": str(e)})
 
 
 def hist_values_overlay(job_id: str, layer_id: str, column: int) -> str:

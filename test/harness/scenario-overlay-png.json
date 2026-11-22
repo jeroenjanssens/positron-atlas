@@ -1,6 +1,6 @@
 {
   "variable": "df",
-  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 300\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\nm = 80\nk2 = rng.integers(0, 3, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 10)), columns=[f'x{i}' for i in range(10)])\n",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\nm = 80\nk2 = rng.integers(0, 3, m)\ndf2 = pd.DataFrame(centers[k2] + rng.normal(0, 1, (m, 10)), columns=[f'x{i}' for i in range(10)])\n",
   "settings": {
     "pcaEnabled": false,
     "maxAnchorsCpu": 500
@@ -18,8 +18,8 @@
       "timeout": 15000
     },
     {
-      "name": "count pixels in base-only PNG",
-      "eval": "const img = new Image(); await new Promise(r => { img.onload = r; img.src = h.png; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pngPixelsBase = n",
+      "name": "count non-white pixels in base-only PNG",
+      "eval": "const img = new Image(); await new Promise(r => { img.onload = r; img.src = h.png; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 100) n++; window.__pngPixelsBase = n",
       "until": "window.__pngPixelsBase !== undefined",
       "assert": "window.__pngPixelsBase > 100",
       "report": "{ pngPixelsBase: window.__pngPixelsBase, pngSize: h.png.length }"
@@ -42,8 +42,8 @@
       "timeout": 15000
     },
     {
-      "name": "count pixels in overlay PNG",
-      "eval": "const img = new Image(); await new Promise(r => { img.onload = r; img.src = h.png; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__pngPixelsOverlay = n",
+      "name": "count non-white pixels in overlay PNG",
+      "eval": "const img = new Image(); await new Promise(r => { img.onload = r; img.src = h.png; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 100) n++; window.__pngPixelsOverlay = n",
       "until": "window.__pngPixelsOverlay !== undefined",
       "screenshot": "overlay-png.png",
       "assert": [
