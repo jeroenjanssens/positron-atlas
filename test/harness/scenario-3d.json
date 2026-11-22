@@ -44,6 +44,26 @@
       "screenshot": "3d-initial.png"
     },
     {
+      "name": "legend: hiding a category reduces rendered point count in 3D",
+      "eval": "a.toggleCategory(0, false)",
+      "until": "a.anyHidden",
+      "timeout": 3000,
+      "assert": [
+        "a.isCategoryHidden(0)",
+        "!a.isCategoryHidden(1)",
+        "a.renderVisibleCount > 0",
+        "a.renderVisibleCount < a.nKept"
+      ],
+      "report": "{ visibleCount: a.renderVisibleCount, nKept: a.nKept, hidden: [...(a.hiddenCategories.get(a.colorColumn) || [])] }",
+      "screenshot": "3d-legend-hidden.png"
+    },
+    {
+      "name": "restore all categories",
+      "eval": "a.showAllCategories()",
+      "until": "!a.anyHidden",
+      "timeout": 3000
+    },
+    {
       "name": "hover at anchor 0 screen position shows tooltip",
       "eval": "const sx = a._3dScreenXY[0], sy = a._3dScreenXY[1]; a.onPointer({ x: sx, y: sy, world: [0, 0] })",
       "until": "a.tooltip !== null",
@@ -82,35 +102,6 @@
     {
       "name": "clear selection",
       "eval": "a.setSelection(null)"
-    },
-    {
-      "name": "legend: hiding a category reduces drawn pixels",
-      "eval": "window.__pixelsAll = null; const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k]+d[k+1]+d[k+2] > 60) n++; window.__pixelsAll = n",
-      "until": "window.__pixelsAll !== null"
-    },
-    {
-      "name": "hide first cluster",
-      "eval": "a.toggleCategory(0, false)",
-      "until": "a.anyHidden",
-      "timeout": 3000,
-      "assert": [
-        "a.isCategoryHidden(0)",
-        "!a.isCategoryHidden(1)"
-      ]
-    },
-    {
-      "name": "fewer pixels after hiding one cluster",
-      "eval": "window.__pixelsHidden = null; const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k]+d[k+1]+d[k+2] > 60) n++; window.__pixelsHidden = n",
-      "until": "window.__pixelsHidden !== null",
-      "assert": "window.__pixelsHidden < window.__pixelsAll",
-      "report": "{ pixelsAll: window.__pixelsAll, pixelsHidden: window.__pixelsHidden }",
-      "screenshot": "3d-legend-hidden.png"
-    },
-    {
-      "name": "restore all categories",
-      "eval": "a.showAllCategories()",
-      "until": "!a.anyHidden",
-      "timeout": 3000
     },
     {
       "name": "3D toolbar controls are present",

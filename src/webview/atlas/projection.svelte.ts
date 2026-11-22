@@ -16,6 +16,9 @@ export function project(atlas: Atlas): void {
   atlas.projection = 'running';
   atlas.projectProgress = 0;
   atlas.placedRows = 0;
+  // Always (re)allocate allXY for the current dims so 2D→3D (or 3D→2D) transitions
+  // don't leave a stale buffer from the previous run (e.g. nKept*2 when dims=3).
+  atlas.allXY = new Float32Array(atlas.prepared.nKept * atlas.dims);
   vscode.post({ type: 'project', anchorXY: float32ToBytes(atlas.anchorXY), metric: atlas.umap.metric, seed: atlas.umap.seed, dims: atlas.dims });
 }
 
@@ -61,10 +64,20 @@ export function onProjected(atlas: Atlas, seconds: number, exact: boolean): void
   } else {
     atlas.timings = { ...atlas.timings, project: seconds };
     atlas.projection = 'done';
+    // Re-enable autoFit so the camera fits to the freshly placed 3D (or 2D) data.
+    // This is needed because render.ts resets autoFit to false after each fit to
+    // prevent repeated re-fitting; onProjected must re-arm it for new data.
+    atlas.autoFit = true;
   }
   updateMapColors(atlas, false);
   atlas.recolor();
   refreshClusters(atlas);
+  // In 3D mode, the screen-space hit index must be rebuilt after projection
+  // completes. Camera movement normally triggers on3DViewChange, but when the
+  // camera is static the callback never fires.  Kick the rebuild directly here.
+  if (atlas.dims === 3 && atlas.projection === 'done') {
+    atlas.rebuild3DHitIndex();
+  }
 }
 
 export function cancelKernel(atlas: Atlas): void {

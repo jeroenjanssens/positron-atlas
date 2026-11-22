@@ -114,8 +114,11 @@ export function render(atlas: Atlas): void {
   atlas._renderTick++;
   // A12: invalidate glow when point data changes (2D only).
   if (atlas.view.glow && nd === 2) atlas.glowVersion++;
-  // In 3D mode, invalidate the screen-space hit index (needs rebuild after view settles).
-  if (nd === 3) atlas._3dScreenXY = null;
+  // In 3D mode, invalidate the screen-space hit index while layout data is
+  // changing (projection running).  Once projection is done the camera hasn't
+  // moved so existing screen positions stay valid; on3DViewChange handles the
+  // camera-movement case.
+  if (nd === 3 && atlas.projection !== 'done') atlas._3dScreenXY = null;
   atlas.scheduleLabels();
   if (atlas.autoFit) {
     if (nd === 3) {
@@ -128,6 +131,10 @@ export function render(atlas: Atlas): void {
       atlas.renderer.fit(bounds(atlas.anchorXY, nA), false, atlas.legendWidth(), isAround ? 0.2 : 0);
       atlas.fittedZoom = atlas.renderer.fittedZoom; // A8: track for zoom-dependent fine labels
     }
+    // Treat autoFit as "fit on the next render then stop" so that repeated render()
+    // calls (e.g. from recolor, toggleCategory) don't keep resetting the camera.
+    // Code that wants a re-fit (new UMAP result, fitView button) must re-set autoFit=true.
+    atlas.autoFit = false;
   }
 }
 
