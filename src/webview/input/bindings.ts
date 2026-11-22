@@ -75,6 +75,8 @@ export interface BindingEntry {
   section: 'navigate' | 'select' | 'annotate' | 'view' | 'misc';
   /** When this binding is active. */
   context: BindingContext;
+  /** Presets for which this binding is offered (undefined = all presets). */
+  preset?: string[];
 }
 
 /** All navigation bindings — one source of truth for dispatcher + cheat sheet. */
@@ -277,6 +279,57 @@ export const BINDINGS: BindingEntry[] = [
     section: 'misc',
     context: 'both',
   },
+  // ---- Preset-specific: CAD fit keys -------------------------------------------
+  {
+    actionId: 'view.reset',
+    label: 'Fit to view (F)',
+    key: 'f',
+    section: 'navigate',
+    context: 'both',
+    preset: ['cad'],
+  },
+  {
+    actionId: 'view.reset',
+    label: 'Fit to view (Home)',
+    key: 'home',
+    section: 'navigate',
+    context: 'both',
+    preset: ['cad'],
+  },
+  // ---- Preset-specific: CAD numpad camera views --------------------------------
+  {
+    actionId: 'view.top',
+    label: 'Top view (numpad 7)',
+    key: 'numpad7',
+    section: 'view',
+    context: '3d',
+    preset: ['cad'],
+  },
+  {
+    actionId: 'view.front',
+    label: 'Front view (numpad 1)',
+    key: 'numpad1',
+    section: 'view',
+    context: '3d',
+    preset: ['cad'],
+  },
+  {
+    actionId: 'view.side',
+    label: 'Side view (numpad 3)',
+    key: 'numpad3',
+    section: 'view',
+    context: '3d',
+    preset: ['cad'],
+  },
+  // ---- Preset-specific: Design fit key ----------------------------------------
+  {
+    actionId: 'view.reset',
+    label: 'Fit to view (Shift+1)',
+    key: 'shift+1',
+    section: 'navigate',
+    context: 'both',
+    preset: ['design'],
+  },
 ];
 
 /**
@@ -339,6 +392,14 @@ export function formatKey(key: string, platform: 'mac' | 'win' | 'linux'): strin
         break;
       case 'escape':
         formatted.push(isMac ? '⎋' : 'Esc');
+        break;
+      case 'home':
+        formatted.push('Home');
+        break;
+      case 'numpad0': case 'numpad1': case 'numpad2': case 'numpad3':
+      case 'numpad4': case 'numpad5': case 'numpad6': case 'numpad7':
+      case 'numpad8': case 'numpad9':
+        formatted.push(`Num ${p.slice(6)}`);
         break;
       default:
         formatted.push(p.toUpperCase());

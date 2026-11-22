@@ -54,12 +54,12 @@
 
   const preset = $derived(atlas.navSettings.preset);
 
-  /** Bindings visible in the current dims context. */
+  /** Bindings visible in the current dims and preset context. */
   const visibleBindings = $derived(
     BINDINGS.filter((b) => {
       if (b.context === '2d' && atlas.dims === 3) return false;
       if (b.context === '3d' && atlas.dims === 2) return false;
-      // Always show both so users can see the full set; dims note in tooltip
+      if (b.preset && !b.preset.includes(preset)) return false;
       return true;
     }),
   );
@@ -75,9 +75,9 @@
   function onPresetChange(e: Event) {
     const sel = (e.target as HTMLSelectElement).value as 'dataMap' | 'molecular' | 'cad' | 'design';
     atlas.navSettings = { ...atlas.navSettings, preset: sel };
-    atlas.renderer?.setNavSettings(atlas.navSettings, atlas.dims);
-    // Also persist via postMessage so host can save the setting.
-    atlas.post({ type: 'log', level: 'info', message: `nav preset → ${sel}` });
+    atlas.applyPresetDefaults(sel);
+    atlas.renderer?.setNavSettings(atlas.navSettings, atlas.dims, () => atlas.tool);
+    atlas.post({ type: 'navPresetChanged', preset: sel });
   }
 
   function onKeyDown(e: KeyboardEvent) {

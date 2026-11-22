@@ -393,6 +393,8 @@ export type ToWebview =
       platform: string;
       /** Atlas keybindings from the user's keybindings.json, or null when unavailable. */
       userKeybindings: UserKeybinding[] | null;
+      /** True on first run (before globalState 'atlasHintShownV1' is set). */
+      showHint?: boolean;
     }
   | { type: 'status'; task: string; status: JobStatus }
   | { type: 'prepared'; result: PrepareResult; anchors: FileRef; anchorPos: FileRef }
@@ -564,4 +566,8 @@ export type ToHost =
   /** Webview gained keyboard focus (item 1): host sets positronAtlas.webviewFocused context. */
   | { type: 'webviewFocused' }
   /** Webview lost keyboard focus (item 1): host clears positronAtlas.webviewFocused context. */
-  | { type: 'webviewBlurred' };
+  | { type: 'webviewBlurred' }
+  /** Notify host that nav preset changed (for positronAtlas.navPreset context key). */
+  | { type: 'navPresetChanged'; preset: string }
+  /** User dismissed the first-run hint; host persists atlasHintShownV1 to globalState. */
+  | { type: 'hintSeen' };

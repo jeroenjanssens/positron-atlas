@@ -39,9 +39,11 @@ export interface NavControllerContext {
   setViewState: (vs: OrbitViewState) => void;
   /** The container element (parent of the canvas). */
   container: HTMLElement;
+  /** Return the current tool (for CAD left-drag routing). */
+  getTool: () => 'pan' | 'lasso' | 'annotate';
 }
 
-type CustomDragType = 'rotate-2d' | 'pan' | 'orbit-3d';
+type CustomDragType = 'rotate-2d' | 'pan' | 'orbit-3d' | 'blocked' | 'zoom-box';
 
 interface ActiveDrag {
   type: CustomDragType;
@@ -58,6 +60,8 @@ export class NavController {
   private canvas: HTMLCanvasElement | null = null;
   private activeDrag: ActiveDrag | null = null;
   private spaceDown = false;
+  private zoomBoxEl: HTMLElement | null = null;
+  private zoomBoxStart: { x: number; y: number } | null = null;
 
   // All registered listeners so we can detach them cleanly.
   private canvasListeners: Array<[string, EventListener, boolean]> = [];
@@ -148,6 +152,7 @@ export class NavController {
     this.windowListeners = [];
     this.activeDrag = null;
     this.spaceDown = false;
+    this.removeZoomBoxOverlay();
 
     // Remove wheel handler
     if (this.wheelHandler && this.canvas) {
@@ -210,6 +215,29 @@ export class NavController {
       return;
     }
 
+    // Alt+drag zoom box — Data map 2D only (not when emulateMiddleButton handles Alt).
+    if (e.altKey && !e.ctrlKey && !settings.emulateMiddleButton && settings.preset === 'dataMap' && dims === 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.startCustomDrag(e, 'zoom-box');
+      this.zoomBoxStart = { x: e.clientX, y: e.clientY };
+      this.showZoomBoxOverlay(e.clientX, e.clientY, e.clientX, e.clientY);
+      return;
+    }
+
+    // CAD 2D: left-drag does nothing unless the lasso tool is active.
+    if (dims === 2 && settings.preset === 'cad') {
+      if (!e.shiftKey && this.ctx.getTool() !== 'lasso') {
+        // Block deck.gl from panning — absorb the event.
+        e.preventDefault();
+        e.stopPropagation();
+        this.startCustomDrag(e, 'blocked');
+        return;
+      }
+      // Shift+drag or lasso tool active: let deck.gl handle normally.
+      return;
+    }
+
     // Ctrl+left-drag → rotate 2D (dataMap, molecular, design; CAD does not rotate on ctrl+drag)
     if (dims === 2 && e.ctrlKey && !e.altKey && settings.preset !== 'cad') {
       e.preventDefault();
@@ -263,17 +291,33 @@ export class NavController {
         });
         break;
       }
+      case 'zoom-box': {
+        if (this.zoomBoxStart) {
+          this.updateZoomBoxOverlay(this.zoomBoxStart.x, this.zoomBoxStart.y, e.clientX, e.clientY);
+        }
+        break;
+      }
+      case 'blocked':
+        // Absorb pointer move to prevent deck.gl panning.
+        break;
     }
   };
 
   private onPointerUp = (e: PointerEvent): void => {
     if (this.activeDrag && e.pointerId === this.activeDrag.pointerId) {
+      if (this.activeDrag.type === 'zoom-box' && this.zoomBoxStart) {
+        this.applyZoomBox(this.zoomBoxStart.x, this.zoomBoxStart.y, e.clientX, e.clientY);
+        this.removeZoomBoxOverlay();
+      }
       this.activeDrag = null;
     }
   };
 
   private onPointerCancel = (e: PointerEvent): void => {
     if (this.activeDrag && e.pointerId === this.activeDrag.pointerId) {
+      if (this.activeDrag.type === 'zoom-box') {
+        this.removeZoomBoxOverlay();
+      }
       this.activeDrag = null;
     }
   };
@@ -330,9 +374,74 @@ export class NavController {
     this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
   }
 
+  private showZoomBoxOverlay(x1: number, y1: number, x2: number, y2: number): void {
+    if (!this.zoomBoxEl) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:absolute;border:2px dashed rgba(255,255,255,0.75);pointer-events:none;box-sizing:border-box;z-index:50;background:rgba(255,255,255,0.05)';
+      this.ctx.container.appendChild(el);
+      this.zoomBoxEl = el;
+    }
+    this.updateZoomBoxOverlay(x1, y1, x2, y2);
+  }
+
+  private updateZoomBoxOverlay(x1: number, y1: number, x2: number, y2: number): void {
+    if (!this.zoomBoxEl) return;
+    const rect = this.ctx.container.getBoundingClientRect();
+    const minX = Math.min(x1, x2) - rect.left;
+    const minY = Math.min(y1, y2) - rect.top;
+    const w = Math.abs(x2 - x1);
+    const h = Math.abs(y2 - y1);
+    Object.assign(this.zoomBoxEl.style, {
+      left: `${minX}px`, top: `${minY}px`, width: `${w}px`, height: `${h}px`,
+    });
+  }
+
+  private removeZoomBoxOverlay(): void {
+    this.zoomBoxEl?.remove();
+    this.zoomBoxEl = null;
+    this.zoomBoxStart = null;
+  }
+
+  private applyZoomBox(x1: number, y1: number, x2: number, y2: number): void {
+    if (Math.abs(x2 - x1) < 10 || Math.abs(y2 - y1) < 10) return;
+    const deck = this.ctx.getDeck();
+    const vp = deck?.getViewports?.()[0];
+    if (!vp) return;
+    const rect = this.canvas!.getBoundingClientRect();
+    const sx1 = Math.min(x1, x2) - rect.left;
+    const sy1 = Math.min(y1, y2) - rect.top;
+    const sx2 = Math.max(x1, x2) - rect.left;
+    const sy2 = Math.max(y1, y2) - rect.top;
+    const [wx1, wy1] = vp.unproject([sx1, sy1]);
+    const [wx2, wy2] = vp.unproject([sx2, sy2]);
+    const selWidth = Math.abs(wx2 - wx1);
+    const selHeight = Math.abs(wy2 - wy1);
+    if (selWidth < 1e-10 || selHeight < 1e-10) return;
+    // world-per-pixel from current viewport (1 screen pixel = how many world units).
+    const [pcx1] = vp.unproject([vp.width / 2, vp.height / 2]);
+    const [pcx2] = vp.unproject([vp.width / 2 + 1, vp.height / 2]);
+    const wpp = Math.abs(pcx2 - pcx1);
+    if (wpp < 1e-20) return;
+    const zoomFactor = Math.min(
+      ((sx2 - sx1) / 0.9) * wpp / selWidth,
+      ((sy2 - sy1) / 0.9) * wpp / selHeight,
+    );
+    const vs = this.ctx.getViewState();
+    const newZoom = (vs.zoom as number) + Math.log2(zoomFactor);
+    const target = vs.target as number[];
+    this.ctx.setViewState({
+      ...vs,
+      zoom: newZoom,
+      target: [(wx1 + wx2) / 2, (wy1 + wy2) / 2, target[2] ?? 0] as [number, number, number],
+    });
+  }
+
   private handleWheel = (e: WheelEvent): void => {
     const { settings } = this;
     const isCtrl = e.ctrlKey || e.metaKey;
+
+    // Pinch gesture: Chromium encodes trackpad pinch as wheel events with ctrlKey=true.
+    // When scrollGesture=pan, Ctrl+wheel (pinch) falls through to the zoom handler below.
 
     // scrollGesture=pan: two-finger scroll pans; Ctrl+scroll (or Cmd+scroll) zooms.
     if (settings.scrollGesture === 'pan' && !isCtrl) {

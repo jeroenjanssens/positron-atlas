@@ -191,8 +191,13 @@ export class InputDispatcher {
 
     switch (key) {
       case 'r':
-        this.dispatch('view.reset');
-        e.preventDefault();
+        if (!shift) { this.dispatch('view.reset'); e.preventDefault(); }
+        break;
+      case 'f':
+        if (!shift) { this.dispatch('view.reset'); e.preventDefault(); }
+        break;
+      case 'home':
+        if (!shift) { this.dispatch('view.reset'); e.preventDefault(); }
         break;
       case '+':
       case '=':
@@ -239,22 +244,30 @@ export class InputDispatcher {
         e.preventDefault();
         break;
       case '1':
-        if (this.atlas.dims === 3) {
-          this.dispatch('view.top');
-          e.preventDefault();
+        if (shift) {
+          this.dispatch('view.reset'); e.preventDefault();
+        } else if (this.atlas.dims === 3) {
+          this.dispatch('view.top'); e.preventDefault();
         }
         break;
       case '2':
-        if (this.atlas.dims === 3) {
-          this.dispatch('view.front');
-          e.preventDefault();
+        if (!shift && this.atlas.dims === 3) {
+          this.dispatch('view.front'); e.preventDefault();
         }
         break;
       case '3':
-        if (this.atlas.dims === 3) {
-          this.dispatch('view.side');
-          e.preventDefault();
+        if (!shift && this.atlas.dims === 3) {
+          this.dispatch('view.side'); e.preventDefault();
         }
+        break;
+      case 'numpad7':
+        if (this.atlas.dims === 3) { this.dispatch('view.top'); e.preventDefault(); }
+        break;
+      case 'numpad1':
+        if (this.atlas.dims === 3) { this.dispatch('view.front'); e.preventDefault(); }
+        break;
+      case 'numpad3':
+        if (this.atlas.dims === 3) { this.dispatch('view.side'); e.preventDefault(); }
         break;
     }
   }

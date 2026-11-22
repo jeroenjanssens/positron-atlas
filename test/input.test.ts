@@ -23,8 +23,10 @@ describe('BINDINGS registry', () => {
     expect(BINDINGS.length).toBeGreaterThanOrEqual(20);
   });
 
-  it('every actionId is unique', () => {
-    const ids = BINDINGS.map((b) => b.actionId);
+  it('every base actionId is unique (preset-specific entries may share actionIds)', () => {
+    // Preset-specific entries (b.preset is set) are cheat-sheet display rows for
+    // an alternate key on a specific preset; they intentionally reuse the actionId.
+    const ids = BINDINGS.filter((b) => !b.preset).map((b) => b.actionId);
     expect(ids.length).toBe(new Set(ids).size);
   });
 

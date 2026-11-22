@@ -187,6 +187,8 @@ export class ScatterRenderer {
   // ---- Navigation settings (item 1) ---
   /** Custom pointer + wheel handler for preset-specific navigation. */
   private navController: NavController | null = null;
+  /** Callback to get the current tool (for CAD left-drag routing). Set by setNavSettings. */
+  private getTool: (() => 'pan' | 'lasso' | 'annotate') | null = null;
 
   private allVisible(n: number): Float32Array {
     if (this.ones.length < n) this.ones = new Float32Array(Math.max(n, this.ones.length * 2)).fill(1);
@@ -1031,7 +1033,8 @@ export class ScatterRenderer {
    * on the deck.gl canvas.  When both are default (zoom, not inverted) the interceptor is
    * removed so deck.gl handles the wheel natively.
    */
-  setNavSettings(settings: NavigationSettings, dims: 2 | 3): void {
+  setNavSettings(settings: NavigationSettings, dims: 2 | 3, getTool?: () => 'pan' | 'lasso' | 'annotate'): void {
+    if (getTool) this.getTool = getTool;
     // ── deck.gl controller props ──────────────────────────────────────────────
     // 2D: left-drag pans (dragMode:'pan'), right-drag rotates via alternateMode.
     // 3D: left-drag orbits (dragMode:'rotate'), right-drag pans via alternateMode.
@@ -1060,6 +1063,7 @@ export class ScatterRenderer {
             this.deck.setProps({ viewState: vs as any });
           },
           container: this.container,
+          getTool: () => this.getTool?.() ?? 'pan',
         },
         settings,
         dims,

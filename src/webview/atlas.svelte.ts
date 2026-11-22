@@ -327,6 +327,8 @@ export class Atlas {
   platform = $state<string>('linux');
   /** User-overridden keybindings from the host's keybindings.json (item 2). Null = not yet received. */
   userKeybindings = $state<Array<{ command: string; key: string; mac?: string }> | null>(null);
+  /** Whether to show the first-run "Press ? for controls" hint (item 2). */
+  showHint = $state(false);
 
   // ---- overlay / annotation state (A1, A4) ------------------------------------
   titleOverlay = $state<TitleOptions>({ ...DEFAULT_TITLE });
@@ -566,6 +568,7 @@ export class Atlas {
         setSessionImpl(this, msg.sessionId, 'python', msg.variable);
         this.platform = msg.platform ?? 'linux';
         this.userKeybindings = msg.userKeybindings ?? null;
+        this.showHint = msg.showHint ?? false;
         this.onInit(msg.describe, msg.settings, msg.variable, msg.state);
         break;
       case 'status':
@@ -682,7 +685,8 @@ export class Atlas {
       // --- Navigation settings changed (item 1) ---
       case 'settingsChanged':
         this.navSettings = msg.nav;
-        this.renderer?.setNavSettings(msg.nav, this.dims);
+        this.applyPresetDefaults(msg.nav.preset);
+        this.renderer?.setNavSettings(msg.nav, this.dims, () => this.tool);
         break;
     }
   }
@@ -707,7 +711,7 @@ export class Atlas {
     this.dims = d;
     this.renderer?.setDims(d);
     // Re-apply navigation settings for the new dimensionality (item 1).
-    this.renderer?.setNavSettings(this.navSettings, d);
+    this.renderer?.setNavSettings(this.navSettings, d, () => this.tool);
     // Clear 3D-specific state when switching to 2D.
     if (d === 2) this._3dScreenXY = null;
     if (this.phase === 'ready' || this.phase === 'embedding') {
@@ -819,6 +823,18 @@ export class Atlas {
   openPinnedLink(): void { openPinnedLinkImpl(this); }
   copyCardValue(value: string): void { vscode.post({ type: 'copyText', text: value }); }
   post(msg: import('../shared/protocol').ToHost): void { vscode.post(msg); }
+
+  /** Auto-activate the lasso tool when switching to Design, restore pan when leaving. */
+  applyPresetDefaults(preset: string): void {
+    if (preset === 'design' && this.tool === 'pan') this.tool = 'lasso';
+    if (preset !== 'design' && this.tool === 'lasso') this.tool = 'pan';
+  }
+
+  /** Dismiss the first-run hint and tell the host to persist that it was seen. */
+  hintSeen(): void {
+    this.post({ type: 'hintSeen' });
+    this.showHint = false;
+  }
 
   // ---- selection ---------------------------------------------------------------
   applyLasso(screen: [number, number][], mode: SelectMode): void { applyLassoImpl(this, screen, mode); }

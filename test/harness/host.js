@@ -135,7 +135,7 @@
     jobDir = `job-${Date.now()}`;
     const job = await call('create_job', variable, `${info.jobRoot}/${jobDir}`, JSON.stringify({ maxLazyRows: settings().maxLazyRows }));
     jobId = job.jobId;
-    post({ type: 'init', variable, sessionId: 'harness', describe, settings: settings(), state: harness.state, platform: 'linux', userKeybindings: null });
+    post({ type: 'init', variable, sessionId: 'harness', describe, settings: settings(), state: harness.state, platform: 'linux', userKeybindings: null, showHint: false });
   }
 
   async function onMessage(m) {
@@ -544,6 +544,14 @@
       case 'webviewBlurred':
         harness.webviewFocused = false;
         harness.log.push('webviewBlurred');
+        break;
+      // --- Navigation preset context key (item 1) ---
+      case 'navPresetChanged':
+        harness.log.push(`navPreset: ${m.preset}`);
+        break;
+      // --- First-run hint dismissed (item 2) ---
+      case 'hintSeen':
+        harness.log.push('hintSeen');
         break;
     }
   }

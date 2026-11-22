@@ -62,18 +62,44 @@ export function readNavSettings(): NavigationSettings {
  * The file is JSONC (JSON with comments).  We strip line comments (// …) and
  * block comments before JSON.parse — a tolerant but good-enough approach.
  */
+/** Parse JSONC (JSON with comments and trailing commas). */
+export function parseJsonc(raw: string): unknown {
+  const stripped = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')    // block comments
+    .replace(/\/\/[^\n]*/g, '')           // line comments
+    .replace(/,\s*([}\]])/g, '$1');       // trailing commas
+  return JSON.parse(stripped);
+}
+
 export async function readUserKeybindings(
   globalStorageUri: vscode.Uri,
 ): Promise<UserKeybinding[] | null> {
   try {
     const userDataDir = path.dirname(path.dirname(path.dirname(globalStorageUri.fsPath)));
-    const kbPath = path.join(userDataDir, 'User', 'keybindings.json');
-    const raw = await fs.readFile(kbPath, 'utf8');
-    // Strip JSONC comments (line and block) tolerantly.
-    const stripped = raw
-      .replace(/\/\*[\s\S]*?\*\//g, '')    // block comments
-      .replace(/\/\/[^\n]*/g, '');          // line comments
-    const parsed: unknown = JSON.parse(stripped);
+    // Try default keybindings.json first, then profile paths.
+    let raw: string | null = null;
+    const defaultPath = path.join(userDataDir, 'User', 'keybindings.json');
+    try {
+      raw = await fs.readFile(defaultPath, 'utf8');
+    } catch {
+      // Fall back to profiles directory — try the most recently modified one.
+      try {
+        const profilesDir = path.join(userDataDir, 'User', 'profiles');
+        const entries = await fs.readdir(profilesDir);
+        let bestMtime = 0;
+        let bestPath = '';
+        for (const entry of entries) {
+          const candidate = path.join(profilesDir, entry, 'keybindings.json');
+          try {
+            const stat = await fs.stat(candidate);
+            if (stat.mtimeMs > bestMtime) { bestMtime = stat.mtimeMs; bestPath = candidate; }
+          } catch { /* skip */ }
+        }
+        if (bestPath) raw = await fs.readFile(bestPath, 'utf8');
+      } catch { /* no profiles */ }
+    }
+    if (!raw) return null;
+    const parsed: unknown = parseJsonc(raw);
     if (!Array.isArray(parsed)) return null;
     const result: UserKeybinding[] = [];
     for (const entry of parsed) {
@@ -297,6 +323,7 @@ export class AtlasPanel {
       `[${this.state.variable}] row placement: ${nat?.available ? `Rust core ${nat.version} (${nat.target})` : `numpy${nat?.reason ? ` (${nat.reason})` : ''}`}`,
     );
     const userKeybindings = await readUserKeybindings(this.ctx.extension.globalStorageUri);
+    const showHint = !this.ctx.extension.globalState.get<boolean>('atlasHintShownV1', false);
     this.post({
       type: 'init',
       variable: this.state.variable,
@@ -306,7 +333,9 @@ export class AtlasPanel {
       state: this.state,
       platform: process.platform,
       userKeybindings,
+      showHint,
     });
+    await this.setNavPresetContext(readNavSettings().preset);
   }
 
   private newToken(): vscode.CancellationToken {
@@ -801,7 +830,19 @@ export class AtlasPanel {
         if (AtlasPanel.focused === this) AtlasPanel.focused = undefined;
         await vscode.commands.executeCommand('setContext', 'positronAtlas.webviewFocused', false).then(undefined, () => undefined);
         break;
+      // --- Navigation preset context key (item 1) ---
+      case 'navPresetChanged':
+        await this.setNavPresetContext(m.preset);
+        break;
+      // --- First-run hint dismissed (item 2) ---
+      case 'hintSeen':
+        await this.ctx.extension.globalState.update('atlasHintShownV1', true);
+        break;
     }
+  }
+
+  private async setNavPresetContext(preset: string): Promise<void> {
+    await vscode.commands.executeCommand('setContext', 'positronAtlas.navPreset', preset).then(undefined, () => undefined);
   }
 
   /**
