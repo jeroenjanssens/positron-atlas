@@ -24,6 +24,7 @@ import type {
   JobStatus,
 } from '../shared/protocol';
 import { vscode, isVsCodeWebview } from './vscode';
+import { initFonts } from './fonts';
 import { ScatterRenderer } from './render/renderer';
 import { HitIndex } from './render/hitIndex';
 import { ClusterFinder } from './labels/clusterWorker';
@@ -318,11 +319,17 @@ export class Atlas {
   hoverInflight = 0;
   /** Monotonically increasing sequence for `rows` requests. */
   hoverRowsSeq = 0;
+  /** Sequence counter for annotation-image rows requests (separate from hover). */
+  annRowsSeq = 0;
+  /** Callbacks waiting for pixel data for a given prepared-row index (A4 image annotations). */
+  annotationPixelPending = new Map<number, Array<(pixels: (number | null)[]) => void>>();
   /** Lazy UTF-8 title decoder (H3). */
   textsStore = new TextsStore();
 
   // ---- lifecycle ---------------------------------------------------------------
   attach(container: HTMLElement): void {
+    // initFonts expects { postMessage } but our vscode wrapper uses { post }; bridge it.
+    initFonts({ postMessage: (msg: unknown) => vscode.post(msg as import('../shared/protocol').ToHost) });
     this.renderer = new ScatterRenderer(container);
     this.renderer.setStyle(this.view);
     this.renderer.onPointer((p) => this.onPointer(p));

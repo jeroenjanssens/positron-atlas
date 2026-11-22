@@ -251,6 +251,12 @@ export interface AnnotationData {
   offsetY: number;
   /** Point's color as an rgba() string (used for badge style). */
   color?: string;
+  /** Pixel values for image-style annotations — stored so they survive reload without the kernel. */
+  imagePixels?: (number | null)[] | null;
+  /** Image shape [width, height] in pixels (from atlas.imageShape at creation time). */
+  imageShape?: [number, number] | null;
+  /** Data-URL thumbnail for image-URL annotations (base64 PNG; '' = not yet fetched). */
+  imageDataUrl?: string;
 }
 
 /** Persisted in the webview state so tabs can be restored after a reload. */
@@ -357,7 +363,7 @@ export type ToHost =
   | { type: 'compareSelection'; seq: number; mask: Uint8Array /* packed bits, least significant first */ }
   | { type: 'selectionFrame'; mask: Uint8Array /* packed bits */ }
   | { type: 'row'; i: number; imageColumns?: number[] }
-  | { type: 'rows'; seq: number; indices: number[]; columns?: number[] }
+  | { type: 'rows'; seq: number; indices: number[]; columns?: number[]; imageColumns?: number[] }
   | { type: 'texts'; column: number; maxChars: number }
   | { type: 'openLink'; url: string }
   | { type: 'image'; row: number; src: string }

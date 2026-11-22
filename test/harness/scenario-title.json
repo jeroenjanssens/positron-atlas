@@ -33,7 +33,18 @@
       "assert": [
         "h.png.startsWith('data:image/png')"
       ],
-      "report": "{ pngLen: h.png.length }"
+      "report": "{ pngLen: h.png.length }",
+      "screenshot": "title-exported.png"
+    },
+    {
+      "name": "PNG title area contains non-background pixels (orange text rendered)",
+      "eval": "(() => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const dpr = window.devicePixelRatio || 1; const scanW = Math.round(200 * dpr); const scanH = Math.round(60 * dpr); const pxData = g.getImageData(Math.round(10 * dpr), Math.round(30 * dpr), scanW, scanH).data; let orangePixels = 0; for (let i = 0; i < pxData.length; i += 4) { if (pxData[i] > 180 && pxData[i+1] > 100 && pxData[i+1] < 180 && pxData[i+2] < 60) orangePixels++; } window.__titlePxCheck = { ok: orangePixels > 10, orangePixels }; }; img.src = h.png; })()",
+      "until": "window.__titlePxCheck !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__titlePxCheck.ok === true"
+      ],
+      "report": "window.__titlePxCheck"
     },
     {
       "name": "clear title",

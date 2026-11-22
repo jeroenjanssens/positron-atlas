@@ -2,6 +2,7 @@ import { Deck, OrthographicView, type OrthographicViewState } from '@deck.gl/cor
 import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { CollisionFilterExtension, DataFilterExtension } from '@deck.gl/extensions';
 import { compositeOverlay } from './composite';
+import { ensureFont } from '../fonts';
 import type { AnnotationData, TitleOptions } from '../../shared/protocol';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
@@ -614,7 +615,19 @@ export class ScatterRenderer {
   }
 
   /** Like toPngBytes, but also composites the title overlay and annotations (A1, A4). */
-  toPngBytesWithOverlay(background: string, overlay: OverlayState): Promise<Uint8Array> {
+  async toPngBytesWithOverlay(background: string, overlay: OverlayState): Promise<Uint8Array> {
+    // Load the title font before compositing so it is available on the canvas.
+    const fontFamily = overlay.titleOverlay?.fontFamily?.trim();
+    if (fontFamily) {
+      try {
+        await ensureFont(fontFamily, [400, 700]);
+        const fontSize = overlay.titleOverlay?.fontSize ?? 24;
+        await document.fonts.load(`700 ${fontSize}px '${fontFamily}'`);
+      } catch {
+        // Font unavailable — fall back to sans-serif silently.
+      }
+    }
+
     this.deck.redraw('export');
     const canvas = (this.deck as any).getCanvas?.() ?? this.container.querySelector('canvas');
     const out = document.createElement('canvas');
@@ -633,7 +646,7 @@ export class ScatterRenderer {
       return [{ ann, screenX: pt[0], screenY: pt[1] }];
     });
 
-    compositeOverlay(g, {
+    await compositeOverlay(g, {
       cssWidth: this.container.clientWidth,
       cssHeight: this.container.clientHeight,
       dpr,

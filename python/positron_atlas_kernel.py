@@ -1784,11 +1784,12 @@ def row(job_id: str, i: int, image_cols: list[int] | None = None) -> str:
 
 
 @_guard
-def rows(job_id: str, indices: list[int], columns: list[int] | None = None) -> str:
-    """Fetch several rows at once for the hover cache/prefetch (H3/H4).
+def rows(job_id: str, indices: list[int], columns: list[int] | None = None, image_columns: list[int] | None = None) -> str:
+    """Fetch several rows at once for the hover cache/prefetch (H3/H4) and image annotations (A4).
 
     Returns a mapping from prepared-row index to list of (name, value) pairs.
     If ``columns`` is given, only those column indices are returned.
+    If ``image_columns`` is given, pixel values for those columns are also returned as ``images``.
     """
     job = _get(job_id)
     if job.kept_idx is None:
@@ -1803,6 +1804,14 @@ def rows(job_id: str, indices: list[int], columns: list[int] | None = None) -> s
         all_vals = frame.row(orig)
         filtered = [(k, v) for j, (k, v) in enumerate(all_vals) if j in col_set][:200]
         result[str(i)] = filtered
+    if image_columns:
+        img_cols = [int(c) for c in image_columns]
+        images: dict[str, list[float]] = {}
+        orig_indices = np.array([int(job.kept_idx[int(i)]) for i in indices])
+        block = frame.block(img_cols, orig_indices)
+        for idx, i in enumerate(indices):
+            images[str(i)] = [round(float(v), 4) for v in block[idx]]
+        return _json({"ok": True, "values": result, "images": images})
     return _json({"ok": True, "values": result})
 
 

@@ -79,15 +79,25 @@ export function onRows(
   for (const [key, vals] of Object.entries(msg.values)) {
     const pIdx = Number(key);
     const existing = atlas.rowCache.get(pIdx);
+    const image = msg.images?.[pIdx] ?? existing?.image;
     const updated: CachedRow = {
       row: pIdx, // corrected below
       values: vals,
-      image: msg.images?.[pIdx] ?? existing?.image,
+      image,
       imageUri: existing?.imageUri,
     };
     // The kernel returns the prepared-row index as key; use hit.map to get the original row.
     updated.row = atlas.hit?.map(pIdx) ?? pIdx;
     atlas.rowCache.set(pIdx, updated);
+
+    // Fire any pending annotation pixel callbacks for this row.
+    if (image) {
+      const cbs = atlas.annotationPixelPending.get(pIdx);
+      if (cbs?.length) {
+        atlas.annotationPixelPending.delete(pIdx);
+        for (const cb of cbs) cb(image);
+      }
+    }
   }
   if (msg.seq !== atlas.hoverInflight) return;
   atlas.hoverInflight = 0;

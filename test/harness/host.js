@@ -253,10 +253,16 @@
         break;
       }
       case 'rows': {
-        const r = await call('rows', jobId, m.indices, m.columns ?? null);
+        const r = await call('rows', jobId, m.indices, m.columns ?? null, m.imageColumns ?? null);
         const values = {};
         for (const [k, v] of Object.entries(r.values)) values[Number(k)] = v;
-        post({ type: 'rows', seq: m.seq, values });
+        if (r.images) {
+          const images = {};
+          for (const [k, v] of Object.entries(r.images)) images[Number(k)] = v;
+          post({ type: 'rows', seq: m.seq, values, images });
+        } else {
+          post({ type: 'rows', seq: m.seq, values });
+        }
         break;
       }
       case 'texts': {

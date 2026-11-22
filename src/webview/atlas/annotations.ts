@@ -8,6 +8,7 @@
 
 import type { Atlas } from '../atlas.svelte';
 import type { AnnotationData, TitleOptions } from '../../shared/protocol';
+import { vscode } from '../vscode';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -109,6 +110,12 @@ export function addAnnotation(atlas: Atlas, prepIdx: number, row: number, worldX
   const next = new Map(atlas.annotations);
   next.set(id, ann);
   atlas.annotations = next;
+
+  // For image-style annotations: kick off an async pixel fetch.
+  if (style === 'image') {
+    requestAnnotationPixels(atlas, id, prepIdx);
+  }
+
   return ann;
 }
 
@@ -122,6 +129,43 @@ export function removeAnnotation(atlas: Atlas, id: string): void {
 /** Remove all annotations. */
 export function clearAnnotations(atlas: Atlas): void {
   atlas.annotations = new Map();
+}
+
+/** Update the pixel data of an image annotation (called async when rows response arrives). */
+export function updateAnnotationPixels(
+  atlas: Atlas,
+  annId: string,
+  pixels: (number | null)[],
+  imageShape: [number, number] | null | undefined,
+): void {
+  const ann = atlas.annotations.get(annId);
+  if (!ann) return;
+  const next = new Map(atlas.annotations);
+  next.set(annId, { ...ann, imagePixels: pixels, imageShape: imageShape ?? undefined });
+  atlas.annotations = next;
+}
+
+/**
+ * Request pixel data for an image annotation.
+ * Checks the rowCache first; if not available, sends a targeted `rows` request and
+ * registers a callback to update the annotation when the response arrives.
+ */
+export function requestAnnotationPixels(atlas: Atlas, annId: string, prepIdx: number): void {
+  // Check the row cache first (the hover may have already fetched it).
+  const cached = atlas.rowCache.get(prepIdx);
+  if (cached?.image) {
+    updateAnnotationPixels(atlas, annId, cached.image, atlas.imageShape);
+    return;
+  }
+  // Register callback so onRows can fire it when the response arrives.
+  const existing = atlas.annotationPixelPending.get(prepIdx) ?? [];
+  existing.push((pixels) => updateAnnotationPixels(atlas, annId, pixels, atlas.imageShape));
+  atlas.annotationPixelPending.set(prepIdx, existing);
+  // Send a targeted rows request with imageColumns so the kernel returns pixel data.
+  // We do NOT touch hoverInflight; this seq won't trigger a tooltip update.
+  const seq = ++atlas.annRowsSeq;
+  const imageCols = atlas.imageColumns?.indices;
+  vscode.post({ type: 'rows', seq, indices: [prepIdx], imageColumns: imageCols?.length ? imageCols : undefined });
 }
 
 /** Update the drag offset of an annotation. */
@@ -198,10 +242,19 @@ export function handleAnnotateClick(atlas: Atlas, titleText: string): Annotation
 }
 
 /** Create an annotation from the pinned hover card data.
- *  Looks up the prepared-row index from the pinnedCard and uses its title/row. */
+ *  Looks up the prepared-row index from the pinnedCard and uses its title/row.
+ *  If the card has pixel image data, it is copied directly to the annotation. */
 export function addAnnotationFromCard(
   atlas: Atlas,
-  card: { row: number; title?: string; preparedIdx: number; x: number; y: number },
+  card: {
+    row: number;
+    title?: string;
+    preparedIdx: number;
+    x: number;
+    y: number;
+    image?: (number | null)[];
+    imageUri?: string;
+  },
 ): AnnotationData | null {
   const prepIdx = card.preparedIdx;
   const row = card.row;
@@ -209,5 +262,12 @@ export function addAnnotationFromCard(
   if (!coords) return null;
   const [wx, wy] = coords;
   const text = card.title || `Row ${row}`;
-  return addAnnotation(atlas, prepIdx, row, wx, wy, text);
+  const ann = addAnnotation(atlas, prepIdx, row, wx, wy, text);
+  if (!ann) return null;
+
+  // If the card already has pixel data, store it immediately (skips the async fetch).
+  if (ann.style === 'image' && card.image) {
+    updateAnnotationPixels(atlas, ann.id, card.image, atlas.imageShape);
+  }
+  return ann;
 }

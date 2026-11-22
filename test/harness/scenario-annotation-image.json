@@ -38,11 +38,17 @@
       "screenshot": "annotation-image-created.png"
     },
     {
-      "name": "annotation overlay present for image annotation",
+      "name": "wait for pixel data to load on annotation",
+      "until": "[...a.annotations.values()][0].imagePixels != null && [...a.annotations.values()][0].imagePixels.length > 0",
+      "timeout": 8000,
       "assert": [
-        "a.annotations.size === 1"
+        "[...a.annotations.values()][0].imageShape !== null",
+        "[...a.annotations.values()][0].imageShape[0] === 4",
+        "[...a.annotations.values()][0].imageShape[1] === 4",
+        "[...a.annotations.values()][0].imagePixels.length === 16"
       ],
-      "report": "{ ann: [...a.annotations.values()][0] }"
+      "report": "{ pixelLen: [...a.annotations.values()][0].imagePixels.length, shape: [...a.annotations.values()][0].imageShape }",
+      "screenshot": "annotation-image-pixels.png"
     },
     {
       "name": "export PNG includes image annotation",
@@ -56,13 +62,24 @@
       "screenshot": "annotation-image-exported.png"
     },
     {
-      "name": "JSON round-trip preserves image style",
+      "name": "PNG callout box contains varied pixels (real image, not solid fill)",
+      "eval": "(() => { const ann = [...a.annotations.values()][0]; const pt = a.renderer.projectWorld(ann.worldX, ann.worldY); if (!pt) { window.__pxCheck = { ok: false, reason: 'no projection' }; return; } const dpr = window.devicePixelRatio || 1; const bx = Math.round((pt[0] + ann.offsetX + 4) * dpr); const by = Math.round((pt[1] + ann.offsetY + 4) * dpr); const size = Math.round(64 * dpr); const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const safe_bx = Math.max(0, Math.min(bx, img.width - 1)); const safe_by = Math.max(0, Math.min(by, img.height - 1)); const safe_size = Math.min(size, img.width - safe_bx, img.height - safe_by); const pxData = g.getImageData(safe_bx, safe_by, Math.max(1, safe_size), Math.max(1, safe_size)).data; const vals = new Set(); for (let i = 0; i < pxData.length; i += 4) { vals.add(pxData[i] >> 4); } window.__pxCheck = { ok: vals.size > 3, uniqueVals: vals.size, bx, by, size }; }; img.src = h.png; })()",
+      "until": "window.__pxCheck !== undefined",
+      "timeout": 5000,
+      "assert": [
+        "window.__pxCheck.ok === true"
+      ],
+      "report": "window.__pxCheck"
+    },
+    {
+      "name": "JSON round-trip preserves image style and pixels",
       "eval": "const json = a.exportAnnotationsJson(); a.clearAnnotations(); a.importAnnotationsJson(json);",
       "assert": [
         "a.annotations.size === 1",
-        "[...a.annotations.values()][0].style === 'image'"
+        "[...a.annotations.values()][0].style === 'image'",
+        "[...a.annotations.values()][0].imagePixels != null"
       ],
-      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style }"
+      "report": "{ size: a.annotations.size, style: [...a.annotations.values()][0].style, hasPixels: [...a.annotations.values()][0].imagePixels != null }"
     }
   ]
 }

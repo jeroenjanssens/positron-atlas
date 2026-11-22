@@ -162,18 +162,27 @@
         class:draggable={editingId !== ann.id}
         style="left:{bp.left}; top:{bp.top}; {ann.style === 'badge' && ann.color ? `--badge-color: ${ann.color};` : ''}"
         role="note"
-        aria-label="Annotation: {ann.text || 'Row ' + ann.row}"
+        aria-label="Annotation: {ann.style === 'image' ? 'Image row ' + ann.row : (ann.text || 'Row ' + ann.row)}"
         onmousedown={(e) => onBoxMouseDown(e, ann)}
         ondblclick={() => onBoxDblClick(ann)}
       >
         {#if ann.style === 'image'}
-          {#if atlas.imageColumns && atlas.view.images}
-            <!-- Image annotation: rendered if pixel columns are available via hover card -->
-            <div class="ann-image-placeholder" title="Row {ann.row}">
-              Row {ann.row}
-            </div>
+          {#if ann.imagePixels && ann.imageShape}
+            <PixelImage
+              values={ann.imagePixels}
+              width={ann.imageShape[0]}
+              height={ann.imageShape[1]}
+              invert={atlas.view.imageInvert}
+              size={64}
+            />
+            {#if ann.text && ann.text !== `Row ${ann.row}`}
+              <div class="ann-img-caption">{ann.text}</div>
+            {/if}
+          {:else if ann.imageDataUrl}
+            <img src={ann.imageDataUrl} alt="Row {ann.row}" class="ann-url-img" />
           {:else}
-            <div class="ann-text">{ann.text}</div>
+            <!-- Pixel data not yet loaded; show row number while waiting -->
+            <div class="ann-image-placeholder" title="Row {ann.row}">Row {ann.row}</div>
           {/if}
         {:else if editingId === ann.id}
           <!-- svelte-ignore a11y_autofocus -->
@@ -269,5 +278,21 @@
     font-size: 0.8em;
     color: var(--vscode-descriptionForeground, #aaa);
     padding: 2px 0;
+  }
+  .ann-img-caption {
+    font-size: 0.75em;
+    color: var(--vscode-descriptionForeground, #aaa);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+  }
+  .ann-url-img {
+    display: block;
+    max-width: 64px;
+    max-height: 64px;
+    object-fit: contain;
+    image-rendering: pixelated;
   }
 </style>

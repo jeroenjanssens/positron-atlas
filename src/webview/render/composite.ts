@@ -7,6 +7,7 @@
  */
 
 import type { TitleOptions, AnnotationData } from '../../shared/protocol';
+import { imageToRgba } from '../logic';
 
 export interface CompositeOptions {
   /** CSS-pixel dimensions of the visible area. */
@@ -23,8 +24,9 @@ export interface CompositeOptions {
 /**
  * Draw the title and annotations onto an already-drawn canvas (the deck.gl output).
  * Modifies `ctx` in-place. All inputs are CSS pixels; drawing is scaled by dpr.
+ * Returns a promise because logo and annotation images are loaded asynchronously.
  */
-export function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeOptions): void {
+export async function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeOptions): Promise<void> {
   const dpr = opts.dpr ?? (typeof window !== 'undefined' ? window.devicePixelRatio : 1);
 
   // ---- Title / subtitle --------------------------------------------------------
@@ -44,16 +46,18 @@ export function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeO
     let y = (36 + titleSize / dpr) * dpr; // 36 css px top padding
     const x = 12 * dpr;
 
-    // Draw logo if present.
+    // Draw logo if present — await decode() for reliable rendering.
     if (t.logoData) {
       const logoW = (t.logoWidth > 0 ? t.logoWidth : 48) * dpr;
       const img = new Image();
       img.src = t.logoData;
-      // Best-effort: if the image is already decoded, draw it immediately.
-      if (img.complete) {
+      try {
+        await img.decode();
         const h = (img.naturalHeight / img.naturalWidth) * logoW;
         ctx.drawImage(img, x, (36 - h / dpr / 2) * dpr, logoW, h);
         y += h + 6 * dpr;
+      } catch {
+        // Logo failed to decode; skip it.
       }
     }
 
@@ -86,31 +90,79 @@ export function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeO
     const badgeColor = (ann.style === 'badge' && ann.color) ? ann.color : null;
     const lineColor = badgeColor ?? 'rgba(200,200,200,0.8)';
 
-    // Leader line.
-    ctx.save();
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.setLineDash([4 * dpr, 3 * dpr]);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    // Connect to center of callout box (approximate: 80px wide, 28px tall CSS).
-    ctx.lineTo(bx + 40 * dpr, by + 14 * dpr);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    // Anchor dot.
-    ctx.fillStyle = lineColor;
-    ctx.beginPath();
-    ctx.arc(ax, ay, 3 * dpr, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    if (ann.style === 'image' && ann.imagePixels && ann.imageShape) {
+      // ---- Image callout -------------------------------------------------------
+      const [imgW, imgH] = ann.imageShape;
+      const rgba = imageToRgba(ann.imagePixels, imgW, imgH, false);
+      const imgCanvas = document.createElement('canvas');
+      imgCanvas.width = imgW;
+      imgCanvas.height = imgH;
+      const ig = imgCanvas.getContext('2d')!;
+      ig.putImageData(new ImageData(rgba, imgW, imgH), 0, 0);
 
-    // Callout box.
-    if (ann.text) {
+      const dispSize = 64 * dpr;
+      const scale = Math.min(dispSize / imgW, dispSize / imgH);
+      const dw = Math.round(imgW * scale);
+      const dh = Math.round(imgH * scale);
+      const pad = 4 * dpr;
+      const boxW = dw + pad * 2;
+      const boxH = dh + pad * 2;
+
+      // Leader line to box center.
+      ctx.save();
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.setLineDash([4 * dpr, 3 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx + boxW / 2, by + boxH / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = lineColor;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 3 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Box background.
+      ctx.fillStyle = 'rgba(37,37,38,0.92)';
+      ctx.strokeStyle = 'rgba(70,70,70,0.9)';
+      ctx.lineWidth = 1 * dpr;
+      roundRect(ctx, bx, by, boxW, boxH, 4 * dpr);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw the scaled pixel image with pixelated rendering.
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(imgCanvas, bx + pad, by + pad, dw, dh);
+      ctx.imageSmoothingEnabled = true;
+      ctx.restore();
+    } else {
+      // ---- Text callout --------------------------------------------------------
+      // Leader line.
+      ctx.save();
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.setLineDash([4 * dpr, 3 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      // Connect to center of callout box (approximate: 80px wide, 28px tall CSS).
+      ctx.lineTo(bx + 40 * dpr, by + 14 * dpr);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Anchor dot.
+      ctx.fillStyle = lineColor;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 3 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Callout box.
+      const label = ann.text || `Row ${ann.row}`;
       const pad = 6 * dpr;
       const fontSize = 12 * dpr;
       ctx.save();
       ctx.font = `400 ${fontSize}px sans-serif`;
-      const textW = ctx.measureText(ann.text).width;
+      const textW = ctx.measureText(label).width;
       const boxW = textW + pad * 2;
       const boxH = fontSize * 1.4 + pad * 2;
 
@@ -128,7 +180,7 @@ export function compositeOverlay(ctx: CanvasRenderingContext2D, opts: CompositeO
       ctx.fillStyle = '#cccccc';
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 2 * dpr;
-      ctx.fillText(ann.text, bx + pad, by + pad + fontSize);
+      ctx.fillText(label, bx + pad, by + pad + fontSize);
       ctx.restore();
     }
   }
