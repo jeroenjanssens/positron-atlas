@@ -799,3 +799,12 @@ The X1 and X2 skeleton (the Vite entry, the gzip packing and loading) can start 
 
 - **With the wave-0 split,** everything except 3D, A11 and the wave-0 refactor itself can run with 4–5 agents at a time.
 - **Without the wave-0 split,** waves 1 and 2 drop to about 2–3 agents each.
+
+---
+
+## 15. Later
+
+- **Interop with a multi-dimensional (image) viewer for Positron** (noted 2026-11-22). A colleague is building one, so Atlas does not view images or nD arrays itself. Atlas shows *what is similar to what* (rows and their UMAP layout); his viewer shows *where things are* (x, y, z, time, channel). The two meet at points whose row refers to an image: a Cell Painting well, a microscopy field, an image path or URL column.
+  - **Idea:** an **Open in viewer** action on the pinned card (and for a lasso selection), handing the row's image reference to his viewer.
+  - **Possibly also:** a way back, from a region or object in his viewer to the matching rows highlighted in Atlas.
+  - **Needs:** his viewer's API or command, and the hand-off format (path, URL, array reference in the kernel session). Agree on both with him before building.
