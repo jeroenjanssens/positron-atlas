@@ -874,6 +874,8 @@ export class AtlasPanel {
           // For all other commands, write a simple ok/error status file.
           writeCommResult(this.commApiDir, m.commandId, m.ok, m.error);
         }
+        // Commands don't wait for their result in the kernel, so failures are shown here.
+        if (!m.ok) void vscode.window.showWarningMessage(`Atlas (Python API): ${m.error ?? `${pending.name} failed`}`);
         break;
       }
       case 'selectionChanged': {
@@ -885,7 +887,10 @@ export class AtlasPanel {
             type: 'selectionChanged',
             mask_b64,
             nKept: m.nKept,
-          })).catch(() => undefined);
+            jobId: this.jobId ?? null,
+          })).catch((e) => this.ctx.log.warn(`atlas comm: selection not delivered: ${e instanceof Error ? e.message : String(e)}`));
+        } else {
+          this.ctx.log.debug('selectionChanged: no Python API handle for this tab');
         }
         break;
       }

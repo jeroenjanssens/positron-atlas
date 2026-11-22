@@ -170,7 +170,7 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
   <div><strong>2 · UMAP (webview).</strong> UMAP runs in a web worker on the anchors only (up to 100,000), on the GPU when available, and you watch it converge. Alternatives: UMAP in the kernel (polars-umap, umap-learn), or existing coordinate columns (Layout → From columns).</div>
   <div><strong>3 · Place all rows (kernel).</strong> Every other row is placed at the weighted mean of its 10 nearest anchors' positions. This is what makes 10 million rows fast; re-placing after a live change reuses the cached neighbours.</div>
   <div><strong>4 · Draw (webview).</strong> deck.gl draws the points (2D or 3D) with colours, sizes, filters, labels, outlines and annotations. Colours, titles and other per-row values are fetched from the kernel as binary files.</div>
-  <div><strong>5 · Explore (all three).</strong> Hover asks the kernel for rows; the lasso, tags and clusters can be written back to the DataFrame after a confirmation; maps export as PNG, HTML or DataMapPlot.</div>
+  <div><strong>5 · Explore (all three).</strong> Hover asks the kernel for rows; the lasso, tags and clusters can be written back to the DataFrame after a confirmation; maps export as PNG, HTML or DataMapPlot. The same map can be driven from Python (<code>import positron_atlas</code>) over a Positron comm.</div>
 </div>
 
 <h3>Where to start reading the code</h3>
@@ -185,6 +185,7 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
     <tr><td>Keyboard/pointer dispatch and navigation presets</td><td><code>src/webview/input/bindings.ts</code> (binding registry), <code>dispatcher.ts</code> (action routing); <code>src/webview/render/controller.ts</code> (NavController for custom pointer and wheel)</td></tr>
     <tr><td>Controls cheat sheet</td><td><code>src/webview/components/CheatSheet.svelte</code> (preset dropdown, sections, platform notation, user keybinding overrides)</td></tr>
     <tr><td>Drawing</td><td><code>src/webview/render/renderer.ts</code></td></tr>
+    <tr><td>The Python API (<code>import positron_atlas</code>)</td><td><code>src/extension/atlasComm.ts</code> (comm handler), <code>src/webview/atlas/api.ts</code> (runs the commands), <code>_AtlasHandle</code> in <code>python/positron_atlas_kernel.py</code></td></tr>
     <tr><td>Keyboard and mouse</td><td><code>src/webview/input/</code> (<code>bindings.ts</code>: every action and its default keys; <code>dispatcher.ts</code>: runs them). Keys are contributed keybindings scoped to <code>positronAtlas.webviewFocused</code>; the host forwards them to the focused tab as <code>command</code> messages</td></tr>
     <tr><td>Undo and redo</td><td><code>src/webview/atlas/history.ts</code> (the command stack) and <code>atlas/undo.ts</code> (which edits are recorded)</td></tr>
     <tr><td>What is drawn, in which order</td><td><code>src/webview/atlas/layers.ts</code> (the layer registry: the base map and every overlay, with visibility, opacity, blending and draw order; the renderer and the HTML overlays both read it)</td></tr>
@@ -385,12 +386,7 @@ only the selected numeric columns are converted to float32, and only the anchors
   <div><b style="background:var(--file)">5</b><strong>Host files</strong>: the host writes the webview's bytes into files for the kernel and deletes them after the call. It also caches downloaded images (image-URL columns) and fonts.</div>
 </div>
 <div class="legend" style="margin-top:8px">
-  <strong>C3 — Python API comm channel</strong> (<code>src/extension/atlasComm.ts</code>, <code>src/webview/atlas/api.ts</code>):
-  <code>atlas.open(df)</code> in the kernel opens a Positron comm (<code>target_name='positron.atlas'</code>).
-  Python→host: <code>comm.send({name, cmdId, args})</code> fire-and-forget on the iopub channel.
-  Host→webview: <code>apiCommand</code> message; webview replies with <code>apiReply</code> or <code>selectionChanged</code>.
-  Host→kernel (selection): <code>commClient.performRpc({type:'selectionChanged', mask_b64, nKept})</code> — fires between cells.
-  Blocking commands (<code>save_png</code>, <code>save_html</code>): host writes <code>api_dir/&lt;cmdId&gt;.json</code>; Python polls the file.
+  <div><strong>Python API</strong> (<code>src/extension/atlasComm.ts</code>, <code>src/webview/atlas/api.ts</code>, <code>_AtlasHandle</code> in the helper): when a Python session starts, the extension loads the helper, which registers <code>positron_atlas</code>. <code>atlas.open(df)</code> opens a Positron comm (<code>positron.atlas</code>); the host opens the tab. Commands travel kernel → host as comm messages and run in the webview, in order, once the map has settled. Selections travel back as comm messages that the kernel handles between cells. Nothing in the kernel waits for the host: the map is prepared by that same kernel.</div>
 </div>
 
 <!-- ================================================================================== -->
@@ -585,6 +581,11 @@ const STEPS = [
   { from: 'H', to: 'W', text: 'command(id) for a keyboard shortcut', sub: 'focused tab only · fit, zoom, rotate, undo, …' },
   { note: 'W', text: ['Legend, histogram and search filters', 'combine on the GPU; labels, badges, title', 'and point annotations are drawn over the map;', 'the PNG export composites all of it'] },
 
+  { phase: 'Python API (optional)' },
+  { from: 'K', to: 'H', text: 'comm open positron.atlas (atlas.open(df))', sub: 'the host opens a tab for the frame' },
+  { from: 'K', to: 'W', via: 'H', text: 'comm messages: color_by, label_by, dims, annotate, save_png, …', sub: 'run in order once the map has settled; never awaited in the kernel' },
+  { from: 'W', to: 'K', via: 'H', text: 'selectionChanged (packed mask)', sub: 'handled between cells: m.selected_rows, on_select callbacks' },
+  { from: 'H', to: 'D', file: true, text: 'saved files + api/<id>.json status', sub: 'save requests report done / error' },
   { phase: 'Export' },
   { from: 'W', to: 'H', text: 'savePng(bytes) · exportDataMapPlot(xy bytes)', sub: 'save dialog in the host' },
   { note: 'W', text: ['HTML export: the webview packs positions,', 'colours, labels, annotations, tooltip text', 'and fonts (gzip), inlines dist/viewer/viewer.js,', 'and sends the file; the host only writes it'] },

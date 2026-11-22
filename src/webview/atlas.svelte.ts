@@ -189,7 +189,7 @@ import {
 } from './atlas/layers';
 import { InputDispatcher } from './input/dispatcher';
 import type { ActionId } from './input/bindings';
-import { onApiCommand as onApiCommandImpl } from './atlas/api';
+import { enqueueApiCommand as enqueueApiCommandImpl } from './atlas/api';
 
 // Re-export types and constants for backward compatibility with components
 export type { ViewOptions, Phase, SidebarTab, UiState } from './atlas/types';
@@ -244,6 +244,8 @@ export class Atlas {
   colorColumn = $state<number | null>(null);
   forceCategorical = $state(false);
   colorMeta = $state.raw<ColorMeta | null>(null);
+  /** Time from Python's comm.send to the webview for the last Python API command (ms). */
+  apiLatencyMs = 0;
   mapColors = $state.raw<string[] | null>(null);
   colorRange = $state<[number, number] | null>(null);
   /** True when coloring by automatic cluster codes (A6). */
@@ -691,7 +693,7 @@ export class Atlas {
         break;
       // --- Python API commands (C3) ---
       case 'apiCommand':
-        void onApiCommandImpl(this, msg.commandId, msg.name, msg.args);
+        enqueueApiCommandImpl(this, msg.commandId, msg.name, msg.args);
         break;
     }
   }

@@ -22,6 +22,64 @@ import {
 } from './annotations';
 import { packBits } from '../select/lasso';
 
+/**
+ * Commands run one at a time, in the order Python sent them, each once the map has
+ * settled: the layout is done (all rows placed) and the colours of the current colour
+ * column have arrived. `atlas.open(df); m.color_by(...); m.save_png(...)` in one cell
+ * sends all three before the map exists; without this the PNG would be blank.
+ */
+const queues = new WeakMap<Atlas, Promise<void>>();
+const SETTLE_TIMEOUT_MS = 120_000;
+
+export function isSettled(atlas: Atlas): boolean {
+  const p = atlas.prepared;
+  return (
+    atlas.phase === 'ready' &&
+    !!p &&
+    (!p.needsProjection || atlas.projection === 'done') &&
+    (atlas.colorColumn === null || atlas.colorMeta !== null)
+  );
+}
+
+async function waitSettled(atlas: Atlas): Promise<boolean> {
+  const t0 = Date.now();
+  while (!isSettled(atlas)) {
+    if (atlas.phase === 'error' || Date.now() - t0 > SETTLE_TIMEOUT_MS) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // Not requestAnimationFrame: it never fires while the tab is hidden. The PNG export
+  // redraws explicitly, so the settled state only needs its messages handled.
+  await new Promise((r) => setTimeout(r, 0));
+  return true;
+}
+
+/** Queue one ``apiCommand`` from the host (see above). */
+export function enqueueApiCommand(atlas: Atlas, commandId: string, name: string, args: Record<string, unknown>): void {
+  const sentAt = Number(args['_sentAt']);
+  if (Number.isFinite(sentAt)) atlas.apiLatencyMs = Date.now() - sentAt;
+  const prev = queues.get(atlas) ?? Promise.resolve();
+  const next = prev.then(async () => {
+    if (!(await waitSettled(atlas))) {
+      reply(commandId, false, `${name}: the map did not finish loading`);
+      return;
+    }
+    await onApiCommand(atlas, commandId, name, args);
+  });
+  queues.set(atlas, next.catch(() => undefined));
+}
+
+/** A column from `columnName` (or `column`, an index); an error message if there is none. */
+export function resolveColumn(atlas: Atlas, args: Record<string, unknown>): number | string {
+  const cols = atlas.describe?.columns ?? [];
+  if (typeof args['columnName'] === 'string') {
+    const name = args['columnName'];
+    const c = cols.find((x) => x.name === name);
+    return c ? c.index : `no column named ${JSON.stringify(name)} (columns: ${cols.map((x) => x.name).join(', ')})`;
+  }
+  const i = Number(args['column']);
+  return cols.some((x) => x.index === i) ? i : `no column with index ${String(args['column'])}`;
+}
+
 /** Handle one ``apiCommand`` message from the host. */
 export async function onApiCommand(
   atlas: Atlas,
@@ -32,9 +90,9 @@ export async function onApiCommand(
   try {
     switch (name) {
       case 'colorBy': {
-        const col = Number(args['column']);
-        if (!isFinite(col) || col < 0) {
-          reply(commandId, false, `colorBy: invalid column index ${col}`);
+        const col = resolveColumn(atlas, args);
+        if (typeof col === 'string') {
+          reply(commandId, false, `colorBy: ${col}`);
           return;
         }
         setColorColumnImpl(atlas, col);
@@ -43,9 +101,9 @@ export async function onApiCommand(
       }
 
       case 'labelBy': {
-        const col = Number(args['column']);
-        if (!isFinite(col) || col < 0) {
-          reply(commandId, false, `labelBy: invalid column index ${col}`);
+        const col = resolveColumn(atlas, args);
+        if (typeof col === 'string') {
+          reply(commandId, false, `labelBy: ${col}`);
           return;
         }
         setLabelColumnImpl(atlas, col);

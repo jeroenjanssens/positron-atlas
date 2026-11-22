@@ -2797,6 +2797,38 @@ import tempfile
 _HANDLES: dict[str, "_AtlasHandle"] = {}
 
 
+class SaveRequest:
+    """A pending ``save_png`` / ``save_html``: check ``done`` and ``error`` in a later cell."""
+
+    def __init__(self, path: pathlib.Path, status: pathlib.Path) -> None:
+        self.path = path
+        self._status = status
+        self._result: dict | None = None
+
+    def _read(self) -> dict | None:
+        if self._result is None and self._status.exists():
+            try:
+                self._result = json.loads(self._status.read_text())
+            except (json.JSONDecodeError, OSError):
+                return None
+        return self._result
+
+    @property
+    def done(self) -> bool:
+        """True once the host has written the file (or failed)."""
+        return self._read() is not None
+
+    @property
+    def error(self) -> str | None:
+        """The error message if the save failed, else None."""
+        r = self._read()
+        return None if r is None or r.get("ok") else (r.get("error") or "save failed")
+
+    def __repr__(self) -> str:
+        state = "pending" if not self.done else ("failed: " + self.error if self.error else "saved")
+        return f"<SaveRequest {self.path} {state}>"
+
+
 class _AtlasHandle:
     """Python-facing handle for one Atlas panel (C3).
 
@@ -2814,6 +2846,7 @@ class _AtlasHandle:
         self._dims: int = 2
         self._selection_mask: bytes | None = None
         self._n_kept: int = 0
+        self._job_id: str | None = None
         self._callbacks: list = []
         self._closed = False
         self._lock = threading.Lock()
@@ -2832,50 +2865,43 @@ class _AtlasHandle:
         """Enqueue a command via comm.send. Returns the cmdId."""
         self._require_open()
         cmd_id = uuid.uuid4().hex[:12]
-        payload: dict[str, Any] = {"name": name, "cmdId": cmd_id}
-        if args:
-            payload["args"] = args
+        # _sentAt (ms since the epoch) lets the webview measure the comm latency.
+        payload: dict[str, Any] = {"name": name, "cmdId": cmd_id, "args": {**(args or {}), "_sentAt": time.time() * 1000}}
         self._comm.send(payload)
         return cmd_id
 
-    def _send_blocking(self, name: str, args: dict | None = None, timeout: float = 60.0) -> None:
-        """Send a command and poll <api_dir>/<cmdId>.json for the result."""
-        self._require_open()
-        cmd_id = self._send(name, args)
-        result = self._poll_result(cmd_id, timeout)
-        if not result.get("ok"):
-            raise RuntimeError(result.get("error") or f"Atlas command '{name}' failed")
+    def _send_save(self, name: str, path: str) -> "SaveRequest":
+        """Send a save command; the host writes the file once the map has settled.
 
-    def _poll_result(self, cmd_id: str, timeout: float) -> dict:
-        """Poll <api_dir>/<cmdId>.json until it appears or timeout."""
-        path = self._api_dir / f"{cmd_id}.json"
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if path.exists():
-                try:
-                    result = json.loads(path.read_text())
-                    path.unlink(missing_ok=True)
-                    return result
-                except (json.JSONDecodeError, OSError):
-                    pass
-            time.sleep(0.15)
-        raise TimeoutError(
-            f"Atlas command timed out after {timeout}s "
-            f"(is the panel open and visible?)"
-        )
+        This never blocks: preparing the map, placing rows and loading colours run in this
+        kernel, so waiting here (for example in the cell that called ``atlas.open``) would
+        deadlock. The host writes ``<api_dir>/<cmdId>.json`` with the result.
+        """
+        cmd_id = self._send(name, {"path": str(path)})
+        return SaveRequest(pathlib.Path(path), self._api_dir / f"{cmd_id}.json")
 
     def _on_msg(self, msg: Any) -> None:
         """Handle messages from the host (comm → kernel direction)."""
         data = msg.get("content", {}).get("data", {}) if isinstance(msg, dict) else {}
         msg_type = data.get("type") if isinstance(data, dict) else None
 
-        if msg_type == "selectionChanged":
-            mask_b64 = data.get("mask_b64", "")
-            n_kept = int(data.get("nKept", 0))
-            mask: bytes | None = base64.b64decode(mask_b64) if mask_b64 else None
-            self._update_selection(mask, n_kept)
-        elif msg_type == "closed":
-            self._closed = True
+        try:
+            if msg_type == "selectionChanged":
+                mask_b64 = data.get("mask_b64", "")
+                n_kept = int(data.get("nKept", 0))
+                mask: bytes | None = base64.b64decode(mask_b64) if mask_b64 else None
+                self._job_id = data.get("jobId") or self._job_id
+                self._update_selection(mask, n_kept)
+            elif msg_type == "closed":
+                self._closed = True
+        finally:
+            # The host sends these with performRpc, which waits for a reply. Sent from inside
+            # this handler, the message is the reply (ipykernel sets its parent header).
+            if msg_type is not None and not self._closed:
+                try:
+                    self._comm.send({"type": "ack"})
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _update_selection(self, mask: bytes | None, n_kept: int) -> None:
         with self._lock:
@@ -2885,25 +2911,24 @@ class _AtlasHandle:
         for cb in list(self._callbacks):
             try:
                 cb(rows)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - a user callback must not break the comm
+                import traceback
 
-    def _find_column(self, name: str, columns: list) -> int:
-        for col in columns:
-            if col["name"] == name:
-                return int(col["index"])
-        names = ", ".join(repr(c["name"]) for c in columns)
-        raise ValueError(f"Column {name!r} not found. Available: {names}")
+                traceback.print_exc()
 
     def _mask_to_rows(self, mask: bytes) -> "np.ndarray":
-        """Unpack bit-mask to row positions."""
-        n = self._n_kept
-        bits = np.frombuffer(mask, dtype=np.uint8)
-        kept = []
-        for i in range(n):
-            if (bits[i >> 3] >> (i & 7)) & 1:
-                kept.append(i)
-        return np.array(kept, dtype=np.intp)
+        """Row positions in the original frame of the selected rows.
+
+        The mask has one bit per prepared row (LSB first), after sampling and dropped rows;
+        the job's ``kept_idx`` maps prepared rows back to the frame.
+        """
+        bits = np.unpackbits(np.frombuffer(mask, dtype=np.uint8), bitorder="little")[: self._n_kept]
+        prepared = np.flatnonzero(bits)
+        job = _JOBS.get(self._job_id) if self._job_id else None
+        kept = getattr(job, "kept_idx", None)
+        if kept is not None and len(kept) == self._n_kept:
+            return np.sort(np.asarray(kept)[prepared]).astype(np.intp)
+        return prepared.astype(np.intp)
 
     # ------------------------------------------------------------------
     # Public API
@@ -2942,31 +2967,20 @@ class _AtlasHandle:
         return self._mask_to_rows(mask)
 
     def color_by(self, column: "str | int") -> None:
-        """Color the map by a column name or index."""
+        """Color the map by a column, by name or index. Unknown columns are reported by the host."""
         self._require_open()
         if isinstance(column, int):
             self._send("colorBy", {"column": column})
-            return
-        columns = getattr(self, "_columns", [])
-        if columns:
-            idx = self._find_column(column, columns)
-            self._send("colorBy", {"column": idx})
         else:
-            # No column metadata yet; send by name and let the host/webview resolve.
-            self._send("colorBy", {"columnName": column})
+            self._send("colorBy", {"columnName": str(column)})
 
     def label_by(self, column: "str | int") -> None:
-        """Label the map by a column name or index."""
+        """Label the map by a column, by name or index. Unknown columns are reported by the host."""
         self._require_open()
         if isinstance(column, int):
             self._send("labelBy", {"column": column})
-            return
-        columns = getattr(self, "_columns", [])
-        if columns:
-            idx = self._find_column(column, columns)
-            self._send("labelBy", {"column": idx})
         else:
-            self._send("labelBy", {"columnName": column})
+            self._send("labelBy", {"columnName": str(column)})
 
     def annotate(self, row: int, text: str = "") -> None:
         """Add a text annotation to a row."""
@@ -2976,13 +2990,17 @@ class _AtlasHandle:
         """Register a callback fired when selection changes (runs when kernel is idle)."""
         self._callbacks.append(callback)
 
-    def save_png(self, path: str, timeout: float = 60.0) -> None:
-        """Render the current view and save as PNG. Blocks (filesystem poll)."""
-        self._send_blocking("savePng", {"path": str(path)}, timeout)
+    def save_png(self, path: str) -> "SaveRequest":
+        """Save the map as a PNG once it has finished loading. Returns at once.
 
-    def save_html(self, path: str, timeout: float = 60.0) -> None:
-        """Export the map as a self-contained HTML file. Blocks (filesystem poll)."""
-        self._send_blocking("saveHtml", {"path": str(path)}, timeout)
+        The returned request's ``done`` and ``error`` tell you (in a later cell) whether
+        the file was written.
+        """
+        return self._send_save("savePng", path)
+
+    def save_html(self, path: str) -> "SaveRequest":
+        """Export the map as a self-contained HTML file once it has finished loading."""
+        return self._send_save("saveHtml", path)
 
     def close(self) -> None:
         """Close the Atlas panel."""

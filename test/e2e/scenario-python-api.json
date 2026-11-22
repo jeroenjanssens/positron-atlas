@@ -1,15 +1,18 @@
 {
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(0)\nk = rng.integers(0, 6, 20000)\ncenters = rng.normal(0, 6, (6, 30))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (20000, 30)), columns=[f'x{i}' for i in range(30)])\ndf['cluster'] = [f'c{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, 20000)\n",
-  "pythonApiCode": "import positron_atlas as atlas; import pathlib; m = atlas.open(df); m.color_by('cluster'); m.save_png('/tmp/positron-atlas-e2e/api.png')",
+  "pythonApiCode": "import positron_atlas as atlas; m = atlas.open(df); m.color_by('score'); m.save_png('/tmp/positron-atlas-e2e/api.png')",
   "steps": [
     {
-      "name": "png-saved",
+      "name": "save_png wrote the map (not a blank image)",
       "checkFile": "/tmp/positron-atlas-e2e/api.png",
-      "timeout": 20000
+      "timeout": 20000,
+      "minDrawnPixels": 2000
     },
     {
-      "name": "colormeta-categorical",
-      "report": "a.colorMeta && a.colorMeta.kind"
+      "name": "color_by(score) applied (not the default colour column)",
+      "report": "{ colorMeta: a.colorMeta && a.colorMeta.kind, commLatencyMs: a.apiLatencyMs }",
+      "until": "a.colorMeta && a.colorMeta.kind === 'numeric' && a.describe.columns[a.colorColumn].name === 'score'",
+      "timeout": 10000
     },
     {
       "name": "invert-selection",
@@ -23,9 +26,15 @@
       "report": "a.selectedCount"
     },
     {
+      "name": "let the selection message reach the kernel (it is handled between cells)",
+      "sleepMs": 1500
+    },
+    {
       "name": "run-cell-2",
       "writeFile": "/tmp/positron-atlas-e2e/run-cell.json",
-      "writeContent": {"code": "import pathlib, json; pathlib.Path('/tmp/positron-atlas-e2e/sel-count.json').write_text(json.dumps(len(m.selected_rows)))"}
+      "writeContent": {
+        "code": "import pathlib, json; pathlib.Path('/tmp/positron-atlas-e2e/sel-count.json').write_text(json.dumps(len(m.selected_rows)))"
+      }
     },
     {
       "name": "wait-sel-count",
@@ -34,7 +43,21 @@
     },
     {
       "name": "sel-count",
-      "readFile": "/tmp/positron-atlas-e2e/sel-count.json"
+      "readFile": "/tmp/positron-atlas-e2e/sel-count.json",
+      "expect": 20000
+    },
+    {
+      "name": "a command from a later cell (comm latency once the tab exists)",
+      "writeFile": "/tmp/positron-atlas-e2e/run-cell.json",
+      "writeContent": {
+        "code": "m.color_by('cluster')"
+      }
+    },
+    {
+      "name": "color_by(cluster) from a later cell arrives",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical' && a.describe.columns[a.colorColumn].name === 'cluster'",
+      "timeout": 15000,
+      "report": "{ commLatencyMs: a.apiLatencyMs }"
     }
   ]
 }

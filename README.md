@@ -138,14 +138,15 @@ m.selection                 # → filtered DataFrame
 # Callback when the selection changes
 m.on_select(lambda rows: print(f"{len(rows)} rows selected"))
 
-# Save to disk (blocks until the host writes the file, up to 60 s)
-m.save_png("map.png")
+# Save to disk once the map has finished loading (returns at once)
+req = m.save_png("map.png")
 m.save_html("map.html")
+req.done, req.error         # in a later cell: True, None once the file is written
 
 m.close()
 ```
 
-`atlas.open(df)` creates a Positron comm channel and returns the handle at once — it never blocks the cell. Commands (`color_by`, `label_by`, `dims`, `annotate`) are sent as comm messages and are fire-and-forget. `save_png` and `save_html` poll a status file that the host writes after rendering; they block until the file is ready (or the timeout expires).
+`atlas.open(df)` creates a Positron comm channel and returns the handle at once — it never blocks the cell. Commands (`color_by`, `label_by`, `dims`, `annotate`) are sent as comm messages and are fire-and-forget. `save_png` and `save_html` don't block either: the map is prepared by the same kernel that runs your cell, so waiting in the cell would wait forever. Commands are applied in order once the map has finished loading (layout done, colours loaded), so `atlas.open(df); m.color_by('phase'); m.save_png('map.png')` in one cell saves the coloured map. The returned request's `done` and `error` report the result.
 
 Selection changes from the UI are delivered to the kernel between cell executions via `comm.on_msg`; `on_select` callbacks fire at that point.
 

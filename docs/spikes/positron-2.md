@@ -152,35 +152,28 @@ using `registerClientHandler` / `comm.send` / `comm.on_msg`. The chosen design:
 - Webview→host: `{type: 'apiReply', commandId, ok, bytes?}` or `{type: 'selectionChanged', mask, nKept}`.
 - Host→kernel (selection): `commClient.performRpc({type: 'selectionChanged', mask_b64, nKept})`.
   Python `_on_msg` fires between cells; `comm.send({})` acks so `performRpc` resolves.
-- Blocking commands (`save_png`, `save_html`): host writes `api_dir/<cmdId>.json`;
-  Python polls the file every 150 ms (up to 60 s timeout).
+- `save_png` / `save_html` never block: the map they wait for is prepared by the same
+  kernel that runs the cell, so a blocking wait deadlocks (seen in the e2e run). They return a
+  `SaveRequest`; the host writes the file and `api_dir/<cmdId>.json`, and `req.done` /
+  `req.error` report it in a later cell. Commands run in the webview in order, once the map
+  has settled (layout done, colours loaded).
 
-**Measured harness latency (colorBy round-trip):** ~200 ms in the headless Chrome harness.
-This includes: Python `comm.send` → host `dispatchCommCommand` → webview `apiCommand` → `setColorColumn` → `colors` kernel call → `apiReply`. In a real Positron session the iopub delivery adds ~5 ms.
+**Measured in Positron (2026-11-22, Positron 2026.11.1, macOS arm64, 20k-row frame), `test/e2e/scenario-python-api.json`:**
 
-**E2E test (`scenario-python-api.json`):** `test/e2e/scenario-python-api.json` runs the full
-round-trip in a real Positron instance: Python `atlas.open(df)` opens an Atlas panel via
-`comm_open`; `m.color_by('cluster')` sends an `apiCommand` over the comm channel; the step
-timer from `eval: a.invertSelection()` to `until: a.selectedCount > 0` measures the
-in-process selection latency; a second Python cell (`run-cell.json`) writes the Python-side
-`len(m.selected_rows)` to verify that the reverse comm (host→kernel `performRpc`) delivers
-the selection mask correctly. Run with:
-```
-npm run build && node test/e2e/run.mjs test/e2e/scenario-python-api.json
-```
+- One cell `m = atlas.open(df); m.color_by('score'); m.save_png(...)` opens the tab, colours by
+  `score` and writes a PNG of the coloured map (checked: ~15k drawn pixels).
+- A lasso/selection in the webview reaches the kernel: `len(m.selected_rows)` in the next cell
+  is 20000.
+- **Comm latency** (Python `comm.send` → webview, a command from a later cell): **2–3 ms**.
+- Found by the e2e run, not by the harness (fixed): `color_by`/`label_by` sent column names that
+  the webview ignored (the map looked right only because Atlas colours by `cluster` by default);
+  a blocking `save_png` deadlocked (the kernel prepares the map); commands ran before the map
+  existed (a blank PNG); the kernel didn't answer `performRpc`, so selections stalled; the
+  helper was only importable after `atlas.open` (now loaded when a Python session starts).
 
-**Observed e2e run (2026-11-22, Positron 2026.11.1 on macOS arm64, 20 k-row DataFrame):**
-- Atlas phase `ready` with `colorMeta: "categorical"` at ~15.6 s from scenario launch.
-- PNG (`/tmp/positron-atlas-e2e/api.png`) written: 14 324 bytes, non-blank.
-- `a.invertSelection()` via CDP → `a.selectedCount = 20000` immediately (webview-local).
-- Second Python cell `len(m.selected_rows)` returned `20000` after 0.3 s (bounded by the
-  helper extension's 300 ms run-cell.json poll interval); actual comm delivery was faster.
-- **Comm latency** (Python `comm.send` → host `dispatchCommCommand` → webview `apiCommand`):
-  not directly timer-visible in this run, but the `savePng` round-trip completed within ~2–3 s
-  of panel creation (including data loading); the colour command arrived before UMAP finished.
-  Harness-measured `colorBy` round-trip: ~200 ms (see harness note above).
+Run with `npm run build && node test/e2e/run.mjs test/e2e/scenario-python-api.json`.
 
-**Recommendation:** ✅ Comms are the correct primitive. The architecture validated; item 12 is done.
+**Recommendation:** comms are the right primitive (pushed kernel → host while a cell runs, a few ms). Item 12 is done.
 
 ---
 

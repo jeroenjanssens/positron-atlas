@@ -1,42 +1,50 @@
 {
   "variable": "df",
-  "description": "C3 — Python API: apiCommand dispatch, selectionChanged, savePng via harness comm",
-  "settings": { "maxAnchors": 500, "maxAnchorsCpu": 500 },
+  "description": "C3 \u2014 Python API: apiCommand dispatch, selectionChanged, savePng via harness comm",
+  "settings": {
+    "maxAnchors": 500,
+    "maxAnchorsCpu": 500
+  },
   "setup": "import pandas as pd; import numpy as np; df = pd.DataFrame({'x': np.random.rand(50), 'cat': (np.arange(50) % 3).astype(str)})",
   "steps": [
     {
-      "description": "wait for atlas to be ready (phase === 'ready')",
       "until": "a.phase === 'ready'",
       "timeout": 15000,
-      "assert": "a.phase === 'ready'"
+      "assert": "a.phase === 'ready'",
+      "name": "wait for atlas to be ready (phase === 'ready')"
     },
     {
-      "description": "dispatch colorBy(0) via comm and verify colorMeta is set",
-      "eval": "window.__harness.dispatchCommCommand('cmd-color-1', 'colorBy', {column: 0})",
-      "until": "a.colorMeta !== null",
-      "timeout": 5000,
-      "assert": "a.colorMeta !== null"
+      "name": "colorBy by column name (as Python sends it) colours the map by that column",
+      "eval": "window.__harness.dispatchCommCommand('cmd-color-1', 'colorBy', {columnName: 'x'})",
+      "until": "a.colorMeta !== null && a.describe.columns[a.colorColumn].name === 'x'",
+      "timeout": 5000
     },
     {
-      "description": "dispatch labelBy(1) via comm — does not error",
-      "eval": "window.__harness.dispatchCommCommand('cmd-label-1', 'labelBy', {column: 1})",
+      "name": "labelBy by column name",
+      "eval": "window.__harness.dispatchCommCommand('cmd-label-1', 'labelBy', {columnName: 'cat'})",
       "until": "a.labelMeta !== null",
-      "timeout": 5000,
-      "assert": "a.labelMeta !== null"
+      "timeout": 5000
     },
     {
-      "description": "invert selection — selectionChanged is captured by host",
+      "name": "an unknown column is reported, not ignored",
+      "eval": "window.__harness.log.length = 0; window.__harness.dispatchCommCommand('cmd-color-2', 'colorBy', {columnName: 'nope'})",
+      "until": "window.__harness.log.some((l) => /no column named/.test(l))",
+      "timeout": 5000,
+      "report": "window.__harness.log.filter((l) => /no column/.test(l))"
+    },
+    {
       "eval": "a.invertSelection()",
       "until": "window.__harness.lastSelectionChanged !== null",
       "timeout": 3000,
-      "assert": "window.__harness.lastSelectionChanged !== null && window.__harness.lastSelectionChanged.nKept > 0"
+      "assert": "window.__harness.lastSelectionChanged !== null && window.__harness.lastSelectionChanged.nKept > 0",
+      "name": "invert selection \u2014 selectionChanged is captured by host"
     },
     {
-      "description": "clear selection — lastSelectionChanged mask is null",
       "eval": "a.clearSelection()",
       "until": "window.__harness.lastSelectionChanged && window.__harness.lastSelectionChanged.mask === null",
       "timeout": 3000,
-      "assert": "window.__harness.lastSelectionChanged.mask === null"
+      "assert": "window.__harness.lastSelectionChanged.mask === null",
+      "name": "clear selection \u2014 lastSelectionChanged mask is null"
     }
   ]
 }

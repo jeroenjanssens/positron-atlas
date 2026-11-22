@@ -585,6 +585,8 @@
           }
           harness.log.push(`apiReply:${m.commandId}:ok=${m.ok}`);
         }
+        // Like the extension host: failed commands are shown as a warning.
+        if (!m.ok) harness.log.push(`warning: Atlas (Python API): ${m.error ?? 'failed'}`);
         break;
       }
       case 'selectionChanged': {

@@ -154,44 +154,32 @@ def test_selected_rows_clears_on_null_mask(kernel, tmp_path):
     assert handle.selected_rows.tolist() == []
 
 
-def test_save_png_polls_status_file(kernel, tmp_path):
+def test_save_png_returns_at_once_and_reports_success(kernel, tmp_path):
+    # save_png must never block: the map it waits for is prepared by this same kernel.
     handle, comm, api_dir = _make_handle(kernel, tmp_path)
     png_path = tmp_path / "out.png"
-
-    # Simulate the host writing the status file after ~100ms.
-    def _write_status():
-        time.sleep(0.1)
-        cmd_id = comm.sent[0]["cmdId"]
-        (api_dir / f"{cmd_id}.json").write_text(json.dumps({"ok": True, "error": ""}))
-
-    t = threading.Thread(target=_write_status, daemon=True)
-    t.start()
-
-    handle.save_png(str(png_path), timeout=5.0)
-    # Should not raise; the poll should complete.
+    t0 = time.monotonic()
+    req = handle.save_png(str(png_path))
+    assert time.monotonic() - t0 < 0.1
     assert comm.sent[0]["name"] == "savePng"
     assert comm.sent[0]["args"]["path"] == str(png_path)
+    assert not req.done and req.error is None
+    (api_dir / f"{comm.sent[0]['cmdId']}.json").write_text(json.dumps({"ok": True, "error": ""}))
+    assert req.done and req.error is None
+    assert "saved" in repr(req)
 
 
-def test_save_png_raises_on_error(kernel, tmp_path):
+def test_save_png_reports_errors(kernel, tmp_path):
     handle, comm, api_dir = _make_handle(kernel, tmp_path)
-    png_path = tmp_path / "out.png"
-
-    def _write_error():
-        time.sleep(0.05)
-        cmd_id = comm.sent[0]["cmdId"]
-        (api_dir / f"{cmd_id}.json").write_text(json.dumps({"ok": False, "error": "renderer not ready"}))
-
-    t = threading.Thread(target=_write_error, daemon=True)
-    t.start()
-    with pytest.raises(RuntimeError, match="renderer not ready"):
-        handle.save_png(str(png_path), timeout=5.0)
+    req = handle.save_png(str(tmp_path / "out.png"))
+    (api_dir / f"{comm.sent[0]['cmdId']}.json").write_text(json.dumps({"ok": False, "error": "renderer not ready"}))
+    assert req.done and req.error == "renderer not ready"
 
 
-def test_save_png_raises_on_timeout(kernel, tmp_path):
+def test_save_html_returns_at_once(kernel, tmp_path):
     handle, comm, _ = _make_handle(kernel, tmp_path)
-    with pytest.raises(TimeoutError, match="timed out"):
-        handle.save_png(str(tmp_path / "out.png"), timeout=0.2)
+    req = handle.save_html(str(tmp_path / "out.html"))
+    assert comm.sent[0]["name"] == "saveHtml" and not req.done
 
 
 def test_close_sends_close_and_marks_closed(kernel, tmp_path):
@@ -268,3 +256,36 @@ def test_ensure_atlas_module_idempotent(kernel, tmp_path):
     # 'last' should be the most recently passed handle.
     assert positron_atlas.last is handle2
     sys.modules.pop("positron_atlas", None)
+
+
+def test_selected_rows_map_prepared_rows_to_frame_rows(kernel, tmp_path):
+    # The mask is over prepared rows; with sampling or dropped rows, kept_idx maps them back.
+    handle, comm, _ = _make_handle(kernel, tmp_path)
+
+    class _FakeJob:
+        kept_idx = np.array([2, 5, 7, 9])
+
+    kernel._JOBS["job-x"] = _FakeJob()
+    try:
+        mask_b64 = base64.b64encode(bytes([0b00001010])).decode()  # prepared rows 1 and 3
+        comm.inject_msg({"type": "selectionChanged", "mask_b64": mask_b64, "nKept": 4, "jobId": "job-x"})
+        assert handle.selected_rows.tolist() == [5, 9]
+    finally:
+        del kernel._JOBS["job-x"]
+
+
+def test_every_host_message_is_answered(kernel, tmp_path):
+    # performRpc on the host waits for a reply; an unanswered message stalls the next one.
+    handle, comm, _ = _make_handle(kernel, tmp_path)
+    n = len(comm.sent)
+    comm.inject_msg({"type": "selectionChanged", "mask_b64": "", "nKept": 4})
+    assert comm.sent[n:] == [{"type": "ack"}]
+
+
+def test_color_by_and_label_by_send_column_names(kernel, tmp_path):
+    # Names are resolved by the webview (it knows the frame's columns).
+    handle, comm, _ = _make_handle(kernel, tmp_path)
+    handle.color_by("phase")
+    handle.label_by("cluster")
+    assert comm.sent[0]["name"] == "colorBy" and comm.sent[0]["args"]["columnName"] == "phase"
+    assert comm.sent[1]["name"] == "labelBy" and comm.sent[1]["args"]["columnName"] == "cluster"

@@ -5,6 +5,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { connect } from './cdp.mjs';
+import { parsePngToRgba, drawnPixels } from '../png.mjs';
 
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
@@ -111,10 +112,19 @@ try {
     }
     if (step.report) console.log(`  ${step.name}: ${await cdp.evaluate(`(() => { const a = window.__atlas; return JSON.stringify(${step.report}); })()`, ctx)}`);
     if (step.checkFile) {
-      if (!existsSync(step.checkFile)) throw new Error(`step ${step.name}: file not found: ${step.checkFile}`);
+      while (!existsSync(step.checkFile)) {
+        if (Date.now() - ts > (step.timeout ?? 30000)) throw new Error(`step ${step.name}: file not found: ${step.checkFile}`);
+        await sleep(300);
+      }
+      await sleep(300); // let the writer finish
       const sz = statSync(step.checkFile).size;
       if (sz === 0) throw new Error(`step ${step.name}: file is empty: ${step.checkFile}`);
       console.log(`  ${step.name}: ${step.checkFile} (${sz} bytes)`);
+      if (step.minDrawnPixels) {
+        const n = drawnPixels(parsePngToRgba(readFileSync(step.checkFile)));
+        console.log(`  ${step.name}: ${n} drawn pixels`);
+        if (n < step.minDrawnPixels) throw new Error(`step ${step.name}: only ${n} drawn pixels (want ${step.minDrawnPixels})`);
+      }
     }
     if (step.waitFile) {
       while (!existsSync(step.waitFile)) {
@@ -131,6 +141,7 @@ try {
     if (step.readFile) {
       const content = existsSync(step.readFile) ? readFileSync(step.readFile, 'utf8').trim() : '(not found)';
       console.log(`  ${step.name}: ${content}`);
+      if (step.expect !== undefined && content !== String(step.expect)) throw new Error(`step ${step.name}: got ${content}, want ${step.expect}`);
     }
     if (step.sleepMs) await sleep(step.sleepMs);
     console.log(`step ok: ${step.name} (${((Date.now() - ts) / 1000).toFixed(1)}s)`);
