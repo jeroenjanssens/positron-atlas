@@ -280,6 +280,8 @@
             const r = await call('selection_frame', jobId, maskPath);
             harness.log.push(`info: Created ${r.variable} with ${r.rows} selected rows.`);
             post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
+            // Mirror the %view call that the real extension host makes (S1-Q4).
+            harness.log.push(`view: ${r.variable}`);
           }
         } finally {
           await rmJobFile(name);

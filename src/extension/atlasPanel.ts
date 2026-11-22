@@ -460,6 +460,17 @@ export class AtlasPanel {
         const r = await this.withMask(m.mask, (p) => this.bridge.call<{ variable: string; rows: number }>('selection_frame', this.requireJob(), p));
         this.post({ type: 'selectionFrame', variable: r.variable, rows: r.rows });
         void vscode.window.showInformationMessage(`Created ${r.variable} with ${r.rows.toLocaleString('en-US')} selected rows.`);
+        // Open the new frame in the Data Explorer (S1-Q4: %view is the stable path for in-session variables).
+        await this.ctx.positron.runtime.executeCode(
+          'python',
+          `%view ${r.variable}`,
+          false,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          this.state.sessionId,
+        );
         break;
       }
       case 'row': {
