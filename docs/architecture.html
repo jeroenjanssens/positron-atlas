@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">9b78f72</span> (2026-11-22).</p>
+     Checked against commit <span class="mono">1f97561</span> (2026-11-22).</p>
   <nav>
     <a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -154,7 +154,7 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="t" x="50" y="500">Interaction &amp; colour</text>
     <text class="s" x="50" y="519">HitIndex (hover, prefetch) · pinned card · lasso</text>
     <text class="s" x="50" y="536">colormaps · map palette · legend filter (GPU)</text>
-    <text class="s" x="50" y="553">snippets: Python, polars-umap, DataMapPlot</text>
+    <text class="s" x="50" y="553">annotations · title · search · histogram filter</text>
 
     <!-- internal arrows -->
     <path class="arrow thin a-int" d="M200,144 V164" marker-end="url(#h-int)" marker-start="url(#h-int)"/>
@@ -212,11 +212,11 @@ only the selected numeric columns are converted to float32, and only the anchors
     <text class="t" x="870" y="202">_positron_atlas helper</text>
     <text class="s" x="870" y="221">in sys.modules, not in your namespace</text>
     <text class="s" x="870" y="238">describe · colors · rows · texts · compare_selection</text>
-    <text class="s" x="870" y="255">describe_groups · write_labels · add_coordinates</text>
+    <text class="s" x="870" y="255">search · sizes · histogram · export_datamapplot · …</text>
 
     <rect class="box" x="856" y="294" width="308" height="96" rx="8"/>
     <text class="t" x="870" y="318">Job thread</text><text class="m" x="950" y="318">_Job, daemon thread</text>
-    <text class="s" x="870" y="337">prepare · project · exact_umap · neighbours</text>
+    <text class="s" x="870" y="337">prepare · project · exact_umap · anchor_umap</text>
     <text class="s" x="870" y="354">keeps features, xy and cached neighbours</text>
     <text class="s" x="870" y="371">cancel / supersede between blocks</text>
 
@@ -342,8 +342,8 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
   <thead><tr><th>Layer</th><th>Required</th><th>Optional</th><th>Build, test and benchmarks only</th></tr></thead>
   <tbody>
     <tr><td><span class="pill web">webview</span></td>
-      <td><b>embedding-atlas</b> 0.26 (only two modules, through Vite aliases: UMAP <code>dist/umap.js</code> with WASM and WebGPU, and the density clustering worker) · <b>@deck.gl/core, layers, extensions</b> 9.4 · <b>Svelte</b> 5 (compiled into the bundle)</td>
-      <td>WebGPU in the webview (falls back to the CPU)</td>
+      <td><b>@vscode/codicons</b> (icons) · <b>embedding-atlas</b> 0.26 (only two modules, through Vite aliases: UMAP <code>dist/umap.js</code> with WASM and WebGPU, and the density clustering worker) · <b>@deck.gl/core, layers, extensions</b> 9.4 · <b>Svelte</b> 5 (compiled into the bundle)</td>
+      <td>WebGPU in the webview (falls back to the CPU, or to polars-umap on the anchors in the kernel)</td>
       <td>Vite 8, @sveltejs/vite-plugin-svelte, svelte-check</td></tr>
     <tr><td><span class="pill host">extension host</span></td>
       <td>Positron (<code>@posit-dev/positron</code> API), VS Code API ≥ 1.100 · Node built-ins only · bundled OFL fonts and a Google Fonts catalogue in <code>media/fonts/</code></td>
@@ -351,7 +351,7 @@ reads and writes. With fewer rows than the anchor limit, every row is an anchor 
       <td>esbuild, TypeScript 5.9, vitest, @vscode/vsce, playwright-core (harness and e2e)</td></tr>
     <tr><td><span class="pill py">kernel</span></td>
       <td>Python ≥ 3.10 · <b>numpy</b> · pandas <i>or</i> polars (whichever your DataFrame is)</td>
-      <td><b>Rust core</b> (shipped, CPython ≥ 3.10) · <b>polars-umap</b> or <b>umap-learn</b> for exact UMAP · <b>narwhals</b> (other frame types: pyarrow, DuckDB, Ibis, Modin, cuDF; lazy frames collected up to <code>maxLazyRows</code>)</td>
+      <td><b>Rust core</b> (shipped, CPython ≥ 3.10) · <b>polars-umap</b> or <b>umap-learn</b> for exact UMAP · <b>datamapplot</b> (Export with DataMapPlot) · <b>narwhals</b> (other frame types: pyarrow, DuckDB, Ibis, Modin, cuDF; lazy frames collected up to <code>maxLazyRows</code>)</td>
       <td>uv, pytest, pyarrow, scikit-learn (tests); <code>python/bench*.py</code></td></tr>
     <tr><td><span class="pill py">Rust core</span></td>
       <td><b>rayon</b> (threads) · <b>gemm</b> (SIMD matrix products) · <b>pyo3</b> 0.30 + <b>numpy</b> crate (abi3 binding)</td>
@@ -482,6 +482,12 @@ const STEPS = [
   { from: 'K', to: 'W', ret: true, via: 'H', text: 'formatted values (JSON), optional image pixels' },
   { from: 'W', to: 'H', text: 'image(row), openLink(url)', sub: 'host downloads image URLs (after a prompt) and opens links' },
   { from: 'W', to: 'K', via: 'H', text: 'compareSelection / describeGroups', sub: 'mask or codes as bytes → file; statistics on a 50k–100k sample' },
+  { from: 'W', to: 'K', via: 'H', text: 'search · sizes · histogram / histValues', sub: 'match indices, sizes and histogram values as files (search runs locally once titles are loaded)' },
+  { note: 'W', text: ['Legend, histogram and search filters combine on the GPU', 'labels, badges, title and point annotations drawn over the map', 'PNG export composites all of it'] },
+
+  { phase: 'Export' },
+  { from: 'W', to: 'H', text: 'savePng(bytes) · exportDataMapPlot(xy bytes)', sub: 'save dialog in the host' },
+  { from: 'H', to: 'K', text: 'export_datamapplot(job, path, …)', sub: 'datamapplot.create_interactive_plot → HTML file' },
 
   { phase: 'Write back (after a confirmation)' },
   { from: 'W', to: 'H', text: 'addCoordinates · writeLabels · selectionFrame' },

@@ -12,6 +12,12 @@ Status: **accepted 2026-11-21**: all recommendations in section 1 (D1–D14) and
 
 Written 2026-11-21 against commit `830812c`; implementation starts in waves (section 14).
 
+**Progress (2026-11-22, local `main` at `1f97561`):**
+
+- **Waves 0, 1 and 2 are done.** Done items: P1, P2, P3, P4, P5, P6; H1–H8; I1–I3; N1–N5; L1; F1; D-1; E1, E2; A1–A10 and A13.
+- **Dropped:** P7 (spike: kNN is 3–4 % of browser CPU UMAP time).
+- **Next:** wave 3 (X1–X4, self-contained HTML), then wave 4 (T1–T6, A11, A12).
+
 This plan covers everything asked for on 2026-11-21:
 
 - the performance ideas from [`architecture.html`](architecture.html), section 5;
