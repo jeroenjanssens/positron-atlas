@@ -1859,6 +1859,20 @@ def prepare_overlay(job_id: str, overlay_name: str, layer_id: str) -> str:
 
     name_to_col = {n: i for i, n in enumerate(ov_frame.column_names())}
 
+    # Validate columns eagerly (before the thread) so the error surfaces immediately.
+    missing = [fn for fn in job.feature_names if fn not in name_to_col]
+    if missing:
+        n_shown = min(5, len(missing))
+        shown = ", ".join(repr(m) for m in missing[:n_shown])
+        suffix = f" (and {len(missing) - n_shown} more)" if len(missing) > n_shown else ""
+        return _json({
+            "ok": False,
+            "error": (
+                f"Overlay DataFrame '{overlay_name}' is missing feature column(s) used by the base map: "
+                f"{shown}{suffix}. The overlay must have all {len(job.feature_names)} feature columns."
+            ),
+        })
+
     def _run() -> dict[str, Any]:
         job.set("overlay-prepare", 0.1, f"Loading overlay '{overlay_name}'")
         features, kept_idx, n_original = _overlay_apply_transforms(job, ov_frame, name_to_col)
