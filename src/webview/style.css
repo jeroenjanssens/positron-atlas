@@ -405,25 +405,17 @@ button.icon { padding: 0 6px; font-size: 1.2em; }
 }
 .info-btn .codicon { font-size: 12px; }
 .info-popover {
-  position: absolute;
-  left: 100%;
-  top: -4px;
-  margin-left: 6px;
+  position: fixed;
   z-index: 100;
   background: var(--tt-bg);
   border: 1px solid var(--tt-border);
   color: var(--tt-fg);
   padding: 8px 10px;
   border-radius: 4px;
-  max-width: 280px;
-  min-width: 200px;
   font-size: 0.88em;
   line-height: 1.5;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  /* Keep inside the panel: if near right edge, flip */
-  /* Use transform on parent to push into view */
 }
-/* Clip to viewport by overriding left/right via JS or by constraining the popup's side */
 .info-popover .info-title { font-weight: 700; margin-bottom: 4px; color: var(--tt-fg); }
 .info-popover p { margin: 2px 0; }
 .info-popover .info-what { margin-bottom: 4px; }

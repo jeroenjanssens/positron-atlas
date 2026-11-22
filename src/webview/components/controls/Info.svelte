@@ -12,11 +12,36 @@
   let pinned = $state(false);
   let visible = $state(false);
   let btnEl: HTMLButtonElement | undefined = $state();
+  let popEl: HTMLDivElement | undefined = $state();
+  /** Fixed-position coordinates, so the popover isn't clipped by the scrolling sidebar. */
+  let pos = $state({ left: 0, top: 0 });
 
-  const show = () => { visible = true; };
+  const WIDTH = 320;
+  const MARGIN = 8;
+
+  function place(): void {
+    if (!btnEl) return;
+    const r = btnEl.getBoundingClientRect();
+    let left = r.right + 6;
+    if (left + WIDTH > window.innerWidth - MARGIN) left = Math.max(MARGIN, r.left - WIDTH - 6);
+    pos = { left, top: r.top - 4 };
+  }
+
+  // Once rendered, keep the popover inside the window vertically.
+  $effect(() => {
+    if (!visible || !popEl) return;
+    const h = popEl.getBoundingClientRect().height;
+    const maxTop = window.innerHeight - h - MARGIN;
+    if (pos.top > maxTop) pos = { ...pos, top: Math.max(MARGIN, maxTop) };
+  });
+
+  const costLabel = (c: string) => (c === 'reprepare' ? 're-prepare' : c);
+
+  const show = () => { place(); visible = true; };
   const hide = () => { if (!pinned) visible = false; };
   const toggle = () => {
     pinned = !pinned;
+    if (pinned) place();
     visible = pinned;
   };
 
@@ -49,7 +74,6 @@
       aria-label="Help: {entry.title}"
       aria-expanded={visible}
       aria-haspopup="true"
-      title={entry.title}
       onmouseenter={show}
       onmouseleave={hide}
       onfocus={show}
@@ -63,16 +87,18 @@
       <div
         class="info-popover"
         role="tooltip"
+        bind:this={popEl}
+        style="left:{pos.left}px; top:{pos.top}px; width:{WIDTH}px"
         onmouseenter={show}
         onmouseleave={hide}
       >
         <div class="info-title">{entry.title}</div>
         <p class="info-what">{entry.what}</p>
-        <p class="info-intuition"><em>Why:</em> {entry.intuition}</p>
+        <p class="info-intuition"><em>Intuition:</em> {entry.intuition}</p>
         {#if entry.when}<p class="info-when"><em>When to change:</em> {entry.when}</p>{/if}
         {#if entry.cost !== 'none'}
           <div class="info-cost">
-            <span class="tag {entry.cost}">{entry.cost}</span>
+            <span class="tag {costLabel(entry.cost)}">{costLabel(entry.cost)}</span>
           </div>
         {/if}
       </div>
