@@ -181,7 +181,8 @@ describe('deckLayerDescriptors', () => {
   it('returns only deck.gl layers sorted by order', () => {
     const layers = createInitialLayers();
     const descs = deckLayerDescriptors(layers);
-    expect(descs.map((d) => d.id)).toEqual(['base', 'outlines', 'labels', 'leader-lines']);
+    // B2 adds 'boxes' (order 15) and 'data-box' (order 5); B5 adds 'leader-lines' (order 35).
+    expect(descs.map((d) => d.id)).toEqual(['base', 'data-box', 'outlines', 'boxes', 'labels', 'leader-lines']);
     // All deck.gl ids are in DECK_LAYER_IDS
     for (const d of descs) expect(DECK_LAYER_IDS.has(d.id)).toBe(true);
   });
@@ -201,14 +202,15 @@ describe('deckLayerDescriptors', () => {
   });
 
   it('respects reordered layers', () => {
-    // Move labels before outlines
+    // Move labels before outlines (and before data-box which sits at order 5).
+    // Use order 3 to avoid tie with data-box.
     let layers = createInitialLayers();
-    // set outlines to order 20, labels to order 10
-    layers = updateLayer(layers, 'labels', { order: 5 });
+    layers = updateLayer(layers, 'labels', { order: 3 });
     const descs = deckLayerDescriptors(layers);
-    expect(descs[0].id).toBe('base');
-    expect(descs[1].id).toBe('labels'); // labels now first
-    expect(descs[2].id).toBe('outlines');
+    expect(descs[0].id).toBe('base');      // base at 0
+    expect(descs[1].id).toBe('labels');    // labels now at 3, before data-box (5)
+    expect(descs[2].id).toBe('data-box'); // data-box at 5
+    expect(descs[3].id).toBe('outlines'); // outlines at 10
   });
 });
 

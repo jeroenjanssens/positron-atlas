@@ -46,7 +46,7 @@ export interface LayerState {
 // ---------------------------------------------------------------------------
 
 /** Layer ids that are rendered as deck.gl layers (WebGL canvas). */
-export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels', 'leader-lines']);
+export const DECK_LAYER_IDS = new Set(['base', 'outlines', 'labels', 'leader-lines', 'boxes', 'data-box']);
 
 /** Layer ids that are rendered as HTML canvas/SVG overlays. */
 export const HTML_LAYER_IDS = new Set(['glow', 'annotations', 'around-labels']);
@@ -120,6 +120,24 @@ export function createInitialLayers(): LayerState[] {
       opacity: 1,
       blending: 'normal',
       order: 50,
+    },
+    {
+      id: 'boxes',
+      kind: 'overlay-frame',
+      name: 'Group boxes',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 15, // between outlines (10) and labels (20)
+    },
+    {
+      id: 'data-box',
+      kind: 'overlay-frame',
+      name: '3D data box / grid / gizmo',
+      visible: true,
+      opacity: 1,
+      blending: 'normal',
+      order: 5, // behind everything else
     },
   ];
 }
