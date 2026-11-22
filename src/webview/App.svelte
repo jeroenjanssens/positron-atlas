@@ -55,8 +55,54 @@
 
   // Track whether the webview has keyboard focus so the host can set/clear the
   // positronAtlas.webviewFocused context key (item 1).
-  function onWindowFocus() { vscode.post({ type: 'webviewFocused' }); }
-  function onWindowBlur() { vscode.post({ type: 'webviewBlurred' }); }
+  //
+  // Rules (per spike S1):
+  //   - webviewFocused = true when the VS Code panel has focus AND no text input
+  //     inside the webview is active (search box, font picker, annotation editing).
+  //   - webviewFocused = false on panel blur OR when a text INPUT/TEXTAREA/
+  //     contentEditable within the webview receives focus.
+  //
+  // We track this with two layers:
+  //   1. window.onfocus / window.onblur for the panel-level focus state.
+  //   2. document.onfocusin / document.onfocusout to detect text-input focus.
+
+  let panelFocused = false;
+  let textInputFocused = false;
+
+  function updateFocusContext() {
+    const focused = panelFocused && !textInputFocused;
+    vscode.post({ type: focused ? 'webviewFocused' : 'webviewBlurred' });
+  }
+
+  function onWindowFocus() {
+    panelFocused = true;
+    updateFocusContext();
+  }
+
+  function onWindowBlur() {
+    panelFocused = false;
+    updateFocusContext();
+  }
+
+  function onDocumentFocusIn(e: FocusEvent) {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    const tag = t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || t.isContentEditable) {
+      textInputFocused = true;
+      updateFocusContext();
+    }
+  }
+
+  function onDocumentFocusOut(e: FocusEvent) {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    const tag = t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || t.isContentEditable) {
+      textInputFocused = false;
+      updateFocusContext();
+    }
+  }
 
   const statusText = $derived.by(() => {
     if (atlas.phase === 'loading') return 'Connecting to the kernel…';
@@ -103,6 +149,7 @@
 </script>
 
 <svelte:window onkeydown={onKeyDown} onfocus={onWindowFocus} onblur={onWindowBlur} />
+<svelte:document onfocusin={onDocumentFocusIn} onfocusout={onDocumentFocusOut} />
 
 <div class="app" class:collapsed>
   <aside>

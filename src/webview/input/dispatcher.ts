@@ -2,17 +2,19 @@
  * Input dispatcher — routes keyboard events to Atlas actions.
  *
  * Responsibilities:
- *  - Single window-level keyboard listener (replaces scattered per-component handlers).
+ *  - In Positron (VS Code webview): all keyboard shortcuts arrive via
+ *    ToWebview { type: 'command' } forwarded by the VS Code keybinding machinery.
+ *    No window keyboard listener is registered — avoids double-dispatch.
+ *  - In a plain browser (harness, development): a window-level keyboard listener
+ *    is registered so shortcuts work without VS Code.
  *  - Routes keys to atlas methods based on 2D/3D mode.
- *  - Handles dispatched VS Code commands forwarded from the host (ToWebview { type: 'command' }).
- *  - Does NOT intercept pointer/wheel events (those are handled by the deck.gl controller
- *    configured by the renderer, and by LassoLayer for the lasso overlay).
+ *  - Does NOT intercept pointer/wheel events (handled by the deck.gl controller
+ *    and by LassoLayer for the lasso overlay).
  *
- * Key policy:
+ * Key policy (browser-only listener):
  *  - Skip when an input, select, or textarea has focus (the user is typing).
  *  - Skip modifier-only keys (Shift, Alt, Ctrl, Meta on their own).
- *  - Escape is handled only by the dispatcher when nothing else has claimed it
- *    (LassoLayer handles Escape for in-progress lasso, App handles it for pinned card).
+ *  - ctrl+z / ctrl+shift+z handled before the modifier guard.
  *
  * Usage:
  *   const d = new InputDispatcher(atlas);
@@ -20,6 +22,7 @@
  */
 
 import type { Atlas } from '../atlas.svelte';
+import { isVsCodeWebview } from '../vscode';
 import type { ActionId } from './bindings';
 
 /** How many world units to pan per key press (at current zoom). */
@@ -41,16 +44,24 @@ function isTyping(e: KeyboardEvent): boolean {
 
 export class InputDispatcher {
   private readonly atlas: Atlas;
-  private readonly onKey: (e: KeyboardEvent) => void;
+  private readonly onKey: ((e: KeyboardEvent) => void) | null;
 
   constructor(atlas: Atlas) {
     this.atlas = atlas;
-    this.onKey = (e) => this.handleKey(e);
-    window.addEventListener('keydown', this.onKey);
+    if (isVsCodeWebview) {
+      // In Positron: VS Code keybindings send { type: 'command' } messages; no listener needed.
+      this.onKey = null;
+    } else {
+      // In browser/harness: handle keys directly (no VS Code keybinding machinery).
+      this.onKey = (e) => this.handleKey(e);
+      window.addEventListener('keydown', this.onKey);
+    }
   }
 
   destroy(): void {
-    window.removeEventListener('keydown', this.onKey);
+    if (this.onKey) {
+      window.removeEventListener('keydown', this.onKey);
+    }
   }
 
   /**

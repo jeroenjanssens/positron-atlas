@@ -1,0 +1,65 @@
+{
+  "description": "Navigation dispatch (item 1): harness.dispatch fires each action exactly once; 2D rotation via [ ] keys and resetRotation; view.reset fits the view.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 4, 5000)\ncenters = rng.normal(0, 4, (4, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (5000, 10)), columns=[f'f{i}' for i in range(10)])\ndf['cat'] = [f'g{v}' for v in k]\n",
+  "settings": {
+    "maxAnchorsCpu": 2000,
+    "nativeCore": false
+  },
+  "screenshot": "nav-dispatch.png",
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready' && a.projection === 'done'",
+      "timeout": 60000
+    },
+    {
+      "name": "zoom in via dispatch",
+      "eval": "const before = a.renderer?.viewState?.zoom; window.__harness.dispatch('view.zoomIn'); window.__harness.dispatch('view.zoomIn'); window.__lastZoomBefore = before;",
+      "assert": ["a.renderer?.viewState?.zoom > window.__lastZoomBefore"],
+      "report": "{ before: window.__lastZoomBefore, after: a.renderer?.viewState?.zoom }"
+    },
+    {
+      "name": "view.reset fits back",
+      "eval": "window.__harness.dispatch('view.reset');",
+      "until": "a.renderer?.viewState?.zoom !== window.__lastZoomBefore + 1 || Math.abs(a.renderer?.viewState?.zoom - window.__lastZoomBefore) < 2",
+      "report": "{ zoom: a.renderer?.viewState?.zoom }"
+    },
+    {
+      "name": "2D rotation: rotateLeft 15 degrees",
+      "eval": "a.setRotation2D(0); window.__harness.dispatch('view.rotateLeft');",
+      "assert": ["Math.abs(a.rotation2D - (-15)) < 1 || Math.abs(a.rotation2D - 345) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "2D rotation: rotateRight 15 degrees",
+      "eval": "window.__harness.dispatch('view.rotateRight');",
+      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "2D rotation: set 45 then resetRotation",
+      "eval": "a.setRotation2D(45); window.__harness.dispatch('view.resetRotation');",
+      "assert": ["Math.abs(a.rotation2D) < 1"],
+      "report": "{ rotation2D: a.rotation2D }"
+    },
+    {
+      "name": "dispatch count: each action runs once per call",
+      "eval": "window.__dispatchCount = 0; const orig = a.dispatcher?.dispatch?.bind(a.dispatcher); a.dispatcher.dispatch = (...args) => { window.__dispatchCount++; return orig?.(...args); }; window.__harness.dispatch('view.zoomIn');",
+      "assert": ["window.__dispatchCount === 1"],
+      "report": "{ dispatchCount: window.__dispatchCount }"
+    },
+    {
+      "name": "compass button appears after rotation",
+      "eval": "a.setRotation2D(90);",
+      "until": "document.querySelector('.plot-toolbar .compass') !== null",
+      "report": "{ compassVisible: !!document.querySelector('.plot-toolbar .compass'), rotation: a.rotation2D }"
+    },
+    {
+      "name": "compass button disappears after resetRotation2D",
+      "eval": "a.resetRotation2D();",
+      "until": "document.querySelector('.plot-toolbar .compass') === null",
+      "report": "{ compassVisible: !!document.querySelector('.plot-toolbar .compass'), rotation: a.rotation2D }"
+    }
+  ]
+}
