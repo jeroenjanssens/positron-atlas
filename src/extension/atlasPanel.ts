@@ -337,6 +337,63 @@ export class AtlasPanel {
         });
         break;
       }
+      // ---- A10: Size by column ------------------------------------------------
+      case 'sizes': {
+        const r = await this.bridge.call<{ file: string; dtype: 'f32'; meta: import('../shared/protocol').SizeMeta; length: number }>(
+          'sizes',
+          this.requireJob(),
+          m.column,
+        );
+        this.post({
+          type: 'sizes',
+          column: m.column,
+          file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+          meta: r.meta,
+        });
+        break;
+      }
+      // ---- A13: Histogram filter ----------------------------------------------
+      case 'histValues': {
+        const r = await this.bridge.call<{ file: string; dtype: 'f32'; length: number }>(
+          'hist_values',
+          this.requireJob(),
+          m.column,
+        );
+        this.post({
+          type: 'histValues',
+          column: m.column,
+          file: this.fileRef({ file: r.file, dtype: r.dtype, shape: [r.length] }),
+        });
+        break;
+      }
+      case 'histogram': {
+        const r = await this.bridge.call<{ data: import('../shared/protocol').HistogramData }>(
+          'histogram',
+          this.requireJob(),
+          m.column,
+          m.nBins ?? 50,
+        );
+        this.post({ type: 'histogram', column: m.column, data: r.data });
+        break;
+      }
+      // ---- P3: kernel-anchors compute mode ------------------------------------
+      case 'anchorUmap': {
+        const job = this.requireJob();
+        const token = this.newToken();
+        const r = await this.bridge.call<{ file: string; dtype: 'f32'; length: number; shape: number[]; seconds: number }>(
+          'anchor_umap',
+          job,
+          JSON.stringify(m.params),
+        );
+        if (!token.isCancellationRequested) {
+          this.post({
+            type: 'anchorXY',
+            file: this.fileRef({ file: r.file, dtype: r.dtype, shape: r.shape }),
+            seconds: r.seconds,
+          });
+        }
+        break;
+      }
       case 'writeLabels': {
         const pick = await vscode.window.showWarningMessage(
           `${m.description} in column ${m.column} of ${this.state.variable}? This modifies the DataFrame in your session.`,

@@ -1,0 +1,56 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(13)\nn = 3000\nk = rng.integers(0, 5, n)\ncenters = rng.normal(0, 6, (5, 10))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 5000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "WebGPU is unavailable in the harness",
+      "assert": [
+        "a.gpuAvailable === false"
+      ]
+    },
+    {
+      "name": "kernel-anchors option is shown when polars_umap is available",
+      "assert": [
+        "a.describe.deps.polars_umap === true",
+        "[...document.querySelectorAll('select[aria-label=\"Compute\"] option')].map(o => o.value).includes('kernel-anchors')"
+      ]
+    },
+    {
+      "name": "wait for initial layout to settle",
+      "until": "a.phase === 'ready'",
+      "timeout": 120000
+    },
+    {
+      "name": "select kernel-anchors compute mode and run",
+      "eval": "const s = document.querySelector('select[aria-label=\"Compute\"]'); s.value = 'kernel-anchors'; s.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 200)); [...document.querySelectorAll('[data-section=umap] button')].find(b => b.textContent.includes('Run in kernel (anchors)')).click()",
+      "until": "a.phase === 'ready' && a.computeMode === 'kernel-anchors' && a.timings.umap > 0 && a.layoutEngine === 'polars-umap (anchors)'",
+      "timeout": 180000,
+      "assert": [
+        "a.anchorXY !== null",
+        "a.anchorXY.every(Number.isFinite)",
+        "a.projection === 'none' || a.projection === 'done'"
+      ],
+      "report": "{ layoutEngine: a.layoutEngine, nAnchors: a.nAnchors, umap: a.timings.umap }",
+      "screenshot": "kernel-anchors-layout.png"
+    },
+    {
+      "name": "points are drawn (non-black pixels appear)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k+1] + d[k+2] > 60) n++; window.__drawnPixels = n",
+      "until": "window.__drawnPixels !== undefined",
+      "assert": "window.__drawnPixels > 500",
+      "report": "{ drawnPixels: window.__drawnPixels, layoutEngine: a.layoutEngine }"
+    },
+    {
+      "name": "footer shows polars-umap (anchors) engine",
+      "assert": [
+        "document.querySelector('footer .summary').textContent.includes('polars-umap (anchors)')"
+      ],
+      "report": "document.querySelector('footer .summary').textContent"
+    }
+  ]
+}
