@@ -1,0 +1,156 @@
+{
+  "variable": "df",
+  "description": "Grid mode (C1, item 4): 4 panels with different colourings; linked cameras; hover in panel 3; lasso across panels; PNG export. Camera pan is verified programmatically (deck.gl's OrbitController does not respond to Playwright drag events in SwiftShader mode; real user drag is validated in the Positron e2e test).",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 2000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, n)\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready",
+      "until": "a.phase === 'ready'",
+      "timeout": 90000
+    },
+    {
+      "name": "color main view by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 15000,
+      "assert": ["a.colorMeta.kind === 'categorical'"]
+    },
+    {
+      "name": "enable 2×2 grid mode via toggleGrid",
+      "eval": "a.toggleGrid()",
+      "until": "a.grid.enabled",
+      "timeout": 5000,
+      "assert": [
+        "a.grid.enabled === true",
+        "a.grid.layout === '2x2'",
+        "a.grid.panels.length === 4",
+        "a.renderer.isGridEnabled === true"
+      ],
+      "report": "{ enabled: a.grid.enabled, layout: a.grid.layout, nPanels: a.grid.panels.length }",
+      "screenshot": "grid-enabled.png"
+    },
+    {
+      "name": "set panel 1 to color by numeric score column",
+      "eval": "const scoreCol = a.describe.columns.find(c => c.name === 'score'); a.setPanelColorColumn(1, scoreCol.index)",
+      "until": "a.grid.panels[1].colorColumn !== null",
+      "timeout": 5000,
+      "assert": ["a.grid.panels[1].colorColumn !== null"],
+      "report": "{ panel1Col: a.grid.panels[1].colorColumn }"
+    },
+    {
+      "name": "wait for panel 1 colors to arrive in cache",
+      "until": "a.gridColorCache.size >= 1",
+      "timeout": 15000,
+      "report": "{ cacheSize: a.gridColorCache.size }"
+    },
+    {
+      "name": "all 4 panels have non-background pixels (points rendered in every panel)",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); function panelBright(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let n=0; for(let i=0;i<d.length;i+=4) if(d[i]+d[i+1]+d[i+2]>60) n++; return n; } const hw=Math.floor(W/2), hh=Math.floor(H/2); window.__panelPx = [panelBright(0,0,hw,hh), panelBright(hw,0,W-hw,hh), panelBright(0,hh,hw,H-hh), panelBright(hw,hh,W-hw,H-hh)]",
+      "until": "window.__panelPx !== undefined",
+      "assert": [
+        "window.__panelPx[0] > 20",
+        "window.__panelPx[1] > 20",
+        "window.__panelPx[2] > 20",
+        "window.__panelPx[3] > 20"
+      ],
+      "report": "{ panelPixels: window.__panelPx }"
+    },
+    {
+      "name": "panel 0 (cluster colours) and panel 1 (score gradient) have different dominant colour",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); function avgRed(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let s=0,n=0; for(let i=0;i<d.length;i+=4){ if(d[i]+d[i+1]+d[i+2]>60){s+=d[i];n++;} } return n>0?s/n:0; } const hw=Math.floor(W/2), hh=Math.floor(H/2); window.__red0=avgRed(0,0,hw,hh); window.__red1=avgRed(hw,0,W-hw,hh)",
+      "until": "window.__red0 !== undefined",
+      "assert": "Math.abs(window.__red0 - window.__red1) > 2",
+      "report": "{ avgRedPanel0: window.__red0.toFixed(1), avgRedPanel1: window.__red1.toFixed(1), diff: Math.abs(window.__red0 - window.__red1).toFixed(1) }"
+    },
+    {
+      "name": "linked cameras: all 4 panel viewports show the same relative position for a world point",
+      "eval": "const ax = a.anchorXY[0], ay = a.anchorXY[1]; const vps = a.renderer.deck.getViewports(); window.__linkRelPos = vps.map(vp => ({ id: vp.id, relX: parseFloat(vp.project([ax, ay])[0].toFixed(2)), relY: parseFloat(vp.project([ax, ay])[1].toFixed(2)) }))",
+      "until": "window.__linkRelPos !== undefined",
+      "assert": [
+        "window.__linkRelPos.length === 4",
+        "window.__linkRelPos.every(p => Math.abs(p.relX - window.__linkRelPos[0].relX) <= 2)",
+        "window.__linkRelPos.every(p => Math.abs(p.relY - window.__linkRelPos[0].relY) <= 2)"
+      ],
+      "report": "window.__linkRelPos"
+    },
+    {
+      "name": "programmatic camera pan propagates to all 4 panels (linked camera invariant maintained)",
+      "eval": "const vs = a.renderer['viewState']; const tgt = vs.target || [0,0,0]; const newVs = { ...vs, target: [tgt[0] + 2, tgt[1] + 1, tgt[2] || 0] }; a.renderer['viewState'] = newVs; const keyed = {}; for (let pi = 0; pi < 4; pi++) keyed['panel-' + pi] = newVs; a.renderer.deck.setProps({ viewState: keyed }); const ax = a.anchorXY[0], ay = a.anchorXY[1]; await new Promise(r => requestAnimationFrame(r)); const vps2 = a.renderer.deck.getViewports(); window.__afterRelPos = vps2.map(vp => ({ id: vp.id, relX: parseFloat(vp.project([ax, ay])[0].toFixed(2)), relY: parseFloat(vp.project([ax, ay])[1].toFixed(2)) }))",
+      "until": "window.__afterRelPos !== undefined",
+      "assert": [
+        "window.__afterRelPos.length === 4",
+        "window.__afterRelPos.every(p => Math.abs(p.relX - window.__afterRelPos[0].relX) <= 2)",
+        "window.__afterRelPos.every(p => Math.abs(p.relY - window.__afterRelPos[0].relY) <= 2)",
+        "Math.abs(window.__afterRelPos[0].relX - window.__linkRelPos[0].relX) > 1"
+      ],
+      "report": "{ before: window.__linkRelPos[0], after: window.__afterRelPos[0], delta: { x: (window.__afterRelPos[0].relX - window.__linkRelPos[0].relX).toFixed(1), y: (window.__afterRelPos[0].relY - window.__linkRelPos[0].relY).toFixed(1) } }"
+    },
+    {
+      "name": "hover in panel 3 (bottom-right) using its viewport's projected coordinates finds a nearby anchor row",
+      "eval": "const ax = a.anchorXY[0], ay = a.anchorXY[1]; const vps = a.renderer.deck.getViewports(); const vp3 = vps.find(v => v.id === 'panel-3') || vps[vps.length - 1]; const sc = vp3.project([ax, ay]); a['onPointer']({ x: vp3.x + sc[0], y: vp3.y + sc[1], world: [ax, ay] })",
+      "until": "a.tooltip !== null",
+      "timeout": 5000,
+      "assert": [
+        "a.tooltip !== null",
+        "a.tooltip.row >= 0"
+      ],
+      "report": "{ tooltipRow: a.tooltip && a.tooltip.row }",
+      "screenshot": "grid-hover-panel3.png"
+    },
+    {
+      "name": "clear hover",
+      "eval": "a['onPointer'](null)",
+      "until": "true"
+    },
+    {
+      "name": "lasso across panels selects points that span the grid boundary",
+      "eval": "a.tool = 'lasso'",
+      "until": "a.tool === 'lasso'",
+      "timeout": 3000
+    },
+    {
+      "name": "drag a wide lasso spanning both panel 0 (top-left) and panel 1 (top-right)",
+      "drag": "(() => { const cv = document.querySelector('canvas'); const r = cv.getBoundingClientRect(); const x0=r.left+r.width*0.1, x1=r.left+r.width*0.9, y0=r.top+r.height*0.05, y1=r.top+r.height*0.45; return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]; })()",
+      "until": "a.selectedCount > 0",
+      "timeout": 15000,
+      "assert": ["a.selectedCount > 0"],
+      "report": "{ selected: a.selectedCount }",
+      "screenshot": "grid-lasso.png"
+    },
+    {
+      "name": "clear selection and switch back to pan tool",
+      "eval": "a.clearSelection(); a.tool = 'pan'",
+      "until": "a.tool === 'pan' && a.selectedCount === 0",
+      "timeout": 3000
+    },
+    {
+      "name": "PNG export of the full grid includes all panels (non-background pixels present)",
+      "eval": "h.png = ''; a.savePng()",
+      "until": "h.png !== ''",
+      "timeout": 15000
+    },
+    {
+      "name": "exported PNG has non-background pixels",
+      "eval": "const img = new Image(); await new Promise(r => { img.onload = r; img.src = h.png; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i+1] + d[i+2] > 100) n++; window.__gridPngPixels = n",
+      "until": "window.__gridPngPixels !== undefined",
+      "assert": "window.__gridPngPixels > 100",
+      "report": "{ pngPixels: window.__gridPngPixels }"
+    },
+    {
+      "name": "disable grid mode and verify single-view is restored",
+      "eval": "a.toggleGrid()",
+      "until": "!a.grid.enabled",
+      "timeout": 5000,
+      "assert": [
+        "a.grid.enabled === false",
+        "a.renderer.isGridEnabled === false"
+      ],
+      "screenshot": "grid-disabled.png"
+    }
+  ]
+}

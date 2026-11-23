@@ -60,7 +60,7 @@
       "name": "fit to view from toolbar",
       "eval": "a.renderer.viewState.zoom -= 2; a.fitView()",
       "assert": [
-        "JSON.stringify([...document.querySelectorAll('.plot-toolbar .tool')].map((b) => b.getAttribute('aria-label').split(':')[0])) === JSON.stringify(['Pan and zoom', 'Lasso select', 'Fit to view', 'Annotate', 'Brush', 'Shapes', 'Undo', 'Redo', 'Full screen', 'Show controls'])"
+        "JSON.stringify([...document.querySelectorAll('.plot-toolbar .tool')].map((b) => b.getAttribute('aria-label').split(':')[0])) === JSON.stringify(['Pan and zoom', 'Lasso select', 'Fit to view', 'Annotate', 'Brush', 'Shapes', 'Undo', 'Redo', 'Grid mode (small multiples)', 'Full screen', 'Show controls'])"
       ],
       "report": "[...document.querySelectorAll('.plot-toolbar .tool')].map((b) => b.getAttribute('aria-label'))",
       "screenshot": "ui-toolbar.png"

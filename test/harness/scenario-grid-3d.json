@@ -1,0 +1,66 @@
+{
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 2000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, n)\n",
+  "settings": {
+    "pcaEnabled": false,
+    "maxAnchorsCpu": 2000
+  },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "switch to 3D and wait for layout",
+      "eval": "a.setDims(3)",
+      "until": "a.dims === 3 && a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')",
+      "timeout": 120000,
+      "assert": ["a.dims === 3"]
+    },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 15000
+    },
+    {
+      "name": "enable 1×2 grid in 3D",
+      "eval": "a.setGridLayout('1x2'); a.toggleGrid()",
+      "until": "a.grid.enabled",
+      "timeout": 5000,
+      "assert": [
+        "a.grid.enabled === true",
+        "a.grid.layout === '1x2'",
+        "a.dims === 3",
+        "a.renderer.isGridEnabled === true"
+      ],
+      "report": "{ enabled: a.grid.enabled, layout: a.grid.layout, dims: a.dims }"
+    },
+    {
+      "name": "set panel 1 to color by score",
+      "eval": "const scoreCol = a.describe.columns.find(c => c.name === 'score'); a.setPanelColorColumn(1, scoreCol.index)",
+      "until": "a.grid.panels[1].colorColumn !== null",
+      "timeout": 5000
+    },
+    {
+      "name": "wait for panel 1 colors in 3D",
+      "until": "a.gridColorCache.size >= 1",
+      "timeout": 15000
+    },
+    {
+      "name": "both panels have points rendered (non-background pixels in each half)",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); function panelBright(x0,y0,x1,y1){ const d=ctx.getImageData(x0,y0,x1-x0,y1-y0).data; let n=0; for(let i=0;i<d.length;i+=4) if(d[i]+d[i+1]+d[i+2]>60) n++; return n; } window.__3dPanelPx = [panelBright(0,0,Math.floor(W/2),H), panelBright(Math.floor(W/2),0,W,H)]",
+      "until": "window.__3dPanelPx !== undefined",
+      "assert": [
+        "window.__3dPanelPx[0] > 20",
+        "window.__3dPanelPx[1] > 20"
+      ],
+      "report": "{ panel0: window.__3dPanelPx[0], panel1: window.__3dPanelPx[1] }",
+      "screenshot": "grid-3d.png"
+    },
+    {
+      "name": "disable grid mode in 3D",
+      "eval": "a.toggleGrid()",
+      "until": "!a.grid.enabled",
+      "timeout": 5000,
+      "assert": ["a.grid.enabled === false"]
+    }
+  ]
+}

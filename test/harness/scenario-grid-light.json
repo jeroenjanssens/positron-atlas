@@ -1,0 +1,29 @@
+{
+  "variable": "df",
+  "theme": "light",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1500\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, n)\n",
+  "settings": { "pcaEnabled": false, "maxAnchorsCpu": 1500 },
+  "screenshot": false,
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready'", "timeout": 90000 },
+    {
+      "name": "color by cluster",
+      "eval": "const col = a.describe.columns.find(c => c.name === 'cluster'); a.setColorColumn(col.index)",
+      "until": "a.colorMeta && a.colorMeta.kind === 'categorical'",
+      "timeout": 15000
+    },
+    {
+      "name": "enable 2×2 grid with score on panel 2",
+      "eval": "const scoreCol = a.describe.columns.find(c => c.name === 'score'); a.setGridLayout('2x2'); a.toggleGrid(); a.setPanelColorColumn(2, scoreCol.index)",
+      "until": "a.grid.enabled && a.gridColorCache.size >= 1",
+      "timeout": 15000,
+      "assert": ["a.grid.enabled === true"]
+    },
+    {
+      "name": "light theme grid screenshot",
+      "eval": "await new Promise(r => requestAnimationFrame(r))",
+      "until": "true",
+      "screenshot": "grid-light.png"
+    }
+  ]
+}
