@@ -1,5 +1,6 @@
 {
   "variable": "df",
+  "description": "Grid mode (C1) in light theme: 2×2 layout; ≥5% pixel coverage in each panel; screenshot for visual inspection.",
   "theme": "light",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1500\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, n)\n",
   "settings": { "pcaEnabled": false, "maxAnchorsCpu": 1500 },
@@ -20,9 +21,16 @@
       "assert": ["a.grid.enabled === true"]
     },
     {
-      "name": "light theme grid screenshot",
-      "eval": "await new Promise(r => requestAnimationFrame(r))",
-      "until": "true",
+      "name": "all 4 panels have ≥5% non-background pixels in light theme",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#ffffff'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height, ctx = cv.getContext('2d'); const topBand=76, panelW=Math.floor(W/2), panelH=Math.floor((H-topBand)/2); function panelDark(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let n=0; for(let i=0;i<d.length;i+=4) if(d[i]+d[i+1]+d[i+2]<720) n++; return n; } window.__lightPanelPx = [panelDark(0,topBand,panelW,panelH), panelDark(panelW,topBand,W-panelW,panelH), panelDark(0,topBand+panelH,panelW,H-(topBand+panelH)), panelDark(panelW,topBand+panelH,W-panelW,H-(topBand+panelH))]; window.__lightThreshold = Math.floor(0.03 * panelW * panelH)",
+      "until": "window.__lightPanelPx !== undefined",
+      "assert": [
+        "window.__lightPanelPx[0] > window.__lightThreshold",
+        "window.__lightPanelPx[1] > window.__lightThreshold",
+        "window.__lightPanelPx[2] > window.__lightThreshold",
+        "window.__lightPanelPx[3] > window.__lightThreshold"
+      ],
+      "report": "{ panelPixels: window.__lightPanelPx, threshold: window.__lightThreshold }",
       "screenshot": "grid-light.png"
     }
   ]

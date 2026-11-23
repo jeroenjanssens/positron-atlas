@@ -16,10 +16,11 @@ import { gridViewRects } from '../atlas/grid';
  * Each view has id `panel-N` (0-based), positioned at its panel rect.
  * All views share the same orbit parameters (orbitAxis, orthographic).
  *
- * @param layout      Grid layout string.
- * @param width       Canvas width in CSS pixels.
- * @param height      Canvas height in CSS pixels.
- * @param orthographic  Whether to use orthographic projection (true in 2D; optional in 3D).
+ * @param layout       Grid layout string.
+ * @param width        Canvas width in CSS pixels.
+ * @param height       Canvas height in CSS pixels.
+ * @param orthographic Whether to use orthographic projection (true in 2D; optional in 3D).
+ * @param topBand      Pixels reserved at the top for the toolbar/search overlay (default 0).
  * @returns Array of OrbitView instances, one per panel.
  */
 export function buildGridViews(
@@ -27,8 +28,9 @@ export function buildGridViews(
   width: number,
   height: number,
   orthographic: boolean,
+  topBand = 0,
 ): OrbitView[] {
-  const rects = gridViewRects(layout, width, height);
+  const rects = gridViewRects(layout, width, height, topBand);
   return rects.map((r, i) =>
     new OrbitView({
       id: `panel-${i}`,

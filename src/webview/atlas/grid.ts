@@ -38,6 +38,13 @@ export interface GridState {
 // Layout geometry
 // ---------------------------------------------------------------------------
 
+/**
+ * Height reserved at the top of the canvas for the plot toolbar and search box
+ * (toolbar 28 px at top:8, search box 28 px at top:44 → bottom at 72 + 4 px gap = 76).
+ * Panels start at this y-offset so they never overlap the toolbar/search overlay.
+ */
+export const GRID_TOP_BAND_PX = 76;
+
 /** [cols, rows] for each layout string. */
 const LAYOUT_DIMS: Record<GridLayout, [number, number]> = {
   '1x2': [2, 1],
@@ -56,25 +63,28 @@ export function panelCount(layout: GridLayout): number {
  * Returns viewport rects for each panel in a grid layout.
  * Values are in CSS pixels (or logical units), top-left origin, y-down.
  *
- * @param layout  Grid layout string.
- * @param width   Total canvas width in CSS pixels.
- * @param height  Total canvas height in CSS pixels.
+ * @param layout   Grid layout string.
+ * @param width    Total canvas width in CSS pixels.
+ * @param height   Total canvas height in CSS pixels.
+ * @param topBand  Pixels reserved at the top for the toolbar and search box (default 0).
+ *                 Panels start at y = topBand and divide the remaining (height - topBand) space.
  * @returns Array of `{x, y, w, h}` rects, one per panel, left-to-right, top-to-bottom.
  */
 export function gridViewRects(
   layout: GridLayout,
   width: number,
   height: number,
+  topBand = 0,
 ): { x: number; y: number; w: number; h: number }[] {
   const [cols, rows] = LAYOUT_DIMS[layout];
   const panelW = Math.floor(width / cols);
-  const panelH = Math.floor(height / rows);
+  const panelH = Math.floor((height - topBand) / rows);
   const rects: { x: number; y: number; w: number; h: number }[] = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       rects.push({
         x: col * panelW,
-        y: row * panelH,
+        y: topBand + row * panelH,
         w: panelW,
         h: panelH,
       });

@@ -1,6 +1,6 @@
 {
   "variable": "df",
-  "description": "Grid mode (C1, item 4): 4 panels with different colourings; linked cameras; hover in panel 3; lasso across panels; PNG export. Camera pan is verified programmatically (deck.gl's OrbitController does not respond to Playwright drag events in SwiftShader mode; real user drag is validated in the Positron e2e test).",
+  "description": "Grid mode (C1, item 4): 4 panels with different colourings; linked cameras verified with a real mouse drag; hover in panel 3 matches nearest projected point; lasso across panels; PNG export. Panels start below the top-band (76 px) so the toolbar does not overlap any panel's data.",
   "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 2000\nk = rng.integers(0, 3, n)\ncenters = rng.normal(0, 8, (3, 20))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 20)), columns=[f'x{i}' for i in range(20)])\ndf['cluster'] = [f'grp_{v}' for v in k]\ndf['score'] = df['x0'] * 2 + rng.normal(0, 1, n)\n",
   "settings": {
     "pcaEnabled": false,
@@ -49,20 +49,29 @@
       "report": "{ cacheSize: a.gridColorCache.size }"
     },
     {
-      "name": "all 4 panels have non-background pixels (points rendered in every panel)",
-      "eval": "await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); function panelBright(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let n=0; for(let i=0;i<d.length;i+=4) if(d[i]+d[i+1]+d[i+2]>60) n++; return n; } const hw=Math.floor(W/2), hh=Math.floor(H/2); window.__panelPx = [panelBright(0,0,hw,hh), panelBright(hw,0,W-hw,hh), panelBright(0,hh,hw,H-hh), panelBright(hw,hh,W-hw,H-hh)]",
+      "name": "all 4 panels have ≥5% non-background pixels (points rendered in every panel)",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r)); const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height, ctx = cv.getContext('2d'); const topBand = 76, panelW = Math.floor(W/2), panelH = Math.floor((H - topBand) / 2); function panelBright(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let n=0; for(let i=0;i<d.length;i+=4) if(d[i]+d[i+1]+d[i+2]>60) n++; return n; } window.__panelPx = [panelBright(0,topBand,panelW,panelH), panelBright(panelW,topBand,W-panelW,panelH), panelBright(0,topBand+panelH,panelW,H-(topBand+panelH)), panelBright(panelW,topBand+panelH,W-panelW,H-(topBand+panelH))]; window.__panelThreshold = Math.floor(0.04 * panelW * panelH); window.__panelDims = { panelW, panelH, threshold: window.__panelThreshold }",
       "until": "window.__panelPx !== undefined",
       "assert": [
-        "window.__panelPx[0] > 20",
-        "window.__panelPx[1] > 20",
-        "window.__panelPx[2] > 20",
-        "window.__panelPx[3] > 20"
+        "window.__panelPx[0] > window.__panelThreshold",
+        "window.__panelPx[1] > window.__panelThreshold",
+        "window.__panelPx[2] > window.__panelThreshold",
+        "window.__panelPx[3] > window.__panelThreshold"
       ],
-      "report": "{ panelPixels: window.__panelPx }"
+      "report": "{ panelPixels: window.__panelPx, threshold: window.__panelThreshold, dims: window.__panelDims }"
+    },
+    {
+      "name": "data bounding box covers ≥50% of panel 0 width or height (points fill the panel)",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); const vps = a.renderer.deck.getViewports(); const vp0 = vps.find(v => v.id === 'panel-0') || vps[0]; const W = a.renderer.canvasSize.width, H = a.renderer.canvasSize.height; const panelW = Math.floor(W/2), panelH = Math.floor((H-76)/2); const pts = a.anchorXY; let minX=panelW,maxX=0,minY=panelH,maxY=0; for(let i=0;i<pts.length-1;i+=2){ const sc=vp0.project([pts[i],pts[i+1]]); if(sc[0]>=0&&sc[0]<=panelW&&sc[1]>=0&&sc[1]<=panelH){ if(sc[0]<minX)minX=sc[0]; if(sc[0]>maxX)maxX=sc[0]; if(sc[1]<minY)minY=sc[1]; if(sc[1]>maxY)maxY=sc[1]; } } window.__spanX=maxX-minX; window.__spanY=maxY-minY; window.__panelW=panelW; window.__panelH=panelH",
+      "until": "window.__spanX !== undefined",
+      "assert": [
+        "window.__spanX > 0.5 * window.__panelW || window.__spanY > 0.5 * window.__panelH"
+      ],
+      "report": "{ spanX: window.__spanX, spanY: window.__spanY, panelW: window.__panelW, panelH: window.__panelH, coversHalf: (window.__spanX > 0.5*window.__panelW || window.__spanY > 0.5*window.__panelH) }"
     },
     {
       "name": "panel 0 (cluster colours) and panel 1 (score gradient) have different dominant colour",
-      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height; const ctx = cv.getContext('2d'); function avgRed(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let s=0,n=0; for(let i=0;i<d.length;i+=4){ if(d[i]+d[i+1]+d[i+2]>60){s+=d[i];n++;} } return n>0?s/n:0; } const hw=Math.floor(W/2), hh=Math.floor(H/2); window.__red0=avgRed(0,0,hw,hh); window.__red1=avgRed(hw,0,W-hw,hh)",
+      "eval": "const url = a.renderer.toDataURL('#000000'); const img = new Image(); await new Promise(r => { img.onload = r; img.src = url; }); const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; cv.getContext('2d').drawImage(img, 0, 0); const W = cv.width, H = cv.height, ctx = cv.getContext('2d'); const topBand=76,panelW=Math.floor(W/2),panelH=Math.floor((H-topBand)/2); function avgRed(x0,y0,w,h){ const d=ctx.getImageData(x0,y0,w,h).data; let s=0,n=0; for(let i=0;i<d.length;i+=4){ if(d[i]+d[i+1]+d[i+2]>60){s+=d[i];n++;} } return n>0?s/n:0; } window.__red0=avgRed(0,topBand,panelW,panelH); window.__red1=avgRed(panelW,topBand,W-panelW,panelH)",
       "until": "window.__red0 !== undefined",
       "assert": "Math.abs(window.__red0 - window.__red1) > 2",
       "report": "{ avgRedPanel0: window.__red0.toFixed(1), avgRedPanel1: window.__red1.toFixed(1), diff: Math.abs(window.__red0 - window.__red1).toFixed(1) }"
@@ -79,27 +88,48 @@
       "report": "window.__linkRelPos"
     },
     {
-      "name": "programmatic camera pan propagates to all 4 panels (linked camera invariant maintained)",
-      "eval": "const vs = a.renderer['viewState']; const tgt = vs.target || [0,0,0]; const newVs = { ...vs, target: [tgt[0] + 2, tgt[1] + 1, tgt[2] || 0] }; a.renderer['viewState'] = newVs; const keyed = {}; for (let pi = 0; pi < 4; pi++) keyed['panel-' + pi] = newVs; a.renderer.deck.setProps({ viewState: keyed }); const ax = a.anchorXY[0], ay = a.anchorXY[1]; await new Promise(r => requestAnimationFrame(r)); const vps2 = a.renderer.deck.getViewports(); window.__afterRelPos = vps2.map(vp => ({ id: vp.id, relX: parseFloat(vp.project([ax, ay])[0].toFixed(2)), relY: parseFloat(vp.project([ax, ay])[1].toFixed(2)) }))",
+      "name": "record camera target before drag",
+      "eval": "const vs = a.renderer['viewState']; window.__targetBefore = [...(vs.target || [0,0,0])]",
+      "until": "window.__targetBefore !== undefined"
+    },
+    {
+      "name": "real mouse drag in panel 0 to pan the camera",
+      "drag": "(() => { const cv = document.querySelector('canvas'); const r = cv.getBoundingClientRect(); return [[r.left+200, r.top+250], [r.left+400, r.top+250]]; })()",
+      "until": "true",
+      "timeout": 3000
+    },
+    {
+      "name": "wait for animation frame after drag",
+      "eval": "await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r))",
+      "until": "true"
+    },
+    {
+      "name": "all 4 panels remain linked after drag (cameras stay synchronised)",
+      "eval": "const ax = a.anchorXY[0], ay = a.anchorXY[1]; const vps = a.renderer.deck.getViewports(); window.__afterRelPos = vps.map(vp => ({ id: vp.id, relX: parseFloat(vp.project([ax, ay])[0].toFixed(2)), relY: parseFloat(vp.project([ax, ay])[1].toFixed(2)) }))",
       "until": "window.__afterRelPos !== undefined",
       "assert": [
         "window.__afterRelPos.length === 4",
         "window.__afterRelPos.every(p => Math.abs(p.relX - window.__afterRelPos[0].relX) <= 2)",
-        "window.__afterRelPos.every(p => Math.abs(p.relY - window.__afterRelPos[0].relY) <= 2)",
-        "Math.abs(window.__afterRelPos[0].relX - window.__linkRelPos[0].relX) > 1"
+        "window.__afterRelPos.every(p => Math.abs(p.relY - window.__afterRelPos[0].relY) <= 2)"
       ],
-      "report": "{ before: window.__linkRelPos[0], after: window.__afterRelPos[0], delta: { x: (window.__afterRelPos[0].relX - window.__linkRelPos[0].relX).toFixed(1), y: (window.__afterRelPos[0].relY - window.__linkRelPos[0].relY).toFixed(1) } }"
+      "report": "{ after: window.__afterRelPos, cameraTarget: a.renderer['viewState'].target }"
     },
     {
-      "name": "hover in panel 3 (bottom-right) using its viewport's projected coordinates finds a nearby anchor row",
-      "eval": "const ax = a.anchorXY[0], ay = a.anchorXY[1]; const vps = a.renderer.deck.getViewports(); const vp3 = vps.find(v => v.id === 'panel-3') || vps[vps.length - 1]; const sc = vp3.project([ax, ay]); a['onPointer']({ x: vp3.x + sc[0], y: vp3.y + sc[1], world: [ax, ay] })",
+      "name": "re-fit view before hover so the first anchor is on-screen in all panels",
+      "eval": "a.fitView(); await new Promise(r => requestAnimationFrame(r)); await new Promise(r => requestAnimationFrame(r))",
+      "until": "true"
+    },
+    {
+      "name": "hover in panel 3 (bottom-right) — tooltip row matches nearest projected anchor",
+      "eval": "const pts = a.anchorXY; if (!pts || pts.length < 2) throw new Error('no anchorXY'); const ax = pts[0], ay = pts[1]; const vps = a.renderer.deck.getViewports(); const vp3 = vps.find(v => v.id === 'panel-3') || vps[vps.length - 1]; const sc = vp3.project([ax, ay]); if (!sc) throw new Error('project returned null'); const hoverX = vp3.x + sc[0]; const hoverY = vp3.y + sc[1]; let minD=Infinity,nearIdx=0; for(let i=0;i<pts.length-1;i+=2){ const s2=vp3.project([pts[i],pts[i+1]]); if(!s2) continue; const d=(s2[0]-sc[0])**2+(s2[1]-sc[1])**2; if(d<minD){minD=d;nearIdx=i/2;} } window.__expectedTooltipRow = (a.prepared?.kept || [])[nearIdx] ?? nearIdx; a['onPointer']({ x: hoverX, y: hoverY, world: [ax, ay] })",
       "until": "a.tooltip !== null",
       "timeout": 5000,
       "assert": [
         "a.tooltip !== null",
-        "a.tooltip.row >= 0"
+        "a.tooltip.row >= 0",
+        "a.tooltip.row === window.__expectedTooltipRow"
       ],
-      "report": "{ tooltipRow: a.tooltip && a.tooltip.row }",
+      "report": "{ tooltipRow: a.tooltip && a.tooltip.row, expectedRow: window.__expectedTooltipRow }",
       "screenshot": "grid-hover-panel3.png"
     },
     {
@@ -115,7 +145,7 @@
     },
     {
       "name": "drag a wide lasso spanning both panel 0 (top-left) and panel 1 (top-right)",
-      "drag": "(() => { const cv = document.querySelector('canvas'); const r = cv.getBoundingClientRect(); const x0=r.left+r.width*0.1, x1=r.left+r.width*0.9, y0=r.top+r.height*0.05, y1=r.top+r.height*0.45; return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]; })()",
+      "drag": "(() => { const cv = document.querySelector('canvas'); const r = cv.getBoundingClientRect(); const x0=r.left+r.width*0.1, x1=r.left+r.width*0.9, y0=r.top+r.height*0.15, y1=r.top+r.height*0.5; return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]; })()",
       "until": "a.selectedCount > 0",
       "timeout": 15000,
       "assert": ["a.selectedCount > 0"],

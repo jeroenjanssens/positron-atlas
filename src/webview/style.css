@@ -448,7 +448,7 @@ input[type='color'].color { width: 44px; height: 24px; padding: 1px 2px; cursor:
 /* ── C1: Grid panel titles (small multiples overlay) ───────────────────── */
 .grid-panel-title {
   position: absolute;
-  top: 0;
+  /* top is set inline per-panel (bottom of each panel rect) */
   font-size: 11px;
   font-weight: 600;
   color: var(--vscode-foreground);
@@ -460,7 +460,9 @@ input[type='color'].color { width: 44px; height: 24px; padding: 1px 2px; cursor:
   overflow: hidden;
   text-overflow: ellipsis;
   z-index: 10;
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  height: 22px;
+  box-sizing: border-box;
 }
 
 /* ── Fullscreen focus mode ──────────────────────────────────────────────── */

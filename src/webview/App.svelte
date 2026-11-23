@@ -18,7 +18,7 @@
   import { formatCount, formatSeconds, placeTooltip, resolveInvert } from './logic';
   import SearchBox from './components/SearchBox.svelte';
   import { vscode } from './vscode';
-  import { gridViewRects, panelCount, panelTitle } from './atlas/grid';
+  import { gridViewRects, panelCount, panelTitle, GRID_TOP_BAND_PX } from './atlas/grid';
 
   const atlas = new Atlas();
   // Exposed for end-to-end tests (test/e2e).
@@ -191,19 +191,19 @@
         <AroundLabelsOverlay {atlas} />
       {/if}
       {#if atlas.grid.enabled}
-        <!-- C1: per-panel titles and legend chips (HTML overlay, one per panel) -->
-        {@const rects = gridViewRects(atlas.grid.layout, mainW, mainH)}
+        <!-- C1: per-panel titles at bottom-left of each panel, below the data area -->
+        {@const rects = gridViewRects(atlas.grid.layout, mainW, mainH, GRID_TOP_BAND_PX)}
         {@const nP = panelCount(atlas.grid.layout)}
         {@const cols = atlas.describe?.columns ?? []}
         {#each atlas.grid.panels.slice(0, nP) as panel, i}
           {@const r = rects[i]}
-          <div class="grid-panel-title" style="left:{r.x}px; top:{r.y}px; width:{r.w}px;">
+          <div class="grid-panel-title" style="left:{r.x}px; top:{r.y + r.h - 22}px; width:{r.w}px;">
             {panelTitle(panel, i, atlas.colorColumn, cols)}
           </div>
         {/each}
       {/if}
     </div>
-    <Legend {atlas} />
+    {#if !atlas.grid.enabled}<Legend {atlas} />{/if}
     {#if atlas.cheatSheetVisible}<CheatSheet {atlas} />{/if}
     {#if atlas.showHint && !atlas.cheatSheetVisible}<NavHint {atlas} />{/if}
     <HoverCard {atlas} />

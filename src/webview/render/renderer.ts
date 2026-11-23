@@ -47,6 +47,7 @@ import {
 import type { Shape } from '../atlas/shapes';
 import { shapeToPolygon } from '../atlas/shapes';
 import type { GridLayout } from '../atlas/grid';
+import { GRID_TOP_BAND_PX, gridViewRects } from '../atlas/grid';
 import { buildGridViews, gridLayerFilter } from './gridViews';
 
 /** Minimal interface from Atlas that the renderer needs for PNG compositing. */
@@ -714,18 +715,24 @@ export class ScatterRenderer {
     if (force) {
       this.userMoved = false;
     }
-    // Note: fullW/fullH may already be adjusted for grid mode above.
-    // C1: in grid mode, fit to the first panel's dimensions rather than the whole canvas.
+    // C1: in grid mode, fit to a single panel's dimensions (no toolbar offset inside panels).
     let fullW = this.container.clientWidth || 800;
     let fullH = this.container.clientHeight || 600;
-    if (this.gridEnabled && this.gridPanelColors.length > 0) {
-      const vp = this.viewport();
-      if (vp) { fullW = vp.width; fullH = vp.height; }
+    let top: number;
+    if (this.gridEnabled) {
+      // Panels start below the top band; each panel has no internal toolbar offset.
+      const rects = gridViewRects(this.gridLayout, fullW, fullH, GRID_TOP_BAND_PX);
+      const r = rects[0] ?? { w: fullW, h: fullH - GRID_TOP_BAND_PX };
+      fullW = r.w;
+      fullH = r.h;
+      top = 0;
+      padRight = 0;
+    } else {
+      // Keep the band under the plot toolbar and search box (top left) free of data.
+      top = fullH > 300 ? FIT_TOP_PX : 0;
     }
     const pad = fullW - padRight > 200 ? padRight : 0;
     const w = fullW - pad;
-    // Keep the band under the plot toolbar and search box (top left) free of data.
-    const top = fullH > 300 ? FIT_TOP_PX : 0;
     const h = fullH - top;
     const dx = Math.max(b[2] - b[0], 1e-6);
     const dy = Math.max(b[3] - b[1], 1e-6);
@@ -1371,7 +1378,7 @@ export class ScatterRenderer {
       const orthographic = dims === 2 || this.ortho3D;
       const w = this.container.clientWidth || 800;
       const h = this.container.clientHeight || 600;
-      const views = buildGridViews(this.gridLayout, w, h, orthographic);
+      const views = buildGridViews(this.gridLayout, w, h, orthographic, GRID_TOP_BAND_PX);
       // Single (non-keyed) viewState so all panels share one camera.
       this.deck.setProps({ views: views as any, viewState: this.viewState });
     }
@@ -1452,8 +1459,14 @@ export class ScatterRenderer {
     const dy = Math.max(b[4] - b[1], 1e-6);
     const dz = Math.max(b[5] - b[2], 1e-6);
     const size = Math.max(dx, dy, dz);
-    const w = this.container.clientWidth || 800;
-    const h = this.container.clientHeight || 600;
+    let w = this.container.clientWidth || 800;
+    let h = this.container.clientHeight || 600;
+    // C1: in grid mode, use a single panel's dimensions for the zoom calculation.
+    if (this.gridEnabled) {
+      const rects = gridViewRects(this.gridLayout, w, h, GRID_TOP_BAND_PX);
+      const r = rects[0] ?? { w, h: h - GRID_TOP_BAND_PX };
+      w = r.w; h = r.h;
+    }
     const zoom = Math.log2(Math.min(w, h) * 0.75 / size);
     const orbitState: OrbitViewState = {
       target: [cx, cy, cz],
@@ -1704,7 +1717,7 @@ export class ScatterRenderer {
       const w = this.container.clientWidth || 800;
       const h = this.container.clientHeight || 600;
       const orthographic = this.dims === 2 || this.ortho3D;
-      const views = buildGridViews(layout, w, h, orthographic);
+      const views = buildGridViews(layout, w, h, orthographic, GRID_TOP_BAND_PX);
       // Single (non-keyed) viewState so deck.gl applies the same camera to all panels.
       this.deck.setProps({ views: views as any, viewState: this.viewState });
     } else if (wasEnabled) {

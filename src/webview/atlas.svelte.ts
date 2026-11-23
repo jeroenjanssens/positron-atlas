@@ -1087,7 +1087,11 @@ export class Atlas {
     const enabled = !this.grid.enabled;
     this.grid = { ...this.grid, enabled };
     this.applyGridToRenderer();
-    if (enabled) requestGridColorsImpl(this, this.grid, this.gridColorCache);
+    if (enabled) {
+      requestGridColorsImpl(this, this.grid, this.gridColorCache);
+      // Re-fit so each panel's camera is sized to the panel dimensions, not the full canvas.
+      fitViewImpl(this);
+    }
   }
 
   /** Set the grid layout (1x2 | 2x2 | 2x3 | 3x3), resizing the panels array. */
