@@ -95,7 +95,7 @@
 <header>
   <h1>Positron Atlas · Architecture</h1>
   <p>How the extension is put together, where your data goes, what it depends on, and where it could be faster.
-     Checked against commit <span class="mono">b630ec0</span> (2026-11-22).</p>
+     Checked against commit <span class="mono">b2a5fb6</span> (2026-11-23).</p>
   <nav>
     <a href="#glance">At a glance</a><a href="#overview">1 · Overview</a><a href="#flow">2 · Data flow</a><a href="#memory">3 · Where the data lives</a>
     <a href="#deps">4 · Dependencies</a><a href="#perf">5 · Optimizations</a><a href="#maintain">6 · Maintaining this page</a>
@@ -169,8 +169,8 @@ computes the UMAP layout and draws the map. The <b>extension host</b> (Positron'
   <div><strong>1 · Prepare (kernel).</strong> The selected numeric columns are read as float32, sampled, cleaned and standardized (optionally reduced with PCA). A random subset of rows becomes the <em>anchors</em>. A background thread already finds each row's nearest anchors.</div>
   <div><strong>2 · UMAP (webview).</strong> UMAP runs in a web worker on the anchors only (up to 100,000), on the GPU when available, and you watch it converge. Alternatives: UMAP in the kernel (polars-umap, umap-learn), or existing coordinate columns (Layout → From columns).</div>
   <div><strong>3 · Place all rows (kernel).</strong> Every other row is placed at the weighted mean of its 10 nearest anchors' positions. This is what makes 10 million rows fast; re-placing after a live change reuses the cached neighbours.</div>
-  <div><strong>4 · Draw (webview).</strong> deck.gl draws the points (2D, rotatable, or 3D) with colours, sizes, symbols and filters. Everything on the map is a layer in one registry (<code>atlas/layers.ts</code>): the base map, other DataFrames placed on the same map, labels, outlines, boxes, shapes, brush tags, tracks and vectors; the Layers section shows, hides and reorders them. Grid mode draws several linked panels of the same layout. Colours, titles and other per-row values are fetched from the kernel as binary files.</div>
-  <div><strong>5 · Explore (all three).</strong> Hover asks the kernel for rows; the lasso, brush tags, shapes and clusters can be written back to the DataFrame after a confirmation; edits can be undone; maps export as PNG, video, HTML or DataMapPlot. Keyboard shortcuts are Positron keybindings (rebindable; <kbd>?</kbd> shows them), and the same map can be driven from Python (<code>import positron_atlas</code>) over a Positron comm.</div>
+  <div><strong>4 · Draw (webview).</strong> deck.gl draws the points (2D, rotatable, or 3D). Everything drawn is a layer in one registry (<code>atlas/layers.ts</code>): other DataFrames, labels, boxes, shapes, brush tags, tracks. Grid mode shows linked panels. Per-row values come from the kernel as binary files.</div>
+  <div><strong>5 · Explore (all three).</strong> Hover asks the kernel for rows; selections, brush tags, shapes and clusters can be written back to the DataFrame; edits can be undone; maps export as PNG, video or HTML. Shortcuts are Positron keybindings (<kbd>?</kbd> lists them), and Python can drive the map (<code>import positron_atlas</code>).</div>
 </div>
 
 <p><strong>How one interaction flows</strong>, as an example: you press <kbd>R</kbd> in the Atlas tab. Positron sees a keybinding scoped to <code>positronAtlas.webviewFocused</code> and runs the command <code>positronAtlas.nav.view.reset</code>; the extension host forwards it to the focused tab as a <code>command</code> message; the webview's dispatcher (<code>input/dispatcher.ts</code>) fits the view. Hovering a point goes the other way: the webview finds the point in its hit index, asks the host for the row, the host calls the kernel helper, and the reply (values, and pixels for image data) comes back to the tooltip.</p>

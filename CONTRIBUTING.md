@@ -23,7 +23,7 @@ processes, the data flow, and where every piece lives.
 
 - **Look like Positron.** Positron theme tokens first, VS Code tokens as fallback (`var(--vscode-positron…, var(--vscode-…))`), codicons for icons. Check dark, light and high-contrast themes (`--theme dark|light|hc` in the harness).
 - **Settings and shortcuts are native.** Settings are `contributes.configuration` entries (enums with descriptions); keyboard shortcuts are contributed commands with `when` clauses, so users change them in Positron's Settings and Keyboard Shortcuts editors.
-- **Both hosts handle every message.** Each `ToHost` message type needs a `case` in `src/extension/atlasPanel.ts` and in `test/harness/host.js` (`test/host-coverage.test.ts`).
+- **Both hosts handle every message, the same way.** Each `ToHost` message type needs a `case` in `src/extension/atlasPanel.ts` and in `test/harness/host.js` (`test/host-coverage.test.ts`), and both must forward the same fields; a field only the harness forwards hides a bug in Positron.
 - **Ship what you load.** Any file the extension host reads from its install folder must be included by `.vscodeignore` (`test/packaging.test.ts`).
 - **Bulk data never goes through JSON.** The kernel writes little-endian binary files into the job directory and the webview fetches them; arrays to the host are bytes.
 - **Fast paths stay fast.** Measure before and after changes on large frames (`python/bench*.py`, harness `test:harness:big`); record results in `docs/benchmarks.md`.
@@ -40,7 +40,10 @@ npm run test:py      # pytest (build the Rust core first: npm run build:native)
 npm run build
 npm run test:harness           # all harness scenarios
 npm run test:harness:mnist     # MNIST scenarios (download once)
+npm run test:e2e               # real Positron (ATLAS_E2E_PYTHON=.venv-e2e/bin/python); needed for host, keybinding, comm or kernel-timing changes
 ```
+
+The browser harness doesn't run the extension host (its `host.js` is a copy) and doesn't press real keys, so it can't catch a message the real host drops, an unregistered command, a CSP block or a kernel deadlock. Changes there need the Positron e2e (`test/e2e/`, with `clickMap` and `key` steps for real input).
 
 Use real `node_modules` and `native/` folders (`npm ci`, `npm run build:native`) — never symlinks.
 
