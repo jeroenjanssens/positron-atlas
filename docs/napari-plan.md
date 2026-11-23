@@ -562,6 +562,17 @@ Details are in the research notes of 2026-11-22.
   - [ ] Scale text with zoom option (TextLayer `sizeUnits: 'common'` vs `'pixels'`). The checkbox (`scaleTextWithZoom`) is wired but collision at coarse zoom is not tuned.
   - [ ] vitest unit tests for the `screenDeltaToWorld` conversion and migration logic (harness tests cover the behaviour end-to-end).
 
+## 17. Label placement (added 2026-11-22, after the plan) ✅
+
+Asked for after the waves: more control over cluster labels while labelling by a column, so the same label can appear more than once, with a choice of algorithm.
+
+- **DataMapPlot, for reference:** interactive plots put one label per distinct value at the group's medoid (or mean), size ∝ count^0.25, and hide overlaps with deck.gl's collision filter (larger first); static plots place labels around the map in rings and adjust them with pylabeladjust. A category spread over several islands gets one label, possibly between them.
+- [x] **Placement** (Annotate → Labels): *Densest spot* (default, one per group), *Centre* (medoid of a sample, as DataMapPlot), *Every region* (connected dense areas of the group's smoothed grid; one label per region above *Smallest region*, up to *Labels per group*; repeats keep their own drag offsets, "A", "A #2").
+- [x] **Max labels:** a total budget, largest first; overlap hiding unchanged.
+- [x] Fixed on the way: 3D label placement read stride-3 positions as stride 2.
+- [x] Tests: vitest per mode, stride 3 and the budget; `scenario-label-placement.json` (labels per mode, both repeats drawn at their islands, undo).
+- [ ] Possible next step: a "Nudge apart" overlap mode (move overlapping labels instead of hiding them, as DataMapPlot's static output does).
+
 ## 16. Follow-ups from the first plan — any wave (S–M each)
 
 - [x] **3D support for automatic clusters and outlines (B2, 2026-11-22):** `runKMeans3D` in `src/webview/workers/kmeans3d.worker.ts` (off-main-thread; samples ≤ 100 k rows for k-means fit, assigns all n rows in the worker; cancellable via `clusterSeq`). K values: detail 1–5 → k = 4, 8, 16, 24, 32. Boxes (wireframe cubes, `LineLayer`) used instead of hulls in 3D. Outlines field set to `[]`. See `src/webview/atlas/clusters3d.ts` and `src/webview/workers/KMeans3DWorker.ts`.
