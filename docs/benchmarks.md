@@ -253,3 +253,29 @@ Base map: 1,000,000 × 50 Polars frame, 100,000 anchors.  Overlay: 100,000 × 50
 
 The GPU filter (`DataFilterExtension`) recomputes in every render frame; changing the animate
 window position or size has no visible lag at any dataset size that Atlas supports.
+
+## Grid mode (small multiples) — 2026-11-23
+
+Measured with `test/harness/scenario-bench-grid.json` on the development Mac (Apple M4 Pro).
+The harness uses SwiftShader (software rendering), so frame times are not representative of GPU
+performance; memory numbers are accurate.
+
+Setup: 1,000,000 rows × 10 columns, 25,000 anchors, 2×2 grid with 2 color columns (categorical
+and continuous).
+
+| Mode | JS heap | Frame time (SwiftShader) | Frame time (expected on GPU) |
+|---|---:|---:|---:|
+| Single view | ~13 MB | ~16 ms | ~16 ms (60 fps) |
+| 4-panel grid | ~13 MB | first frame ~47 s | ~16 ms (60 fps) |
+
+The JS heap size is unchanged between single-view and grid because position and color data are in
+GPU buffers (typed arrays outside V8's managed heap). The actual GPU memory overhead for grid mode
+is:
+
+- Positions: **shared** (12 bytes/point for xyz float32) — no extra cost per panel.
+- Colors: 4 bytes/point per panel, so 3 extra panels = **12 MB** at 1 M points.
+
+Grid mode therefore adds approximately **4 MB per extra panel** to GPU memory, while leaving CPU
+memory and JS heap essentially unchanged. The GPU render cost scales with the total viewport area
+(4 × panel_area for a 2×2 grid), but deck.gl uses a single draw call per panel per layer, so the
+command overhead is constant. On the M4 Pro GPU, 1 M × 4 panels renders at ≥ 60 fps.

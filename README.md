@@ -26,6 +26,7 @@ Open a pandas or polars DataFrame (or a pyarrow Table, DuckDB relation, or lazy 
 - **Optional exact mode**: if [polars-umap](https://polars-umap.jeroenjanssens.com) or `umap-learn` is installed in the kernel, run full UMAP on all rows there instead (Map → UMAP → Compute). polars-umap is UMAP in Rust and 3.5–20× faster. Without WebGPU, polars-umap can also lay out just the anchors in the kernel (much faster than the browser's CPU fallback).
 - **Fast re-placement.** After a live UMAP change, rows are placed again from their cached nearest anchors, 27–110× faster than the first placement; the neighbour search runs while the browser computes UMAP.
 - **Help next to every setting.** An ⓘ explains what each control does, how to think about it, and whether changing it is live or rebuilds the layout. The interface uses Positron's own controls and theme colors.
+- **Grid mode (small multiples).** Press `Cmd/Ctrl+G` (or the grid button in the toolbar) to split the map into a 2×2 grid of panels. Each panel can have its own color column; cameras are linked so panning, zooming and rotating in any panel moves all of them together. Lasso selects across panels. Works in 2D and 3D. PNG export captures all panels; the HTML viewer shows the first panel's colors.
 - **Time animation.** Explore → **Animate by** a date or numeric column. A window slider (e.g. one year) with play/pause, speed and loop steps through time. Rows outside the window fade or hide; labels update when the window settles. Combined with any other filter. **Export video:** record a WebM of the animation, a 3D turntable, or a UMAP convergence, via `MediaRecorder`, with resolution and frame-rate controls.
 - **Tracks.** Explore → **Connect rows by** an ID column, ordered by a time column. `PathLayer` lines connect each ID's points (2D and 3D), coloured per ID (tab20); works with or without a precomputed layout. Example: the same patient across visits.
 - **Vectors.** Explore → **Compare with layout** shows arrows from each row's current position to its position in a second layout (an earlier run or another condition), thinned automatically for large frames.
@@ -93,7 +94,7 @@ Press **`?`** (or the keyboard button in the toolbar, or **Atlas: Show Controls*
 
 ### Controls
 
-The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Annotate**, **Fit to view**, **Full screen** and **Show controls** (plus the camera buttons in 3D), with a **search box** below it. Every setting has an ⓘ with an explanation.
+The sidebar has four tabs. The plot has its own toolbar (top left): **Pan and zoom**, **Lasso select**, **Annotate**, **Fit to view**, **Grid mode** (`Cmd/Ctrl+G`), **Full screen** and **Show controls** (plus the camera buttons in 3D), with a **search box** below it. Every setting has an ⓘ with an explanation.
 
 | Tab | Section | Control | Effect |
 |---|---|---|---|

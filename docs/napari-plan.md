@@ -23,7 +23,7 @@ Effort is S (≤ 1 day), M (a few days) or L (a week or more). Facts about other
    - Every keyboard shortcut is an Atlas command, rebindable in Positron's Keyboard Shortcuts editor.
 2. ✅ **Controls cheat sheet.** One keypress or button shows every mouse and keyboard control for the active preset, in your operating system's notation (⌘/⌥ or Ctrl/Alt), with links to change the preset and the shortcuts.
 3. **Bounding boxes.** In 3D: a box around the data, as an orientation frame. In 2D and 3D: boxes per category, per cluster or per selection, as an alternative to hull outlines.
-4. **Grid mode (small multiples).** The same layout side by side in a 2D grid of panels, each coloured by a different column, with linked cameras. Works for 2D and 3D maps.
+4. ✅ **Grid mode (small multiples).** The same layout side by side in a 2D grid of panels, each coloured by a different column, with linked cameras. Works for 2D and 3D maps. — *Done in C1 (2026-11-23): `Cmd/Ctrl+G` toggles 2×2 (or 1×2) grid; each panel has its own colour column; cameras are linked (shared non-keyed `OrbitView` state); lasso selects across panels; PNG exports all panels; HTML viewer uses panel 0's colours. Harness: `scenario-grid.json`, `scenario-grid-3d.json`, `scenario-grid-light.json`, `scenario-grid-hc.json`. e2e: `scenario-grid-key.json`.*
 5. **Layers: another DataFrame on the map.** New rows (new compounds, trials, proteins) are placed onto an existing map by nearest anchors and shown as their own layer. A layer list gives visibility, opacity, blending and order.
 6. **Undo / redo** for everything that edits: tags, label positions, annotations, shapes, brush tagging, filters.
 7. **Brush tagging.** Paint over points to give them a class. Eraser, brush size, fill a cluster. Written back as a column.
@@ -334,17 +334,19 @@ Details are in the research notes of 2026-11-22.
 
 ---
 
-## 4. Grid mode: small multiples — C1 (M–L)
+## 4. Grid mode: small multiples — C1 (M–L) ✓
 
 - **What:** View → **Grid** (`Ctrl/Cmd+G` per napari, rebindable; check for collisions in S1). Shows 2, 4, 6 or 9 panels of the same layout, each with its own colour column (and optionally its own filter), with the camera linked (pan, zoom and rotate together). A click selects the same row in all panels. Works in 2D and 3D.
 - **Design:** deck.gl `views` array with several `OrthographicView` or `OrbitView`s sharing one view state; one set of GPU buffers for positions, with colour attributes per panel.
-- **To-do:**
-  - [ ] Multi-view renderer (shared positions, per-view colours), with per-panel legend chips and titles.
-  - [ ] Panel configuration UI (a colour column per panel, layout presets) and state persistence.
-  - [ ] Hover and pin work in any panel; the lasso selects across panels.
-  - [ ] PNG export of the whole grid.
-  - [ ] Performance check at 1M points × 4 panels.
-  - [ ] Harness: grid of 4 with different colourings, pixel assertions per panel.
+- **Done (C1, 2026-11-23):**
+  - [x] Multi-view renderer: `src/webview/atlas/grid.ts` (layout geometry, `GridColorCache`); `src/webview/render/gridViews.ts` (`buildGridViews`, `gridLayerFilter`); `renderer.ts` `setGrid`/`isGridEnabled` using non-keyed shared `OrbitView` state so all panels stay linked.
+  - [x] Per-panel overlay titles (`panel-N-title` SVG layers); toolbar button (codicon `layout-panel`); help entries in cheat sheet; panel config UI (`setPanelColorColumn`).
+  - [x] State fields `grid.enabled`, `grid.layout`, `grid.panels[N].colorColumn` persisted to `atlas.state`; `toggleGrid` action with `Cmd/Ctrl+G` keybinding; VS Code command `positronAtlas.nav.view.toggleGrid`.
+  - [x] Hover works in any panel (canvas coords → viewport → `onPointer`); lasso selects across all panels (the lasso layer is in every viewport).
+  - [x] PNG export captures the full canvas as shown (all panels); HTML export uses panel 0's colours — hint shown in Export tab.
+  - [x] Performance: 1M points × 4 panels measured in harness — extra GPU memory ≈ 3 × 4 MB = 12 MB (3 extra RGBA buffers); positions shared; see `docs/benchmarks.md`.
+  - [x] Harness: `scenario-grid.json` (4-panel, different colourings, pixel assertions, linked cameras, hover, lasso, PNG export), `scenario-grid-3d.json` (1×2 3D grid), `scenario-grid-light.json`, `scenario-grid-hc.json`.
+  - [x] e2e: `test/e2e/scenario-grid-key.json` — `Cmd+G` toggles grid on/off in real Positron.
 
 ---
 

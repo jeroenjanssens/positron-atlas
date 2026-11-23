@@ -1,0 +1,42 @@
+{
+  "description": "Grid mode keybinding in real Positron: Cmd/Ctrl+G toggles 2×2 grid mode on and off; grid state is reflected in the Atlas state object.",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nk = rng.integers(0, 3, 2000)\ndf = pd.DataFrame(rng.normal(0, 1, (2000, 10)) + k[:, None] * 3, columns=[f'x{i}' for i in range(10)])\ndf['cluster'] = [f'grp_{v}' for v in k]\n",
+  "steps": [
+    {
+      "name": "focus the map with a real click",
+      "clickMap": true,
+      "until": "document.hasFocus()",
+      "timeout": 5000
+    },
+    {
+      "name": "press Cmd+G (Meta+g): VS Code command toggles grid mode on",
+      "key": "g",
+      "code": "KeyG",
+      "modifiers": 4,
+      "until": "a.grid.enabled === true",
+      "timeout": 5000,
+      "assert": [
+        "a.grid.enabled === true",
+        "a.grid.layout === '2x2'",
+        "a.renderer.isGridEnabled === true"
+      ],
+      "report": "{ enabled: a.grid.enabled, layout: a.grid.layout, nPanels: a.grid.panels.length }",
+      "screenshot": "e2e-grid-on.png"
+    },
+    {
+      "name": "press Cmd+G again: grid mode toggles off",
+      "key": "g",
+      "code": "KeyG",
+      "modifiers": 4,
+      "until": "a.grid.enabled === false",
+      "timeout": 5000,
+      "assert": [
+        "a.grid.enabled === false",
+        "a.renderer.isGridEnabled === false"
+      ],
+      "report": "{ enabled: a.grid.enabled }",
+      "screenshot": "e2e-grid-off.png"
+    }
+  ]
+}

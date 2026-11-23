@@ -83,7 +83,7 @@
     <button disabled={!atlas.prepared} onclick={() => atlas.savePng()} title="Save the plot as shown (points, labels, outlines) as a PNG file">Export PNG</button>
     <Info id="export.png" />
   </div>
-  <div class="hint muted">The plot as shown, with labels and outlines, on the plot background.</div>
+  <div class="hint muted">The plot as shown, with labels and outlines, on the plot background.{atlas.grid.enabled ? ' In grid mode: all panels are included.' : ''}</div>
 </Section>
 
 <Section {atlas} id="export-html" title="Interactive HTML">
@@ -94,7 +94,7 @@
     </button>
     <Info id="export.exportHtml" />
   </div>
-  <div class="hint muted">Self-contained HTML with pan/zoom, hover, legend toggles, and search. Works in 2D and 3D.</div>
+  <div class="hint muted">Self-contained HTML with pan/zoom, hover, legend toggles, and search. Works in 2D and 3D.{atlas.grid.enabled ? ' In grid mode: the HTML viewer shows the first panel\'s colors.' : ''}</div>
 </Section>
 
 {#if atlas.htmlExportOpen}
