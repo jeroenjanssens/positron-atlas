@@ -1,6 +1,6 @@
 # Plan: napari-inspired features, navigation presets and a controls cheat sheet
 
-Status: **accepted 2026-11-22**: all recommendations (Q1–Q14) and the wave plan were accepted as written; implementation runs in waves A–C. Written 2026-11-22 against local `main` (`d9a00aa`).
+Status: **implemented (2026-11-22/23)**. All recommendations (Q1–Q14) were accepted and items 1–16 are built, tested in the browser harness and, where Positron matters, in a real Positron (`npm run test:e2e`); the summary below says what differs from the plan. Written 2026-11-22 against local `main` (`d9a00aa`).
 
 This plan follows [`roadmap-plan.md`](roadmap-plan.md), whose items are done.
 
@@ -17,28 +17,25 @@ Effort is S (≤ 1 day), M (a few days) or L (a week or more). Facts about other
 
 ## Summary: what we'll add
 
-1. ✅ **Navigation presets and native shortcuts.** 2D and 3D controls that feel familiar.
-   - Presets for the main conventions: data maps and napari, molecular viewers, CAD and 3D tools, design tools.
-   - Trackpad handling.
-   - Every keyboard shortcut is an Atlas command, rebindable in Positron's Keyboard Shortcuts editor.
-2. ✅ **Controls cheat sheet.** One keypress or button shows every mouse and keyboard control for the active preset, in your operating system's notation (⌘/⌥ or Ctrl/Alt), with links to change the preset and the shortcuts.
-3. **Bounding boxes.** In 3D: a box around the data, as an orientation frame. In 2D and 3D: boxes per category, per cluster or per selection, as an alternative to hull outlines.
-4. ✅ **Grid mode (small multiples).** The same layout side by side in a 2D grid of panels, each coloured by a different column, with linked cameras. Works for 2D and 3D maps. — *Done in C1 (2026-11-23): `Cmd/Ctrl+G` toggles 2×2 (or 1×2) grid; each panel has its own colour column; cameras are linked (shared non-keyed `OrbitView` state); lasso selects across panels; PNG exports all panels; HTML viewer uses panel 0's colours. Harness: `scenario-grid.json`, `scenario-grid-3d.json`, `scenario-grid-light.json`, `scenario-grid-hc.json`. e2e: `scenario-grid-key.json`.*
-5. **Layers: another DataFrame on the map.** New rows (new compounds, trials, proteins) are placed onto an existing map by nearest anchors and shown as their own layer. A layer list gives visibility, opacity, blending and order.
-6. **Undo / redo** for everything that edits: tags, label positions, annotations, shapes, brush tagging, filters.
-7. **Brush tagging.** Paint over points to give them a class. Eraser, brush size, fill a cluster. Written back as a column.
-8. **Shapes on the map.** Rectangles, ellipses, polygons, lines, arrows and text as annotations. A shape can become a tag for the points inside it.
-9. **Marker symbols.** Encode a second categorical column by point shape.
-10. **Time slider and video export.** Filter rows by a date or number column with play/pause; export an animation (time slider, rotation, UMAP converging) as a video.
-11. **Tracks and vectors between rows.** Lines connecting rows with the same ID ordered by time; arrows between two layouts or two conditions.
-12. **Python API.** A handle in your session (`m = atlas.open(df)`, `m.selection`, `m.color_by(...)`, `m.on_select(...)`) so notebooks and the map drive each other.
-13. **Small conveniences.**
-    - An "Atlas: Open example" command (sample data).
-    - "Open the selection in the Data Explorer".
-    - 3D view options: perspective or orthographic, depth fade.
-14. **Rotate the 2D map.** Right-drag (or keys) rotates the 2D view, with a compass to show and reset the angle. Labels stay upright.
-15. ✅ **Labels and annotations in map coordinates.** Dragged labels, callouts, leader lines, badges, shapes and boxes keep their place on the map when you pan, zoom, rotate (2D) or orbit (3D). Point annotations and label dragging also work in 3D. — *Done in B5: label drag offsets and annotation box offsets stored in world (map) coordinates; legacy screen-pixel offsets reset to defaults on import; leader lines rendered as a deck.gl LineLayer so they orbit in 3D; callout boxes fade when their anchor is off-screen or occluded (3D depth fade); HTML viewer and PNG export use the same projected world offsets.*
-16. **Follow-ups** from the first plan: 3D support for clusters and the HTML viewer, inverting image-URL thumbnails, caching cosine neighbours, R support (still left out).
+1. ✅ **Navigation presets and native shortcuts.** Data map (default), Molecular, CAD and Design presets (`positronAtlas.navigation.*` settings); every shortcut is a Positron keybinding scoped to the Atlas tab.
+2. ✅ **Controls cheat sheet.** `?`, the keyboard button or **Atlas: Show Controls**: every control for the active preset in your OS's notation, your own rebound keys included, with links to Keyboard Shortcuts and Settings.
+3. ✅ **Bounding boxes.** Box outlines per group, cluster or selection (2D and 3D); a 3D data box with floor grid and axis gizmo.
+4. ✅ **Grid mode (small multiples).** `Cmd/Ctrl+G`: 2–9 linked panels, each coloured by its own column, in 2D and 3D; the PNG has all panels, the HTML viewer the first.
+5. ✅ **Layers: another DataFrame on the map.** One layer registry for everything drawn; **Add DataFrame…** places another frame's rows by nearest anchors without rerunning UMAP.
+6. ✅ **Undo / redo** for label moves, annotations, title, legend, selections, brush strokes and shapes (not for writes to the DataFrame).
+7. ✅ **Brush tagging**, written back as a string column after a confirmation.
+8. ✅ **Shapes on the map**, editable (move, resize, rotate, vertices, order), in map coordinates, with tag-inside.
+9. ✅ **Marker symbols.** Symbol by a categorical column; a fixed symbol per overlay layer.
+10. ✅ **Time slider and video export.** Animate by a column (a row filter), Space to play; WebM of the animation or a 3D turntable. *Not done:* a UMAP-converging recording, and HTML overlays (title, callouts) in the video.
+11. ✅ **Tracks and vectors.** Tracks by ID and time (colour by ID or time, fading tail); lines from a saved layout to the current one. *Not done:* arrowheads, and vectors to an overlay layer's matching rows.
+12. ✅ **Python API.** `import positron_atlas`; `atlas.open(df)`, `color_by`, `label_by`, `dims`, `annotate`, `selection`, `on_select`, `save_png`/`save_html` (non-blocking), over a Positron comm. *Not done:* `add_layer`.
+13. ✅ **Small conveniences.** **Atlas: Open example** (MNIST, Fashion MNIST, Covertype); a new frame from the selection opens in the Data Explorer; 3D perspective/orthographic (`5`) and depth fade. *Not done:* sphere shading.
+14. ✅ **Rotate the 2D map.** Right-drag or Ctrl-drag, `[`/`]`, `N`, compass; fit keeps the angle.
+15. ✅ **Labels and annotations in map coordinates**, also in 3D.
+16. ✅ **Follow-ups:** 3D clusters and outlines, the HTML viewer in 3D, invert for image-URL thumbnails, the cosine neighbour cache. R support stays out of scope.
+17. ✅ **Label placement** (added later): densest spot, centre, or every region (repeated labels), with a label budget.
+
+**What is left** (small, recorded where it applies): the trackpad pinch heuristic for `scrollGesture: pan`; checking the product-named preset bindings (Q8); arrowheads and overlay targets for vectors; `add_layer` in the Python API; overlays in videos; sphere shading; a "nudge apart" label overlap mode.
 
 ---
 
@@ -270,7 +267,7 @@ Details are in the research notes of 2026-11-22.
 - [x] Middle-button and emulation support (NavController in `controller.ts` handles middle-drag, Alt+left emulation, Space+drag).
 - [x] Settings in `package.json` with enum descriptions. Live update deferred (trackpad heuristic); settings read from `init` message.
 - [x] Commands and keybindings in `package.json`; host forwards commands as `command { id }` messages; dispatcher handles them; harness host simulates commands.
-- [ ] Help entries (`help.ts`) for each navigation setting; the Info popover links to the cheat sheet.
+- [x] Help entries (`help.ts`) for each navigation setting; the Info popover links to the cheat sheet.
 - [x] Tests:
   - vitest: `test/nav-presets.test.ts` — preset tables, all required ActionIds, mouse descriptions per §1.2 table, NavController.middleDragType, formatKey for all bindings on mac/win, context correctness, select bindings (56 tests).
   - Harness: `scenario-nav-presets.json` — Ctrl+drag rotates 2D (NavController), right-drag rotates (deck.gl alternateMode), left-drag pans, middle-drag pans.

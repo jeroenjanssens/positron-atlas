@@ -18,7 +18,8 @@ Open a pandas or polars DataFrame (or a pyarrow Table, DuckDB relation, or lazy 
 - **Points are images.** For image data with one pixel per column (such as `px0` … `px783`), or a column of image URLs or file paths (downloaded by the extension after you allow it), the card shows the row as a picture.
 - **Legend toggles, search and filters.** Click a legend entry to hide a group, Alt-click to show only that group. Search the title column (matches are highlighted, Enter zooms to them). Brush a histogram of a numeric or date column to filter points. All filters combine on the GPU, also at 10⁷ points.
 - **DataMapPlot-style annotation.** A font picker (bundled fonts, any Google Font, or an installed font), label weight by group size, wrapping and halos; labels at two levels of detail that appear as you zoom in; draggable labels that remember their position; highlighted labels in filled badges; labels **around the map** with straight, curved or wedge leader lines; a soft **glow** around clusters; color by cluster with grey "Unlabelled" points; point size by a column; a title, subtitle and logo; and **point annotations**: click a point to add a callout with its title or, for image data, its image, then drag it where you want.
-- **3D.** Switch Map → UMAP → Dimensions to 3D for a rotatable map (orbit, reset, auto-rotate, top/front/side views), with hover, lasso, legend and filters.
+- **3D.** Switch Map → UMAP → Dimensions to 3D for a rotatable map (orbit, reset, auto-rotate, top/front/side views), with hover, lasso, legend and filters; perspective or orthographic projection (`5`), depth fade, automatic clusters with boxes as outlines, a data box with floor grid and axis gizmo, labels and point annotations that stay put while you orbit. HTML exports work in 3D too.
+- **Rotate the 2D map.** Right-drag or Ctrl-drag, `[` and `]` in 15° steps, `N` (or the compass button) back to north-up. Labels stay upright; labels, callouts, shapes and boxes stay on their data.
 - **Points or additive density mode**, a background color picker, pan and zoom, full screen.
 - **Export** a PNG of the map as shown (labels, annotations and title included), a **self-contained HTML file** with an interactive viewer and the data embedded (works offline; 2.7 MB for MNIST with images), or an interactive DataMapPlot page (when `datamapplot` is installed).
 - **Write coordinates back** to the DataFrame (`umap_x`, `umap_y`) and **copy equivalent umap-learn code**.
@@ -26,10 +27,15 @@ Open a pandas or polars DataFrame (or a pyarrow Table, DuckDB relation, or lazy 
 - **Optional exact mode**: if [polars-umap](https://polars-umap.jeroenjanssens.com) or `umap-learn` is installed in the kernel, run full UMAP on all rows there instead (Map → UMAP → Compute). polars-umap is UMAP in Rust and 3.5–20× faster. Without WebGPU, polars-umap can also lay out just the anchors in the kernel (much faster than the browser's CPU fallback).
 - **Fast re-placement.** After a live UMAP change, rows are placed again from their cached nearest anchors, 27–110× faster than the first placement; the neighbour search runs while the browser computes UMAP.
 - **Help next to every setting.** An ⓘ explains what each control does, how to think about it, and whether changing it is live or rebuilds the layout. The interface uses Positron's own controls and theme colors.
+- **Layers.** Everything on the map is a layer you can show, hide, reorder and fade in Explore → Layers. **Add DataFrame…** places the rows of another frame (same feature columns) on the existing map without rerunning UMAP, with its own colour or symbol, hover cards and legend: "where do my new compounds land?".
+- **Marker symbols.** Explore → Symbol by a categorical column (circle, square, triangle, diamond, cross, star, …).
+- **Bounding boxes.** Outline style Box draws a box around each group or cluster (robust extents, 1st–99th percentile), and a live box around the selection.
+- **Brush and shapes.** Annotate → Brush paints class tags onto points (Alt erases, `[`/`]` change the size, click fills a cluster); write them to a string column. Annotate → Shapes draws rectangles, ellipses, polygons, freehand outlines, lines, arrows and text on the map, with move, resize, rotate, vertex editing and front/back order; tag the points inside a shape in one step. Shapes are in the PNG and HTML exports.
+- **Undo and redo.** Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z (or the toolbar) undo label moves, annotations, title changes, legend toggles, selections, brush strokes and shape edits. Writing to the DataFrame can't be undone.
 - **Grid mode (small multiples).** Press `Cmd/Ctrl+G` (or the grid button in the toolbar) to split the map into a 2×2 grid of panels. Each panel can have its own color column; cameras are linked so panning, zooming and rotating in any panel moves all of them together. Lasso selects across panels. Works in 2D and 3D. PNG export captures all panels; the HTML viewer shows the first panel's colors.
-- **Time animation.** Explore → **Animate by** a date or numeric column. A window slider (e.g. one year) with play/pause, speed and loop steps through time. Rows outside the window fade or hide; labels update when the window settles. Combined with any other filter. **Export video:** record a WebM of the animation, a 3D turntable, or a UMAP convergence, via `MediaRecorder`, with resolution and frame-rate controls.
-- **Tracks.** Explore → **Connect rows by** an ID column, ordered by a time column. `PathLayer` lines connect each ID's points (2D and 3D), coloured per ID (tab20); works with or without a precomputed layout. Example: the same patient across visits.
-- **Vectors.** Explore → **Compare with layout** shows arrows from each row's current position to its position in a second layout (an earlier run or another condition), thinned automatically for large frames.
+- **Time animation.** Explore → **Animate by** a date or numeric column. A window slider (e.g. one year) with play/pause, speed and loop steps through time. Rows outside the window fade or hide; labels update when the window settles. Combined with any other filter. Space plays and pauses. **Export → Video** records a WebM of the time animation or a 3D turntable (frames per second, duration) and saves it where you choose. The video shows the map canvas, labels included; HTML overlays such as the title and callouts are not in it yet.
+- **Tracks.** Explore → **Connect rows by** an ID column, ordered by a time column. Lines connect each ID's points (2D and 3D), coloured per ID or by time, optionally with a fading tail; a layer in the layer list. Example: the same patient across visits.
+- **Vectors.** Explore → **Compare with layout** draws a line from each row's position in a saved layout (Keep this layout for comparison) to its current position, thinned automatically for large frames.
 
 ## Requirements
 
@@ -41,9 +47,12 @@ Open a pandas or polars DataFrame (or a pyarrow Table, DuckDB relation, or lazy 
 Build the package (or use a prebuilt `positron-atlas-<version>.vsix`) and install it into Positron:
 
 ```sh
-npm install && npm run package
-/Applications/Positron.app/Contents/Resources/app/bin/code --install-extension positron-atlas-0.1.0.vsix
+npm install && npm run build:native -- --release
+node scripts/package.mjs --target darwin-arm64     # or darwin-x64, linux-x64, linux-arm64, win32-x64
+/Applications/Positron.app/Contents/Resources/app/bin/code --install-extension positron-atlas-darwin-arm64-0.1.0.vsix
 ```
+
+A platform package includes the Rust core for faster placement of large frames. `npm run package` builds a universal package without it (numpy only).
 
 You can also run **Extensions: Install from VSIX…** from Positron's Command Palette. Then reload the window.
 

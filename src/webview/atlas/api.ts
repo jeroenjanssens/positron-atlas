@@ -80,6 +80,31 @@ export function resolveColumn(atlas: Atlas, args: Record<string, unknown>): numb
   return cols.some((x) => x.index === i) ? i : `no column with index ${String(args['column'])}`;
 }
 
+/** Whether the map canvas shows anything but the background (a coarse sample after a redraw). */
+function canvasHasPoints(atlas: Atlas): boolean {
+  const canvas = atlas.renderer?.getCanvas();
+  if (!canvas || canvas.width === 0 || canvas.height === 0) return false;
+  atlas.renderer!.toDataURL('#000000'); // redraws the frame, so the canvas holds it now
+  const sample = document.createElement('canvas');
+  sample.width = 64;
+  sample.height = 64;
+  const g = sample.getContext('2d');
+  if (!g) return true;
+  g.drawImage(canvas, 0, 0, 64, 64);
+  const d = g.getImageData(0, 0, 64, 64).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true;
+  return false;
+}
+
+async function waitForDrawnPoints(atlas: Atlas, timeoutMs = 3000): Promise<void> {
+  if ((atlas.renderVisibleCount ?? 0) === 0) return; // nothing to draw (everything filtered)
+  const t0 = Date.now();
+  while (!canvasHasPoints(atlas) && Date.now() - t0 < timeoutMs) {
+    atlas.render();
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 /** Handle one ``apiCommand`` message from the host. */
 export async function onApiCommand(
   atlas: Atlas,
@@ -153,6 +178,9 @@ export async function onApiCommand(
           return;
         }
         const { plotBackground } = await import('./render');
+        // The map can settle a moment before deck.gl has drawn the points (seen in a hidden
+        // Positron window); wait until the canvas shows something before saving.
+        await waitForDrawnPoints(atlas);
         const bytes = await atlas.renderer.toPngBytesWithOverlay(plotBackground(atlas), {
           titleOverlay: atlas.titleOverlay,
           annotations: atlas.annotations,

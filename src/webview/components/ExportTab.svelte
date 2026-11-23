@@ -2,6 +2,8 @@
   import type { Atlas } from '../atlas.svelte';
   import Section from './Section.svelte';
   import Info from './controls/Info.svelte';
+  import Select from './controls/Select.svelte';
+  import NumberInput from './controls/NumberInput.svelte';
   import { formatCount } from '../logic';
   import type { HtmlExportOptions } from '../atlas/exportHtml';
   import { isVideoSupported } from '../render/videoExport';
@@ -146,17 +148,20 @@
 
 <Section {atlas} id="export-video" title="Video">
   {#if videoAvailable}
-    <div class="btn-row">
-      <select bind:value={videoMode} style="flex:1">
+    <div class="select">
+      <span>Recording</span>
+      <Select value={videoMode} ariaLabel="Video recording" onchange={(e) => { videoMode = (e.target as HTMLSelectElement).value as 'time' | 'turntable'; }}>
         <option value="time">Time animation</option>
         <option value="turntable">3D turntable</option>
-      </select>
+      </Select>
     </div>
-    <div class="btn-row" style="gap:4px">
-      <label class="compact-label" for="vid-fps">FPS</label>
-      <input id="vid-fps" type="number" class="num-sm" bind:value={videoFps} min="10" max="60" step="5" />
-      <label class="compact-label" for="vid-dur">Duration (s)</label>
-      <input id="vid-dur" type="number" class="num-sm" bind:value={videoDuration} min="1" max="60" step="1" />
+    <div class="select">
+      <span>Frames per second</span>
+      <NumberInput bind:value={videoFps} min={10} max={60} step={5} ariaLabel="Frames per second" />
+    </div>
+    <div class="select">
+      <span>Duration (s)</span>
+      <NumberInput bind:value={videoDuration} min={1} max={60} step={1} ariaLabel="Duration in seconds" />
     </div>
     <div class="btn-row">
       <button disabled={atlas.videoRecording || (videoMode === 'time' && !atlas.animateValues)} onclick={doRecord}>
@@ -231,8 +236,6 @@
 {/if}
 
 <style>
-  .compact-label { font-size: 0.85em; white-space: nowrap; }
-  .num-sm { width: 56px; }
   .html-export-backdrop {
     position: fixed;
     inset: 0;
