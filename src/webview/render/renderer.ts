@@ -333,14 +333,9 @@ export class ScatterRenderer {
         if (interactionState?.isDragging || interactionState?.isZooming || interactionState?.isPanning) {
           this.userMoved = true;
         }
-        // C1: in grid mode, propagate the new state to all panel views so cameras stay linked.
-        if (this.gridEnabled && this.gridPanelColors.length > 0) {
-          const keyed: Record<string, any> = {};
-          for (let pi = 0; pi < this.gridPanelColors.length; pi++) keyed[`panel-${pi}`] = viewState;
-          this.deck.setProps({ viewState: keyed as any });
-        } else {
-          this.deck.setProps({ viewState });
-        }
+        // C1: in grid mode a single (non-keyed) viewState is passed so deck.gl applies
+        // the same camera to every panel — the simplest way to keep cameras linked.
+        this.deck.setProps({ viewState });
         const zoom = typeof viewState.zoom === 'number' ? viewState.zoom : 0;
         this.viewChangeCallback?.(zoom);
         return viewState;
@@ -1372,14 +1367,13 @@ export class ScatterRenderer {
     }
     this.version++;
     // C1: if grid mode is active, rebuild views with the new orthographic setting.
-    if (this.gridEnabled && this.gridPanelColors.length > 0) {
+    if (this.gridEnabled) {
       const orthographic = dims === 2 || this.ortho3D;
       const w = this.container.clientWidth || 800;
       const h = this.container.clientHeight || 600;
       const views = buildGridViews(this.gridLayout, w, h, orthographic);
-      const keyed: Record<string, any> = {};
-      for (let pi = 0; pi < this.gridPanelColors.length; pi++) keyed[`panel-${pi}`] = this.viewState;
-      this.deck.setProps({ views: views as any, viewState: keyed as any });
+      // Single (non-keyed) viewState so all panels share one camera.
+      this.deck.setProps({ views: views as any, viewState: this.viewState });
     }
     this.render();
   }
@@ -1711,10 +1705,8 @@ export class ScatterRenderer {
       const h = this.container.clientHeight || 600;
       const orthographic = this.dims === 2 || this.ortho3D;
       const views = buildGridViews(layout, w, h, orthographic);
-      // Build a keyed viewState so all panels share the same camera.
-      const keyed: Record<string, any> = {};
-      for (const v of views) keyed[(v as any).id] = this.viewState;
-      this.deck.setProps({ views: views as any, viewState: keyed as any });
+      // Single (non-keyed) viewState so deck.gl applies the same camera to all panels.
+      this.deck.setProps({ views: views as any, viewState: this.viewState });
     } else if (wasEnabled) {
       // Restore single-view mode.
       this.deck.setProps({

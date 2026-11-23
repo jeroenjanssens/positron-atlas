@@ -1,0 +1,35 @@
+{
+  "variable": "df",
+  "description": "Grid mode performance: 1M points × 4 panels; measures JS heap size and per-frame render time.",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(42)\nn = 1_000_000\ndf = pd.DataFrame(rng.normal(0, 1, (n, 10)), columns=[f'x{i}' for i in range(10)])\ndf['cat'] = (rng.integers(0, 5, n)).astype(str)\ndf['val'] = rng.normal(0, 1, n)\n",
+  "settings": { "pcaEnabled": false, "maxAnchorsCpu": 25000, "maxAnchors": 25000 },
+  "screenshot": false,
+  "steps": [
+    {
+      "name": "wait for ready (1M rows)",
+      "until": "a.phase === 'ready'",
+      "timeout": 300000,
+      "report": "{ nRows: a.describe && a.describe.nRows, nAnchors: a.describe && a.describe.nAnchors }"
+    },
+    {
+      "name": "baseline heap and frame time (single view, all rows placed)",
+      "eval": "a.setColorColumn(a.describe.columns.find(c=>c.name==='cat').index); await new Promise(r=>setTimeout(r,500)); const t0=performance.now(); let frames=0; await new Promise(resolve=>{ function step(){ frames++; if(performance.now()-t0<1000) requestAnimationFrame(step); else resolve(); } requestAnimationFrame(step); }); window.__baselineMs = (performance.now()-t0)/frames; window.__baselineHeap = performance.memory ? performance.memory.usedJSHeapSize : -1",
+      "until": "window.__baselineMs !== undefined",
+      "timeout": 15000,
+      "report": "{ baseline_fps: (1000/window.__baselineMs).toFixed(1), baseline_frame_ms: window.__baselineMs.toFixed(1), heap_mb: (window.__baselineHeap/1048576).toFixed(1) }"
+    },
+    {
+      "name": "enable 2×2 grid (default colors only)",
+      "eval": "a.toggleGrid()",
+      "until": "a.grid.enabled",
+      "timeout": 10000
+    },
+    {
+      "name": "grid heap and frame time (4 panels)",
+      "eval": "await new Promise(r=>requestAnimationFrame(r)); const t0=performance.now(); let frames=0; await new Promise(resolve=>{ function step(){ frames++; if(performance.now()-t0<1000) requestAnimationFrame(step); else resolve(); } requestAnimationFrame(step); }); window.__gridMs = (performance.now()-t0)/frames; window.__gridHeap = performance.memory ? performance.memory.usedJSHeapSize : -1",
+      "until": "window.__gridMs !== undefined",
+      "timeout": 15000,
+      "report": "{ grid_fps: (1000/window.__gridMs).toFixed(1), grid_frame_ms: window.__gridMs.toFixed(1), heap_mb: (window.__gridHeap/1048576).toFixed(1), extra_heap_mb: ((window.__gridHeap-window.__baselineHeap)/1048576).toFixed(1) }"
+    }
+  ]
+}
