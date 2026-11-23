@@ -92,6 +92,10 @@ export function onInit(atlas: Atlas, d: DescribeResult, settings: Settings, vari
     // If dragOffsetsVersion is absent, dragOffsets stay empty (legacy positions reset).
     atlas.labels = {
       column: col, minSize, maxSize, colorText: l.colorText !== false,
+      placement: l.placement === 'medoid' || l.placement === 'regions' ? l.placement : 'peak',
+      maxPerGroup: Number.isFinite(l.maxPerGroup) ? Math.min(20, Math.max(1, Math.round(l.maxPerGroup!))) : DEFAULT_LABELS.maxPerGroup,
+      minRegionShare: Number.isFinite(l.minRegionShare) ? Math.min(1, Math.max(0, l.minRegionShare!)) : DEFAULT_LABELS.minRegionShare,
+      maxLabels: Number.isFinite(l.maxLabels) ? Math.min(1000, Math.max(0, Math.round(l.maxLabels!))) : 0,
       clusters: l.clusters === true && col === null, detail, nameBy, outlines: l.outlines !== false,
       // A2 typography
       fontFamily: typeof l.fontFamily === 'string' ? l.fontFamily : '',

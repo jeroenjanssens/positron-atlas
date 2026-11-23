@@ -61,6 +61,83 @@ describe('placeGroupLabels', () => {
   });
 });
 
+describe('placeGroupLabels modes', () => {
+  /** A: a large blob, a smaller blob and a tiny one; B: one blob. */
+  function threeIslands() {
+    const r = rng(7);
+    const xy: number[] = [];
+    const codes: number[] = [];
+    blob(r, 3000, -10, 0, 2, 0, xy, codes); // A main
+    blob(r, 1000, 10, 0, 2, 0, xy, codes); // A second region (25 %)
+    blob(r, 100, 0, -10, 1, 0, xy, codes); // A tiny region (2.4 %)
+    blob(r, 2000, 0, 10, 2, 1, xy, codes); // B
+    return { xy: new Float32Array(xy), codes };
+  }
+
+  it("'regions' repeats a label once per large-enough region, at each region's points", () => {
+    const { xy, codes } = threeIslands();
+    const labels = placeGroupLabels(xy, codes, codes.length, ['A', 'B'], { mode: 'regions' });
+    const a = labels.filter((l) => l.text === 'A');
+    expect(a).toHaveLength(2); // the 2.4 % island is below the default minShare (10 %)
+    expect(a.map((l) => l.region)).toEqual([0, 1]);
+    expect(a.map((l) => l.key)).toEqual(['A', 'A #2']);
+    expect(Math.abs(a[0].x - -10)).toBeLessThan(1.5); // largest region first
+    expect(Math.abs(a[1].x - 10)).toBeLessThan(1.5);
+    expect(a[0].count).toBeGreaterThan(a[1].count);
+    expect(labels.filter((l) => l.text === 'B')).toHaveLength(1);
+  });
+
+  it("'regions' respects maxPerGroup and minShare", () => {
+    const { xy, codes } = threeIslands();
+    const one = placeGroupLabels(xy, codes, codes.length, ['A', 'B'], { mode: 'regions', maxPerGroup: 1 });
+    expect(one.filter((l) => l.text === 'A')).toHaveLength(1);
+    const all = placeGroupLabels(xy, codes, codes.length, ['A', 'B'], { mode: 'regions', minShare: 0.01 });
+    expect(all.filter((l) => l.text === 'A')).toHaveLength(3);
+  });
+
+  it("'peak' (the default) keeps one label per group", () => {
+    const { xy, codes } = threeIslands();
+    const labels = placeGroupLabels(xy, codes, codes.length, ['A', 'B']);
+    expect(labels.map((l) => l.key)).toEqual(['A', 'B']);
+    expect(labels.every((l) => l.region === 0)).toBe(true);
+  });
+
+  it("'medoid' puts the label on a point of the group, near its middle", () => {
+    const r = rng(3);
+    const xy: number[] = [];
+    const codes: number[] = [];
+    blob(r, 2000, 5, 5, 4, 0, xy, codes);
+    const f = new Float32Array(xy);
+    const [l] = placeGroupLabels(f, codes, codes.length, ['A'], { mode: 'medoid' });
+    expect(Math.hypot(l.x - 5, l.y - 5)).toBeLessThan(0.5);
+    let onPoint = false;
+    for (let i = 0; i < codes.length; i++) if (f[2 * i] === l.x && f[2 * i + 1] === l.y) onPoint = true;
+    expect(onPoint).toBe(true);
+  });
+
+  it('3D positions (stride 3) place like the same points in 2D, with the mean z', () => {
+    const { xy, codes } = threeIslands();
+    const n = codes.length;
+    const xyz = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) {
+      xyz[3 * i] = xy[2 * i];
+      xyz[3 * i + 1] = xy[2 * i + 1];
+      xyz[3 * i + 2] = codes[i] === 0 ? 5 : -5;
+    }
+    const flat = placeGroupLabels(xy, codes, n, ['A', 'B'], { mode: 'regions' });
+    const deep = placeGroupLabels(xyz, codes, n, ['A', 'B'], { mode: 'regions', stride: 3 });
+    expect(deep.map((l) => [l.key, l.x, l.y])).toEqual(flat.map((l) => [l.key, l.x, l.y]));
+    expect(deep.map((l) => l.z)).toEqual(deep.map((l) => (l.text === 'A' ? 5 : -5)));
+  });
+
+  it('maxLabels keeps the largest groups or regions', () => {
+    const { xy, codes } = threeIslands();
+    const labels = placeGroupLabels(xy, codes, codes.length, ['A', 'B'], { mode: 'regions', maxLabels: 2 });
+    expect(labels).toHaveLength(2);
+    expect(labels.map((l) => l.key).sort()).toEqual(['A', 'B']); // A main (3000) and B (2000), not A #2 (1000)
+  });
+});
+
 describe('labelSizes', () => {
   it('scales with the square root of the count, relative to the largest group', () => {
     expect(labelSizes([100, 400, 2500], 10, 30)).toEqual([14, 18, 30]);

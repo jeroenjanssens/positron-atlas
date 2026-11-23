@@ -8,7 +8,7 @@ import { clusterOutlines } from './colors';
 import type { Atlas } from '../atlas.svelte';
 import type { ColorMeta, FileRef, LabelOptions } from '../../shared/protocol';
 import { vscode, fetchTyped } from '../vscode';
-import { collisionPriorities, labelSizes, placeGroupLabels } from '../labels/place';
+import { collisionPriorities, labelSizes, placeGroupLabels, type PlaceOptions } from '../labels/place';
 import { hexToRgb } from '../color/colormaps';
 import { toHex } from '../logic';
 import { gatherU16, contrastText, labelTextColor, fontFamily as editorFontFamily } from './utils';
@@ -165,8 +165,13 @@ const UNDOABLE_LABEL_OPTION_KEYS = new Set<keyof LabelOptions>([
   'minSize', 'maxSize', 'fontFamily', 'fontWeight', 'minFontWeight', 'maxFontWeight',
   'haloWidth', 'haloColor', 'lineSpacing', 'wrapWidth', 'textCase', 'colorText',
   'outlines', 'outlineStyle', 'labelStyle', 'leaderStyle', 'leaderColor', 'leaderWidth', 'highlightGroups',
-  'detail', 'multiLevel',
+  'detail', 'multiLevel', 'placement', 'maxPerGroup', 'minRegionShare', 'maxLabels',
 ]);
+
+/** The placement options for placeGroupLabels from the label settings. */
+function placeOptions(o: LabelOptions, dims: 2 | 3): PlaceOptions {
+  return { mode: o.placement ?? 'peak', maxPerGroup: o.maxPerGroup, minShare: o.minRegionShare, maxLabels: o.maxLabels, stride: dims };
+}
 
 export function setLabelOptions(atlas: Atlas, o: Partial<LabelOptions>): void {
   const prev = atlas.labels;
@@ -496,8 +501,8 @@ export function updateLabels(atlas: Atlas): void {
   // ---- Place main (coarse) labels ----
   const placed =
     atlas.projection === 'done' && atlas.allXY
-      ? placeGroupLabels(atlas.allXY, groups.all, atlas.nKept, groups.names)
-      : placeGroupLabels(atlas.anchorXY, groups.anchors, atlas.prepared.nAnchors, groups.names);
+      ? placeGroupLabels(atlas.allXY, groups.all, atlas.nKept, groups.names, placeOptions(opts, atlas.dims))
+      : placeGroupLabels(atlas.anchorXY, groups.anchors, atlas.prepared.nAnchors, groups.names, placeOptions(opts, atlas.dims));
 
   const counts = placed.map((l) => l.count);
   const sizes = labelSizes(counts, opts.minSize, opts.maxSize);
@@ -520,8 +525,8 @@ export function updateLabels(atlas: Atlas): void {
       };
       finePlaced =
         atlas.projection === 'done' && atlas.allXY
-          ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names)
-          : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names);
+          ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names, { stride: atlas.dims })
+          : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names, { stride: atlas.dims });
       const fineCounts = finePlaced.map((l) => l.count);
       fineSizes = labelSizes(fineCounts, Math.max(6, opts.minSize - 2), opts.minSize + 4);
       fineWeights = weightRange(fineCounts, opts.minFontWeight ?? 400, opts.fontWeight ?? 600);
@@ -535,8 +540,8 @@ export function updateLabels(atlas: Atlas): void {
     };
     finePlaced =
       atlas.projection === 'done' && atlas.allXY
-        ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names)
-        : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names);
+        ? placeGroupLabels(atlas.allXY, fineGroups.all, atlas.nKept, fineGroups.names, { stride: atlas.dims })
+        : placeGroupLabels(atlas.anchorXY, fineGroups.anchors, atlas.prepared.nAnchors, fineGroups.names, { stride: atlas.dims });
     const fineCounts = finePlaced.map((l) => l.count);
     fineSizes = labelSizes(fineCounts, Math.max(6, opts.minSize - 2), opts.minSize + 4);
     fineWeights = weightRange(fineCounts, opts.minFontWeight ?? 400, opts.fontWeight ?? 600);
@@ -666,8 +671,10 @@ export function updateLabels(atlas: Atlas): void {
     const ci = colorIndex?.get(l.text);
     const baseColor = ci !== undefined ? labelTextColor(hexToRgb(atlas.categoryColor(ci)), plain) : plain;
 
-    // Apply drag offset (B5: offset is in map/world coordinates, applied directly).
-    const offset = dragOffsets[rawText] ?? dragOffsets[l.text];
+    // Apply drag offset (B5: offset is in map/world coordinates, applied directly). Repeated
+    // labels ('regions' placement) each have their own key ("A", "A #2", …).
+    const key = l.region === 0 ? rawText : `${rawText} #${l.region + 1}`;
+    const offset = dragOffsets[key] ?? (l.region === 0 ? dragOffsets[l.text] : undefined);
     const position: [number, number] = offset
       ? [l.x + offset[0], l.y + offset[1]]
       : [l.x, l.y];
@@ -690,8 +697,8 @@ export function updateLabels(atlas: Atlas): void {
       priority: allPriorities[i],
       weight: weights[i],
       badge,
-      key: rawText,
-      worldZ: groupWorldZ?.get(rawText),
+      key,
+      worldZ: l.z ?? groupWorldZ?.get(rawText),
     });
   }
 

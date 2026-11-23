@@ -114,7 +114,7 @@ function buildClusterPalette(atlas: Atlas, k: number): string[] {
     const xy = atlas.anchorXY;
     const nA = atlas.prepared!.nAnchors;
     const centers = new Float64Array(k * 2).fill(NaN);
-    for (const l of placeGroupLabels(xy, codesAnchors, nA, Array.from({ length: k }, (_, i) => String(i)))) {
+    for (const l of placeGroupLabels(xy, codesAnchors, nA, Array.from({ length: k }, (_, i) => String(i)), { stride: atlas.dims })) {
       if (l.group < k) {
         centers[2 * l.group] = l.x;
         centers[2 * l.group + 1] = l.y;
@@ -356,7 +356,7 @@ export function updateMapColors(atlas: Atlas, recolorFlag = true): void {
   }
   const k = meta.categories.length;
   const centers = new Float64Array(k * 2).fill(NaN);
-  for (const l of placeGroupLabels(xy, codes, n, meta.categories)) {
+  for (const l of placeGroupLabels(xy, codes, n, meta.categories, { stride: atlas.dims })) {
     centers[2 * l.group] = l.x;
     centers[2 * l.group + 1] = l.y;
   }

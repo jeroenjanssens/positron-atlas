@@ -6,22 +6,54 @@ export interface GroupLabel {
   text: string;
   x: number;
   y: number;
-  /** Number of points of the group in the input. */
+  /** Number of points of the group in the input (of the region, in 'regions' mode). */
   count: number;
+  /** 0 for the group's main label; 1, 2, … for its further regions ('regions' mode). */
+  region: number;
+  /** Stable key for dragged-label offsets: the text, plus " #2", " #3", … for further regions. */
+  key: string;
+  /** 3D layouts (stride 3): the mean z of the same points. */
+  z?: number;
 }
+
+/** How labels are placed for each group. */
+export type LabelPlacement = 'peak' | 'medoid' | 'regions';
 
 export interface PlaceOptions {
   /** Grid cells along the longer side of the bounds (default 64). */
   grid?: number;
+  /**
+   * 'peak' (default): one label per group at its densest spot.
+   * 'medoid': one label per group at its medoid (DataMapPlot's choice; can fall between blobs).
+   * 'regions': one label per separate region of the group's points, so a label can repeat.
+   */
+  mode?: LabelPlacement;
+  /** 'regions': at most this many labels per group (default 3). */
+  maxPerGroup?: number;
+  /** 'regions': a region needs at least this share of its group's points (default 0.1). */
+  minShare?: number;
+  /** At most this many labels in total, largest groups/regions first (0 or undefined: all). */
+  maxLabels?: number;
+  /** Values per point in `xy`: 2 (x, y) or 3 (x, y, z). Placement uses x and y. */
+  stride?: 2 | 3;
 }
 
+/** 'regions': a cell belongs to a region when its smoothed count is at least this share of the group's peak. */
+const REGION_DENSITY = 0.05;
+
+/** Points per group used to find a medoid (exact on the sample, O(m²)). */
+const MEDOID_SAMPLE = 800;
+
 /**
- * Place one label per group at the group's densest spot.
+ * Place labels for groups of points.
  *
  * A centroid can fall between two blobs of the same group, or outside a curved one. Instead,
- * each group's points are binned on a grid over the map, the counts are smoothed with a 3×3
- * box filter, and the label goes to the mean position of the group's points in the densest
- * cell and its eight neighbors. That spot always lies on the group's points.
+ * each group's points are binned on a grid over the map and the counts are smoothed with a
+ * 3×3 box filter. 'peak' puts one label at the mean position of the group's points in its
+ * densest cell and the eight neighbours (always on the group's points). 'regions' splits the
+ * group's occupied cells into connected regions and labels each region that holds at least
+ * `minShare` of the group, at the region's own peak. 'medoid' uses the point with the
+ * smallest total distance to the group's (sampled) points.
  *
  * `codes[i]` is the group of point i; codes >= names.length (e.g. "Other" or missing) and
  * non-finite positions are ignored. Groups without points get no label.
@@ -29,13 +61,15 @@ export interface PlaceOptions {
 export function placeGroupLabels(xy: Float32Array, codes: ArrayLike<number>, n: number, names: string[], opts: PlaceOptions = {}): GroupLabel[] {
   const k = names.length;
   if (k === 0 || n === 0) return [];
+  const mode = opts.mode ?? 'peak';
+  const d = opts.stride ?? 2;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (let i = 0; i < n; i++) {
-    const x = xy[2 * i];
-    const y = xy[2 * i + 1];
+    const x = xy[d * i];
+    const y = xy[d * i + 1];
     if (!(x === x && y === y) || codes[i] >= k) continue;
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
@@ -43,6 +77,37 @@ export function placeGroupLabels(xy: Float32Array, codes: ArrayLike<number>, n: 
     if (y > maxY) maxY = y;
   }
   if (!isFinite(minX)) return [];
+
+  const out = mode === 'medoid' ? placeMedoids(xy, codes, n, names, d) : placePeaks(xy, codes, n, names, opts, d, minX, minY, maxX, maxY);
+  const maxLabels = opts.maxLabels ?? 0;
+  if (maxLabels > 0 && out.length > maxLabels) {
+    // Keep the largest; ties keep group order.
+    const kept = new Set([...out].sort((a, b) => b.count - a.count || a.group - b.group).slice(0, maxLabels));
+    return out.filter((l) => kept.has(l));
+  }
+  return out;
+}
+
+function labelKey(text: string, region: number): string {
+  return region === 0 ? text : `${text} #${region + 1}`;
+}
+
+function placePeaks(
+  xy: Float32Array,
+  codes: ArrayLike<number>,
+  n: number,
+  names: string[],
+  opts: PlaceOptions,
+  d: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): GroupLabel[] {
+  const k = names.length;
+  const regions = opts.mode === 'regions';
+  const maxPerGroup = regions ? Math.max(1, Math.round(opts.maxPerGroup ?? 3)) : 1;
+  const minShare = Math.min(1, Math.max(0, opts.minShare ?? 0.1));
   const longest = Math.max(maxX - minX, maxY - minY, 1e-9);
   const cells = Math.max(4, Math.round(opts.grid ?? 64));
   const cell = longest / cells;
@@ -60,23 +125,26 @@ export function placeGroupLabels(xy: Float32Array, codes: ArrayLike<number>, n: 
   const count = new Uint32Array(k);
   for (let i = 0; i < n; i++) {
     const g = codes[i];
-    const x = xy[2 * i];
-    const y = xy[2 * i + 1];
+    const x = xy[d * i];
+    const y = xy[d * i + 1];
     if (g >= k || !(x === x && y === y)) continue;
     hist[g * size + cellOf(x, y)]++;
     count[g]++;
   }
 
-  // Densest cell per group after 3×3 box smoothing.
-  const peak = new Int32Array(k).fill(-1);
+  // Peaks: per group, the densest occupied cell (3×3-smoothed) of each kept region.
+  const smooth = new Uint32Array(size);
+  const comp = new Int32Array(size);
+  const stack: number[] = [];
+  const peaks: number[][] = [];
+  const masses: number[][] = [];
   for (let g = 0; g < k; g++) {
+    peaks.push([]);
+    masses.push([]);
     if (count[g] === 0) continue;
     const base = g * size;
-    let best = -1;
-    let bestV = -1;
     for (let cy = 0; cy < gh; cy++) {
       for (let cx = 0; cx < gw; cx++) {
-        if (hist[base + cy * gw + cx] === 0) continue; // the peak must hold points itself
         let v = 0;
         for (let dy = -1; dy <= 1; dy++) {
           const yy = cy + dy;
@@ -87,37 +155,145 @@ export function placeGroupLabels(xy: Float32Array, codes: ArrayLike<number>, n: 
             v += hist[base + yy * gw + xx];
           }
         }
-        if (v > bestV) {
-          bestV = v;
-          best = cy * gw + cx;
-        }
+        smooth[cy * gw + cx] = v;
       }
     }
-    peak[g] = best;
+    if (!regions) {
+      let best = -1;
+      let bestV = -1;
+      for (let c = 0; c < size; c++) {
+        if (hist[base + c] > 0 && smooth[c] > bestV) {
+          bestV = smooth[c];
+          best = c;
+        }
+      }
+      peaks[g].push(best);
+      masses[g].push(count[g]);
+      continue;
+    }
+    // Regions: 8-connected components of the cells that hold points and are dense enough;
+    // the threshold keeps a few stray points from bridging two separate islands.
+    let peakV = 0;
+    for (let c = 0; c < size; c++) if (hist[base + c] > 0 && smooth[c] > peakV) peakV = smooth[c];
+    const dense = (c: number) => hist[base + c] > 0 && smooth[c] >= REGION_DENSITY * peakV;
+    comp.fill(-1);
+    const found: { peak: number; mass: number }[] = [];
+    for (let c0 = 0; c0 < size; c0++) {
+      if (!dense(c0) || comp[c0] >= 0) continue;
+      const id = found.length;
+      let mass = 0;
+      let best = c0;
+      comp[c0] = id;
+      stack.push(c0);
+      while (stack.length) {
+        const c = stack.pop()!;
+        mass += hist[base + c];
+        if (smooth[c] > smooth[best]) best = c;
+        const cx = c % gw;
+        const cy = (c - cx) / gw;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = cy + dy;
+          if (yy < 0 || yy >= gh) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = cx + dx;
+            if (xx < 0 || xx >= gw) continue;
+            const nc = yy * gw + xx;
+            if (dense(nc) && comp[nc] < 0) {
+              comp[nc] = id;
+              stack.push(nc);
+            }
+          }
+        }
+      }
+      found.push({ peak: best, mass });
+    }
+    found.sort((a, b) => b.mass - a.mass);
+    // The largest region is always labelled; the others need minShare of the group.
+    for (let r = 0; r < found.length && peaks[g].length < maxPerGroup; r++) {
+      if (r > 0 && found[r].mass < minShare * count[g]) break;
+      peaks[g].push(found[r].peak);
+      masses[g].push(found[r].mass);
+    }
   }
 
-  // Pass 2: mean position of each group's points around its peak.
-  const sx = new Float64Array(k);
-  const sy = new Float64Array(k);
-  const sn = new Uint32Array(k);
+  // Pass 2: mean position of each group's points around each of its peaks.
+  const offset: number[] = [];
+  let total = 0;
+  for (let g = 0; g < k; g++) {
+    offset.push(total);
+    total += peaks[g].length;
+  }
+  const sx = new Float64Array(total);
+  const sy = new Float64Array(total);
+  const sn = new Uint32Array(total);
+  const sz = new Float64Array(total);
   for (let i = 0; i < n; i++) {
     const g = codes[i];
-    const x = xy[2 * i];
-    const y = xy[2 * i + 1];
+    const x = xy[d * i];
+    const y = xy[d * i + 1];
     if (g >= k || !(x === x && y === y)) continue;
-    const p = peak[g];
     const c = cellOf(x, y);
-    if (Math.abs((c % gw) - (p % gw)) <= 1 && Math.abs(Math.floor(c / gw) - Math.floor(p / gw)) <= 1) {
-      sx[g] += x;
-      sy[g] += y;
-      sn[g]++;
+    const cx = c % gw;
+    const cy = (c - cx) / gw;
+    const ps = peaks[g];
+    for (let r = 0; r < ps.length; r++) {
+      const p = ps[r];
+      if (Math.abs(cx - (p % gw)) <= 1 && Math.abs(cy - Math.floor(p / gw)) <= 1) {
+        const j = offset[g] + r;
+        sx[j] += x;
+        sy[j] += y;
+        if (d === 3) sz[j] += xy[3 * i + 2];
+        sn[j]++;
+        break;
+      }
     }
   }
 
   const out: GroupLabel[] = [];
   for (let g = 0; g < k; g++) {
-    if (sn[g] === 0) continue;
-    out.push({ group: g, text: names[g], x: sx[g] / sn[g], y: sy[g] / sn[g], count: count[g] });
+    for (let r = 0; r < peaks[g].length; r++) {
+      const j = offset[g] + r;
+      if (sn[j] === 0) continue;
+      const l: GroupLabel = { group: g, text: names[g], x: sx[j] / sn[j], y: sy[j] / sn[j], count: regions ? masses[g][r] : count[g], region: r, key: labelKey(names[g], r) };
+      if (d === 3) l.z = sz[j] / sn[j];
+      out.push(l);
+    }
+  }
+  return out;
+}
+
+function placeMedoids(xy: Float32Array, codes: ArrayLike<number>, n: number, names: string[], d: number): GroupLabel[] {
+  const k = names.length;
+  const members: number[][] = names.map(() => []);
+  for (let i = 0; i < n; i++) {
+    const g = codes[i];
+    const x = xy[d * i];
+    const y = xy[d * i + 1];
+    if (g < k && x === x && y === y) members[g].push(i);
+  }
+  const out: GroupLabel[] = [];
+  for (let g = 0; g < k; g++) {
+    const m = members[g];
+    if (m.length === 0) continue;
+    // A deterministic, evenly spread sample keeps this O(MEDOID_SAMPLE²) per group.
+    const step = Math.max(1, m.length / MEDOID_SAMPLE);
+    const sample: number[] = [];
+    for (let t = 0; t < m.length && sample.length < MEDOID_SAMPLE; t += step) sample.push(m[Math.floor(t)]);
+    let best = sample[0];
+    let bestD = Infinity;
+    for (const a of sample) {
+      const ax = xy[d * a];
+      const ay = xy[d * a + 1];
+      let total = 0;
+      for (const b of sample) total += Math.hypot(xy[d * b] - ax, xy[d * b + 1] - ay);
+      if (total < bestD) {
+        bestD = total;
+        best = a;
+      }
+    }
+    const l: GroupLabel = { group: g, text: names[g], x: xy[d * best], y: xy[d * best + 1], count: m.length, region: 0, key: names[g] };
+    if (d === 3) l.z = xy[3 * best + 2];
+    out.push(l);
   }
   return out;
 }

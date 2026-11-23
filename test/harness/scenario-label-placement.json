@@ -1,0 +1,23 @@
+{
+  "variable": "df",
+  "description": "Label placement: category A forms two separate islands. 'Densest spot' and 'Centre' give A one label; 'Every region' gives it one per island, drawn at each island (pixel check with the points hidden). Max labels caps the total.",
+  "setup": "import numpy as np, pandas as pd\nrng = np.random.default_rng(11)\nn = 4000\nk = rng.integers(0, 4, n)\ncenters = rng.normal(0, 8, (4, 12))\ndf = pd.DataFrame(centers[k] + rng.normal(0, 1, (n, 12)), columns=[f'x{i}' for i in range(12)])\ndf['cat'] = np.array(['A', 'B', 'A', 'C'])[k]\n",
+  "settings": { "maxAnchorsCpu": 4000 },
+  "steps": [
+    { "name": "wait for ready", "until": "a.phase === 'ready' && (!a.prepared.needsProjection || a.projection === 'done')", "timeout": 60000 },
+    { "name": "label by cat (default placement: densest spot)", "eval": "a.setLabelColumn(a.describe.columns.find((c) => c.name === 'cat').index)", "until": "a.renderer.labels.length === 3", "timeout": 15000,
+      "assert": ["a.renderer.labels.filter((l) => l.text === 'A').length === 1"], "report": "a.renderer.labels.map((l) => l.key)" },
+    { "name": "centre (medoid): still one label per group", "eval": "a.setLabelOptions({ placement: 'medoid' })", "until": "a.renderer.labels.length === 3", "timeout": 5000,
+      "assert": ["a.renderer.labels.filter((l) => l.text === 'A').length === 1"] },
+    { "name": "every region: A gets a label on each of its two islands", "eval": "a.setLabelOptions({ placement: 'regions' })", "until": "a.renderer.labels.filter((l) => l.text === 'A').length === 2", "timeout": 5000,
+      "assert": ["JSON.stringify(a.renderer.labels.map((l) => l.key).sort()) === JSON.stringify(['A', 'A #2', 'B', 'C'])"],
+      "report": "a.renderer.labels.map((l) => ({ key: l.key, x: l.position[0], y: l.position[1] }))", "screenshot": "label-placement-regions.png" },
+    { "name": "both A labels are drawn on screen at their islands (points hidden)",
+      "eval": "a.updateLayer('base', { visible: false }); a.render(); await new Promise((r) => setTimeout(r, 300)); const url = a.renderer.toDataURL('#000000'); a.updateLayer('base', { visible: true }); a.render(); const img = new Image(); await new Promise((r) => { img.onload = r; img.src = url; }); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); const dpr = img.width / document.querySelector('canvas').getBoundingClientRect().width; window.__near = a.renderer.labels.filter((l) => l.text === 'A').map((l) => { const p = a.renderer.projectWorld(l.position[0], l.position[1]); const cx = Math.round(p[0] * dpr), cy = Math.round(p[1] * dpr); const d = g.getImageData(cx - 15, cy - 10, 30, 20).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 300) n++; return n; });",
+      "until": "window.__near !== undefined", "assert": "window.__near.length === 2 && window.__near.every((n) => n > 20)", "report": "window.__near" },
+    { "name": "labels per group = 1 goes back to one A label", "eval": "a.setLabelOptions({ maxPerGroup: 1 })", "until": "a.renderer.labels.filter((l) => l.text === 'A').length === 1", "timeout": 5000 },
+    { "name": "max labels = 2 keeps the two largest", "eval": "a.setLabelOptions({ maxPerGroup: 3, maxLabels: 2 })", "until": "a.renderer.labels.length === 2", "timeout": 5000,
+      "report": "a.renderer.labels.map((l) => l.key)" },
+    { "name": "undo restores the previous label settings", "eval": "a.undo()", "until": "(a.labels.maxLabels ?? 0) === 0", "timeout": 3000 }
+  ]
+}

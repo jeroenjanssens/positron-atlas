@@ -374,8 +374,8 @@ describe('computeAroundLabels', () => {
 describe('buildAroundLabelGroups', () => {
   it('converts GroupLabel[] to AroundLabelGroup[] correctly', () => {
     const placed: GroupLabel[] = [
-      { text: 'Alpha', x: 100, y: 200, count: 1000, group: 0 },
-      { text: 'Beta', x: 300, y: 400, count: 500, group: 1 },
+      { text: 'Alpha', x: 100, y: 200, count: 1000, group: 0, region: 0, key: 'Alpha' },
+      { text: 'Beta', x: 300, y: 400, count: 500, group: 1, region: 0, key: 'Beta' },
     ];
     const sizes = [18, 14];
     const colors: [number, number, number, number][] = [[200, 100, 50, 255], [50, 200, 100, 255]];
@@ -402,7 +402,7 @@ describe('buildAroundLabelGroups', () => {
   });
 
   it('applies textCase transformation', () => {
-    const placed: GroupLabel[] = [{ text: 'hello world', x: 0, y: 0, count: 100, group: 0 }];
+    const placed: GroupLabel[] = [{ text: 'hello world', x: 0, y: 0, count: 100, group: 0, region: 0, key: 'hello world' }];
     const result = buildAroundLabelGroups(
       placed, [14], [[200, 200, 200, 255]], [null], [600], [1], [undefined],
       (s) => s.toUpperCase(),
@@ -413,7 +413,7 @@ describe('buildAroundLabelGroups', () => {
   });
 
   it('uses (empty) for empty text', () => {
-    const placed: GroupLabel[] = [{ text: '', x: 0, y: 0, count: 50, group: 0 }];
+    const placed: GroupLabel[] = [{ text: '', x: 0, y: 0, count: 50, group: 0, region: 0, key: '' }];
     const result = buildAroundLabelGroups(
       placed, [12], [[200, 200, 200, 255]], [null], [600], [1], [undefined],
       (s) => s,

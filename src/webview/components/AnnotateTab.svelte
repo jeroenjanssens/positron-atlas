@@ -187,6 +187,31 @@
       {/if}
     </Select>
   </div>
+  {#if (atlas.labels.clusters || atlas.labels.column !== null) && atlas.labels.labelStyle !== 'around'}
+    <div class="select">
+      <span>Placement <Info id="labels.placement" /></span>
+      <Select value={atlas.labels.placement ?? 'peak'} ariaLabel="Label placement"
+        onchange={(e) => atlas.setLabelOptions({ placement: (e.target as HTMLSelectElement).value as 'peak' | 'medoid' | 'regions' })}>
+        <option value="peak">Densest spot (one per group)</option>
+        <option value="medoid">Centre (medoid, one per group)</option>
+        <option value="regions">Every region (can repeat)</option>
+      </Select>
+    </div>
+    {#if atlas.labels.placement === 'regions'}
+      <Slider label="Labels per group" value={atlas.labels.maxPerGroup ?? 3} min={1} max={10}
+        hint="At most this many labels for one group: one per separate region of its points, largest first"
+        onchange={(v) => atlas.setLabelOptions({ maxPerGroup: v })} infoId="labels.maxPerGroup" />
+      <Slider label="Smallest region (%)" value={Math.round((atlas.labels.minRegionShare ?? 0.1) * 100)} min={1} max={50}
+        hint="A further region needs at least this share of its group's points to get a label"
+        onchange={(v) => atlas.setLabelOptions({ minRegionShare: v / 100 })} infoId="labels.minRegionShare" />
+    {/if}
+    <div class="select">
+      <span>Max labels <Info id="labels.maxLabels" /></span>
+      <NumberInput value={atlas.labels.maxLabels ?? 0} min={0} max={1000} step={1} ariaLabel="Maximum number of labels"
+        onchange={(e) => atlas.setLabelOptions({ maxLabels: Math.max(0, Math.round(Number((e.target as HTMLInputElement).value) || 0)) })} />
+    </div>
+    <div class="hint muted">0 shows every label that fits; overlapping labels are hidden, largest first.</div>
+  {/if}
   {#if atlas.labels.clusters}
     <Slider label="Detail" value={atlas.labels.detail} min={1} max={5} format={(v) => detailNames[v - 1] ?? ''}
       hint="How finely the layout is split into clusters: 1 gives fewer, larger clusters; 5 more, smaller ones"

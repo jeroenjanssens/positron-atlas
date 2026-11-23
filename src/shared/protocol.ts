@@ -193,6 +193,18 @@ export interface SelectionComparison {
 export interface LabelOptions {
   /** Column whose values label the map, or null for no labels. */
   column: number | null;
+  /**
+   * Where labels go: 'peak' (one per group at its densest spot), 'medoid' (one per group at
+   * its medoid, as DataMapPlot), or 'regions' (one per separate region of a group, so a
+   * label can repeat).
+   */
+  placement?: 'peak' | 'medoid' | 'regions';
+  /** 'regions': at most this many labels per group. */
+  maxPerGroup?: number;
+  /** 'regions': a further region needs at least this share (0-1) of its group's points. */
+  minRegionShare?: number;
+  /** At most this many labels in total, largest first (0: no limit). */
+  maxLabels?: number;
   /** Font size range in pixels; size grows with the square root of the group size. */
   minSize: number;
   maxSize: number;

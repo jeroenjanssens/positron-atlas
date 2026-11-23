@@ -674,6 +674,34 @@ export const HELP: Record<string, HelpEntry> = {
     cost: 'none',
   },
 
+  'labels.placement': {
+    title: 'Placement',
+    what: 'Where each group gets its label.',
+    intuition:
+      'Densest spot: one label per group, at the densest part of its points, so it always sits on them. ' +
+      'Centre (medoid): one label per group, at the point closest to all others (as DataMapPlot does); it can fall between two blobs of a split group. ' +
+      'Every region: a group whose points form several separate regions gets a label in each, so the same label can appear more than once.',
+    when: 'Use Every region when a category is spread over several places on the map.',
+    cost: 'none',
+  },
+  'labels.maxPerGroup': {
+    title: 'Labels per group',
+    what: 'The most labels one group gets with Every region placement.',
+    intuition: 'Its regions are labelled largest first; set 1 to label only the main region.',
+    cost: 'none',
+  },
+  'labels.minRegionShare': {
+    title: 'Smallest region',
+    what: 'The share of a group\'s points a further region needs to get its own label.',
+    intuition: 'The largest region is always labelled. Raise this to skip small fragments; lower it to label small outposts too.',
+    cost: 'none',
+  },
+  'labels.maxLabels': {
+    title: 'Max labels',
+    what: 'The most labels on the map, largest groups or regions first. 0 means no limit.',
+    intuition: 'Labels that would overlap are hidden anyway (larger ones win); this limit keeps a busy map readable at every zoom level.',
+    cost: 'none',
+  },
   'labels.detail': {
     title: 'Detail',
     what: 'How finely the layout is split into automatically detected clusters.',

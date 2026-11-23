@@ -6,6 +6,10 @@ import type { LabelOptions } from '../../shared/protocol';
 /** Default label options. */
 export const DEFAULT_LABELS: LabelOptions = {
   column: null,
+  placement: 'peak',
+  maxPerGroup: 3,
+  minRegionShare: 0.1,
+  maxLabels: 0,
   minSize: 12,
   maxSize: 26,
   colorText: true,
