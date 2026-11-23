@@ -622,15 +622,22 @@ export class AtlasPanel {
         break;
       }
       case 'rows': {
-        const r = await this.bridge.call<{ ok: boolean; values: Record<string, [string, string][]> }>(
+        const r = await this.bridge.call<{ ok: boolean; values: Record<string, [string, string][]>; images?: Record<string, (number | null)[]> }>(
           'rows',
           this.requireJob(),
           m.indices,
           m.columns ?? null,
+          m.imageColumns ?? null,
         );
         const values: Record<number, [string, string][]> = {};
         for (const [k, v] of Object.entries(r.values)) values[Number(k)] = v;
-        this.post({ type: 'rows', seq: m.seq, values });
+        // Pixel values for "Points are images" (the harness host did this; this host didn't).
+        let images: Record<number, (number | null)[]> | undefined;
+        if (r.images) {
+          images = {};
+          for (const [k, v] of Object.entries(r.images)) images[Number(k)] = v;
+        }
+        this.post({ type: 'rows', seq: m.seq, values, ...(images ? { images } : {}) });
         break;
       }
       case 'texts': {

@@ -3,7 +3,7 @@
 // Launches an isolated Positron (test/e2e/launch.sh), lets the helper extension start Python,
 // create a DataFrame and open Atlas, then waits for the layout and takes screenshots.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { connect } from './cdp.mjs';
 import { parsePngToRgba, drawnPixels } from '../png.mjs';
 
@@ -16,6 +16,10 @@ const timeoutMs = Number(process.env.E2E_TIMEOUT ?? 240_000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const env = { ...process.env };
+// Saves skip the dialog in development mode when this is set (see saveVideo in atlasPanel.ts).
+env.ATLAS_E2E_SAVE_DIR ??= `${out}/videos`;
+rmSync(env.ATLAS_E2E_SAVE_DIR, { recursive: true, force: true }); // no stale files from earlier runs
+mkdirSync(env.ATLAS_E2E_SAVE_DIR, { recursive: true });
 if (scenario) env.ATLAS_E2E_SCENARIO = new URL(scenario, `file://${process.cwd()}/`).pathname;
 // A leftover instance on the same profile hijacks the launch (single-instance lock); kill it.
 spawnSync('pkill', ['-9', '-f', out]);

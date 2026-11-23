@@ -339,7 +339,10 @@ function requestRowsBatch(atlas: Atlas, prepIdx: number): void {
   const seq = ++atlas.hoverRowsSeq;
   atlas.hoverInflight = seq;
   const cols = getFieldColumns(atlas);
-  vscode.post({ type: 'rows', seq, indices: toFetch, columns: cols?.length ? cols : undefined });
+  // "Points are images": fetch the pixel columns too, so the tooltip and card show the image
+  // (lost when hover moved to batched requests).
+  const imageCols = atlas.view.images ? atlas.imageColumns?.indices : undefined;
+  vscode.post({ type: 'rows', seq, indices: toFetch, columns: cols?.length ? cols : undefined, imageColumns: imageCols?.length ? imageCols : undefined });
 }
 
 /** Column indices to fetch based on fieldMode. */

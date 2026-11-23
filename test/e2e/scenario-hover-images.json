@@ -1,0 +1,27 @@
+{
+  "description": "Hover images in real Positron: (1) pixel columns px0..px63 draw an 8x8 image in the tooltip; (2) an image-path column loads the PNG into the tooltip (the img actually decodes).",
+  "variable": "df",
+  "setup": "import numpy as np, pandas as pd, zlib, struct, os\nrng = np.random.default_rng(0)\nn = 600\nk = rng.integers(0, 3, n)\npx = np.clip(rng.normal(0, 1, (n, 64)) + k[:, None] * 2, 0, None)\ndf = pd.DataFrame(px, columns=[f'px{i}' for i in range(64)])\ndf['cluster'] = [f'c{v}' for v in k]\nd = '/tmp/positron-atlas-e2e/imgs'\nos.makedirs(d, exist_ok=True)\ndef _png(path, rgb):\n    w = h = 16\n    raw = b''.join(b'\\x00' + bytes(rgb) * w for _ in range(h))\n    def ch(t, data):\n        return struct.pack('>I', len(data)) + t + data + struct.pack('>I', zlib.crc32(t + data) & 0xffffffff)\n    open(path, 'wb').write(b'\\x89PNG\\r\\n\\x1a\\n' + ch(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + ch(b'IDAT', zlib.compress(raw)) + ch(b'IEND', b''))\nfor j, c in enumerate([(220, 40, 40), (40, 180, 60), (40, 80, 220)]):\n    _png(f'{d}/img{j}.png', c)\ndf['image_path'] = [f'{d}/img{v}.png' for v in k]\n",
+  "steps": [
+    {
+      "name": "pixel image ('Points are images'): hover a point, the tooltip draws its pixels",
+      "eval": "a.setView({ images: true }); a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: undefined }; a.tooltip = null; a.rowCache.clear(); const xy = a.anchorXY; for (let i = 0; i < 4 && !(a.tooltip && a.tooltip.image); i++) { const p = a.renderer.projectWorld(xy[0], xy[1]); a['onPointer']({ x: p[0], y: p[1], world: [xy[0], xy[1]] }); await new Promise((r) => setTimeout(r, 150)); }",
+      "until": "a.tooltip && a.tooltip.image && (() => { const c = document.querySelector('.tooltip canvas'); if (!c) return false; const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < px.length; i += 4) if (px[i] > 0) return true; return false; })()",
+      "timeout": 10000,
+      "report": "{ shape: a.imageShape, hasImage: !!(a.tooltip && a.tooltip.image), canvas: !!document.querySelector('.tooltip canvas'), painted: (() => { const c = document.querySelector('.tooltip canvas'); if (!c) return 0; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; })() }"
+    },
+    {
+      "name": "image URL column: the tooltip loads and decodes the PNG",
+      "eval": "a.setView({ images: false }); a.tooltipOpts = { ...a.tooltipOpts, imageUrlColumn: a.describe.columns.find((c) => c.name === 'image_path').index }; a.loadImagesFromUrls = 'always'; a.tooltip = null; a.rowCache.clear(); const xy = a.anchorXY; for (let i = 0; i < 5 && !(a.tooltip && a.tooltip.imageUri); i++) { const p = a.renderer.projectWorld(xy[2], xy[3]); a['onPointer']({ x: p[0], y: p[1], world: [xy[2], xy[3]] }); await new Promise((r) => setTimeout(r, 200)); } ",
+      "until": "a.tooltip && a.tooltip.imageUri && document.querySelector('.tooltip img')",
+      "timeout": 15000,
+      "report": "{ uri: a.tooltip && a.tooltip.imageUri, img: (() => { const im = document.querySelector('.tooltip img'); return im ? { complete: im.complete, w: im.naturalWidth } : null; })() }",
+      "screenshot": "e2e-hover-image.png"
+    },
+    {
+      "name": "the PNG decoded (naturalWidth 16)",
+      "until": "(() => { const im = document.querySelector('.tooltip img'); return im && im.complete && im.naturalWidth === 16; })()",
+      "timeout": 5000
+    }
+  ]
+}
